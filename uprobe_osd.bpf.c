@@ -398,6 +398,7 @@ int uprobe_dequeue_op(struct pt_regs *ctx)
 	// read op type, skip if it's not osd_op type
 	__u16 op_type = 0;
         struct VarField *vf = bpf_map_lookup_elem(&hprobes, &varid);	
+	
 	if(NULL != vf) { 
 	      __u64 v = 0;
 	      v = fetch_register(ctx, vf->varloc.reg);
