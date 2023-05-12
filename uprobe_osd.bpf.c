@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
-/* Copyright (c) 2020 Facebook */
+/* Copyright (c) 2023 May  Dongdong Tao */
 #include <linux/bpf.h>
 #include <linux/ptrace.h>
 #include <bpf/bpf_helpers.h>
@@ -38,8 +38,6 @@ struct op_v {
   unsigned long long reply_stamp;
   __u64 wb;
   __u64 rb;
-  //__u64 offset;
-  //__u64 length;
 };
 
 typedef struct VarLocation {
