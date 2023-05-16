@@ -4,6 +4,8 @@ OUTPUT := .output
 ARCH := $(shell uname -m | sed 's/x86_64/x86/' | sed 's/aarch64/arm64/' | sed 's/ppc64le/powerpc/' | sed 's/mips.*/mips/')
 #BPFTOOL ?= /usr/local/sbin/bpftool
 
+OSDTRACE_SRC = $(abspath ./src)
+
 BPFTOOL_OUTPUT ?= $(abspath $(OUTPUT)/bpftool)
 BPFTOOL ?= $(BPFTOOL_OUTPUT)/bootstrap/bpftool
 BPFTOOL_SRC = $(abspath ./bpftool/src)
@@ -58,7 +60,7 @@ $(BPFTOOL): | $(BPFTOOL_OUTPUT)
 	make ARCH= CROSS_COMPILE= OUTPUT=$(BPFTOOL_OUTPUT)/ -C $(BPFTOOL_SRC) bootstrap
 
 # Build BPF Code
-$(OUTPUT)/%.bpf.o: %.bpf.c $(LIBBPF_OBJ) | $(OUTPUT) $(BPFTOOL)
+$(OUTPUT)/%.bpf.o: $(OSDTRACE_SRC)/%.bpf.c $(LIBBPF_OBJ) | $(OUTPUT) $(BPFTOOL)
 	$(call msg,BPF,$@)
 	$(CLANG)  -g -O2 -target bpf -D__TARGET_ARCH_$(ARCH) $(INCLUDES) $(CLANG_BPF_SYS_INCLUDES) -c $< -o $(patsubst %.bpf.o,%.tmp.bpf.o,$@) 
 	$(BPFTOOL) gen object $@ $(patsubst %.bpf.o,%.tmp.bpf.o,$@)
@@ -69,6 +71,6 @@ $(OUTPUT)/%.skel.h: $(OUTPUT)/%.bpf.o | $(OUTPUT) $(BPFTOOL)
 	$(BPFTOOL) gen skeleton $< > $@
 
 # Generate osdtrace
-osdtrace: uprobe_osd.cc $(OUTPUT)/uprobe_osd.skel.h $(LIBBPF_OBJ) | $(OUTPUT)
+osdtrace: $(OSDTRACE_SRC)/uprobe_osd.cc $(OUTPUT)/uprobe_osd.skel.h $(LIBBPF_OBJ) | $(OUTPUT)
 	$(CXX)  -g -O2 -D__TARGET_ARCH_$(ARCH) $(INCLUDES) $(CLANG_BPF_SYS_INCLUDES) -o $@ $< $(LIBBPF_OBJ) -lelf -ldw -lz
 

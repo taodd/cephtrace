@@ -178,13 +178,6 @@ static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va
 
 #define DEBUG printf
 
-/*
- * Taken from https://github.com/torvalds/linux/blob/9b59ec8d50a1f28747ceff9a4f39af5deba9540e/tools/testing/selftests/bpf/trace_helpers.c#L149-L205
- *
- * See discussion in https://github.com/libbpf/libbpf-bootstrap/pull/90
- */
-
-/* It's a global function to make sure compiler doesn't inline it. */
 struct op_v {
   __u32 pid;
   unsigned long long owner;
