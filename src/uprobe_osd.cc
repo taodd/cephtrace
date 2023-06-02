@@ -174,7 +174,9 @@ static __u64 bootstamp = 0;
 static __u64 cnt = 0;
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va_list args)
 {
-	return vfprintf(stderr, format, args);
+    if (level == LIBBPF_DEBUG)
+	return 0;
+    return vfprintf(stderr, format, args);
 }
 
 #define DEBUG printf
