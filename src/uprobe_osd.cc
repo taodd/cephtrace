@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: (LGPL-2.1 OR BSD-2-Clause)
-/* Copyright (c) 2020 Facebook */
 #include <errno.h>
 #include <stdio.h>
 #include <sys/resource.h>
@@ -14,6 +12,7 @@
 #include <iostream>
 #include <cassert>
 #include <cstring>
+#include <ctime>
 extern "C" {
 #include <unistd.h>
 #include <fcntl.h>
@@ -76,6 +75,8 @@ func_id_t func_id = {
     {"BlueStore::_txc_apply_kv", 80},
     {"PrimaryLogPG::log_op_stats", 90} 
 };
+
+std::vector<std::string> probe_units = {"OSD.cc", "BlueStore.cc", "PrimaryLogPG.cc", "ReplicatedBackend.cc"};
 
 probes_t probes = {
 
@@ -629,7 +630,7 @@ void translate_fields(Dwarf_Die *vardie,
           {
               Dwarf_Die *tmpdie = resolve_typedecl(typedie);
               if (tmpdie == NULL) {
-	         printf("couldn't r;esolve type at %s", fields[i].c_str());
+	         printf("couldn't resolve type at %s", fields[i].c_str());
 		 return;
 	      }
                
@@ -668,6 +669,18 @@ bool filter_func(std::string funcname)
 	std::size_t found = x.first.find_last_of(":");
 	std::string name = x.first.substr(found+1);
 	if(funcname == name) 
+	    return true;
+    }
+    return false;
+}
+
+bool filter_cu(std::string unitname)
+{
+    std::size_t found = unitname.find_last_of("/");
+    std::string name = unitname.substr(found+1);
+    
+    for(auto x : probe_units) {
+	if(x == name) 
 	    return true;
     }
     return false;
@@ -879,7 +892,10 @@ handle_module (Dwfl_Module *dwflmod,
         return EXIT_FAILURE;
     }
 
+    int start_time = clock();
     traverse_module(dwflmod, dwarf, iterate_types_in_cu, true);
+    int end_process_types_time = clock();
+
     Dwarf_Off offset = 0;
     Dwarf_Off next_offset;
     size_t header_size;
@@ -891,15 +907,19 @@ handle_module (Dwfl_Module *dwflmod,
 	    cfi_eh = dwfl_module_eh_cfi (dwflmod, &cfi_eh_bias);
 	    assert (cfi_debug == NULL || cfi_debug_bias == 0);
 
-	    //TODO here we should filter out the cu that we are not interested
 	    std::string cu_name = dwarf_diename (&cu_die) ?: "<unknown>";
-	    //std::cout << "cu name " << cu_name << std::endl;
-	    cur_cu = &cu_die;
-            dwarf_getfuncs(&cu_die, &handle_function, NULL, 0);
-	    //search_for_function(&die, "ExampleClass", "exampleFunction");
+            if (filter_cu(cu_name)) {
+		std::cout << "cu name " << cu_name << std::endl;
+	        cur_cu = &cu_die;
+                dwarf_getfuncs(&cu_die, &handle_function, NULL, 0);
+	    }
         }
         offset = next_offset;
     }
+    int end_process_funcs_time = clock();
+
+    std::cout<<"process types take " << (end_process_types_time-start_time)/double(CLOCKS_PER_SEC)*1000 << std::endl; 
+    std::cout<<"process functions take " << (end_process_funcs_time - start_time)/double(CLOCKS_PER_SEC)*1000 << std::endl; 
     return 0;
 }
 
@@ -1144,8 +1164,8 @@ int main(int argc, char **argv)
 
 	DEBUG("Start to parse ceph dwarf info\n");
 
-	parse_ceph_dwarf("/usr/bin/ceph-osd");
-	//parse_ceph_dwarf("/home/taodd/Git/ceph/build/bin/ceph-osd");
+	//parse_ceph_dwarf("/usr/bin/ceph-osd");
+	parse_ceph_dwarf("/home/taodd/Git/ceph/build/bin/ceph-osd");
 
 	libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
 	/* Set up libbpf errors and debug info callback */
@@ -1164,15 +1184,6 @@ int main(int argc, char **argv)
 
 	fill_map_hprobes(skel->maps.hprobes);
 
-	/* uprobe/uretprobe expects relative offset of the function to attach
-	 * to. This offset is relateve to the process's base load address. So
-	 * easy way to do this is to take an absolute address of the desired
-	 * function and substract base load address from it.  If we were to
-	 * parse ELF to calculate this function, we'd need to add .text
-	 * section offset and function's offset within .text ELF section.
-	 */
-	//uprobe_offset = get_uprobe_offset(&uprobed_add);
-
 	/* Attach tracepoint handler */
 	DEBUG("BPF prog loaded\n");
 
@@ -1181,8 +1192,8 @@ int main(int argc, char **argv)
 							    false /* not uretprobe */,
 							    //176928 /* self pid */,
 							    -1,
-							    "/usr/bin/ceph-osd",
-							    //"/home/taodd/Git/ceph/build/bin/ceph-osd",
+							    //"/usr/bin/ceph-osd",
+							    "/home/taodd/Git/ceph/build/bin/ceph-osd",
 							    enqueue_op_addr);
 	if (!ulink) {
 		DEBUG("Failed to attach uprobe to uprobe_dequeue_op\n");
@@ -1196,8 +1207,8 @@ int main(int argc, char **argv)
 							    false ,
 							    -1,
 							   //176928,
-							    "/usr/bin/ceph-osd",
-							    //"/home/taodd/Git/ceph/build/bin/ceph-osd",
+							    //"/usr/bin/ceph-osd",
+							    "/home/taodd/Git/ceph/build/bin/ceph-osd",
 							    dequeue_op_addr);
 	
 	DEBUG("uprobe_dequeue_op attached\n");	
@@ -1212,8 +1223,8 @@ int main(int argc, char **argv)
 							    false ,
 							    -1,
 							    //176928,
-							    "/usr/bin/ceph-osd",
-							    //"/home/taodd/Git/ceph/build/bin/ceph-osd",
+							    //"/usr/bin/ceph-osd",
+							    "/home/taodd/Git/ceph/build/bin/ceph-osd",
 							    execute_ctx_addr);
 	
 	DEBUG("uprobe_execute_ctx attached\n");	
@@ -1228,8 +1239,8 @@ int main(int argc, char **argv)
 							    false,
 							    //176928,
 							    -1,
-							    "/usr/bin/ceph-osd",
-							    //"/home/taodd/Git/ceph/build/bin/ceph-osd",
+							    //"/usr/bin/ceph-osd",
+							    "/home/taodd/Git/ceph/build/bin/ceph-osd",
 							    submit_transaction_addr);
 	
 	if (!ulink) {
@@ -1243,8 +1254,8 @@ int main(int argc, char **argv)
 							    false ,
 							    //176928 ,
 							    -1,
-							    "/usr/bin/ceph-osd",
-							    //"/home/taodd/Git/ceph/build/bin/ceph-osd",
+							    //"/usr/bin/ceph-osd",
+							    "/home/taodd/Git/ceph/build/bin/ceph-osd",
 							    log_op_stats_addr);
 	
 	if (!ulink) {
@@ -1260,8 +1271,8 @@ int main(int argc, char **argv)
 							    false ,
 							    //176928 ,
 							    -1,
-							    "/usr/bin/ceph-osd",
-							    //"/home/taodd/Git/ceph/build/bin/ceph-osd",
+							    //"/usr/bin/ceph-osd",
+							    "/home/taodd/Git/ceph/build/bin/ceph-osd",
 							    do_write_addr);
 	
 	if (!ulink) {
@@ -1275,8 +1286,8 @@ int main(int argc, char **argv)
 							    false ,
 							    //176928 ,
 							    -1,
-							    "/usr/bin/ceph-osd",
-							    //"/home/taodd/Git/ceph/build/bin/ceph-osd",
+							    //"/usr/bin/ceph-osd",
+							    "/home/taodd/Git/ceph/build/bin/ceph-osd",
 							    wctx_finish_addr);
 	
 	if (!ulink) {
@@ -1290,8 +1301,8 @@ int main(int argc, char **argv)
 							    false ,
 							    //176928 ,
 							    -1,
-							    "/usr/bin/ceph-osd",
-							    //"/home/taodd/Git/ceph/build/bin/ceph-osd",
+							    //"/usr/bin/ceph-osd",
+							    "/home/taodd/Git/ceph/build/bin/ceph-osd",
 							    txc_state_proc_addr);
 	
 	if (!ulink) {
@@ -1305,8 +1316,8 @@ int main(int argc, char **argv)
 							    false ,
 							    //176928 ,
 							    -1,
-							    "/usr/bin/ceph-osd",
-							    //"/home/taodd/Git/ceph/build/bin/ceph-osd",
+							    //"/usr/bin/ceph-osd",
+							    "/home/taodd/Git/ceph/build/bin/ceph-osd",
 							    txc_apply_kv_addr);
 	
 	if (!ulink) {
