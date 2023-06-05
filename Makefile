@@ -71,6 +71,6 @@ $(OUTPUT)/%.skel.h: $(OUTPUT)/%.bpf.o | $(OUTPUT) $(BPFTOOL)
 	$(BPFTOOL) gen skeleton $< > $@
 
 # Generate osdtrace
-osdtrace: $(OSDTRACE_SRC)/uprobe_osd.cc $(OUTPUT)/uprobe_osd.skel.h $(LIBBPF_OBJ) | $(OUTPUT)
+osdtrace: $(OSDTRACE_SRC)/uprobe_osd.cc $(OSDTRACE_SRC)/*.h $(OUTPUT)/uprobe_osd.skel.h $(LIBBPF_OBJ) | $(OUTPUT)
 	$(CXX)  -g -O2 -D__TARGET_ARCH_$(ARCH) $(INCLUDES) $(CLANG_BPF_SYS_INCLUDES) -o $@ $< $(LIBBPF_OBJ) -lelf -ldw -lz
 

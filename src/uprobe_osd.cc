@@ -21,6 +21,7 @@ extern "C" {
 #include <dwarf.h>
 #include <elf.h>
 }
+#include "bpf_osd_types.h"
 
 #define MAX_CNT 100000ll
 #define MAX_OSD 4000
@@ -35,30 +36,6 @@ Dwarf_CFI * cfi_debug = NULL;
 Dwarf_CFI * cfi_eh = NULL;
 Dwarf_Addr cfi_debug_bias;
 Dwarf_Addr cfi_eh_bias;
-
-
-typedef struct VarLocation {
-    int reg;
-    int offset;
-    bool stack;
-    VarLocation(){reg=0; offset=0; stack=false;}
-} VarLocation;
-
-struct Field {
-    int offset;
-    bool pointer;
-};
-
-struct VarField {
-    struct VarLocation varloc;
-    std::vector<Field> fields;
-};
-
-struct VarField_Kernel {
-    struct VarLocation varloc;
-    struct Field fields[8];
-    int size;
-};
 
 typedef std::map<std::string, std::vector<std::vector<std::string>> > probes_t;
 typedef std::map<std::string, int> func_id_t;
@@ -180,29 +157,6 @@ static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va
 }
 
 #define DEBUG printf
-
-struct op_v {
-  __u32 pid;
-  unsigned long long owner;
-  unsigned long long tid;
-  unsigned long long recv_stamp;
-  unsigned long long recv_complete_stamp;
-  unsigned long long dispatch_stamp;
-  unsigned long long enqueue_stamp;
-  unsigned long long dequeue_stamp;
-  unsigned long long execute_ctx_stamp;
-  unsigned long long submit_transaction_stamp;
-  unsigned long long queue_transaction_stamp;
-  unsigned long long do_write_stamp;
-  unsigned long long wctx_finish_stamp;
-  unsigned long long data_submit_stamp;
-  unsigned long long data_committed_stamp;
-  unsigned long long kv_submit_stamp;
-  unsigned long long kv_committed_stamp;
-  unsigned long long reply_stamp;
-  __u64 wb;
-  __u64 rb;
-};
 
 struct op_stat_s {
    __u64 recv_lat;
