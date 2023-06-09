@@ -30,12 +30,6 @@ extern "C" {
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 
-Dwfl_Module *mod = NULL;
-Dwarf_Die *cur_cu = NULL;
-Dwarf_CFI * cfi_debug = NULL;
-Dwarf_CFI * cfi_eh = NULL;
-Dwarf_Addr cfi_debug_bias;
-Dwarf_Addr cfi_eh_bias;
 
 typedef std::map<std::string, std::vector<std::vector<std::string>> > probes_t;
 typedef std::map<std::string, int> func_id_t;

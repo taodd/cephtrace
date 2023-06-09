@@ -688,6 +688,7 @@ int DwarfParser::handle_module (Dwfl_Module *dwflmod, void **userdata,
 	                        void *arg)
 {
     assert(dwflmod != NULL);
+    cur_mod = dwflmod;
     Dwarf_Addr modbias;
     Dwarf *dwarf = dwfl_module_getdwarf(dwflmod, &modbias);
 
@@ -727,7 +728,7 @@ int DwarfParser::handle_module (Dwfl_Module *dwflmod, void **userdata,
     return 0;
 }
 
-int parse_dwarf(std::string path);
+int DwarfParser::parse_dwarf(std::string path);
 {
     const char *fname = osd_path.c_str();
     int fd = open(fname, O_RDONLY);
@@ -743,3 +744,19 @@ int parse_dwarf(std::string path);
     dwfl_getmodules(dwfl, handle_module, &seen, 0);
     return 0;
 }
+
+DwarfParser::DwarfParser( std::string path) :
+    cur_mod(NULL),
+    cur_cu(NULL),
+    cfi_debug(NULL),
+    cfi_eh(NULL),
+    elf_path(path)
+{
+}
+
+DwarfParser::~DwarfParser()
+{
+
+}
+
+

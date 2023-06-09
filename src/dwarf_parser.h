@@ -6,16 +6,25 @@
 class DwarfParser {
 
 private:
-    Dwfl_Module *mod;
+    Dwarf_Module *cur_mod;
     Dwarf_Die *cur_cu;
     Dwarf_CFI * cfi_debug;
     Dwarf_CFI * cfi_eh;
     Dwarf_Addr cfi_debug_bias;
     Dwarf_Addr cfi_eh_bias;
 
+    std::string elf_path;
+
 public: 
     int parse_dwarf(std::string path);
 
+    DwarfParser(Dwfl_Module*, 
+	        Dwarf_Die*,
+		Dwarf_CFI*,
+		Dwarf_CFI*,
+		Dwarf_Addr,
+		Dwarf_Addr);
+    ~DwarfParser();
 private:
     bool die_has_loclist(Dwarf_Die*);
     bool has_loclist();
