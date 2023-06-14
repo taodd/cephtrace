@@ -728,9 +728,49 @@ int DwarfParser::handle_module (Dwfl_Module *dwflmod, void **userdata,
     return 0;
 }
 
-int DwarfParser::parse_dwarf(std::string path);
+int DwarfParser::parse_dwarf();
 {
-    const char *fname = osd_path.c_str();
+    bool seen = false; 
+    dwfl_getmodules(dwfl, handle_module, &seen, 0);
+    return 0;
+}
+
+void DwarfParser::print_die(Dwarf_Die *die) {
+    //printf("DIE information:\n");
+    //printf("  Offset: %llu\n", static_cast<unsigned long long>(dwarf_dieoffset(die)));
+    //printf("  Tag: %s\n", dwarf_tag_string(dwarf_tag(die)));
+    //printf("  Name: %s\n", dwarf_diename(die));
+
+    /*TODO print attribute
+    Dwarf_Attribute attr;
+    Dwarf_Attribute *attr_result = nullptr;
+    while ((attr_result = dwarf_attr_integrate(die, attr_result ? attr.code + 1 : 0, &attr)) != nullptr) {
+        const char *attr_name = dwarf_attr_string(attr.code);
+        printf("  Attribute: %s\n", attr_name);
+
+        Dwarf_Word value;
+        if (dwarf_formudata(&attr, &value) == 0) {
+            printf("    Value: %llu\n", static_cast<unsigned long long>(value));
+        } else {
+            const char *str_value = dwarf_formstring(&attr);
+            if (str_value) {
+                printf("    Value: %s\n", str_value);
+            }
+        }
+    }*/
+}
+
+DwarfParser::DwarfParser( std::string path,
+	                  probes_t ps,
+			  std::vector<std::string> pus) :
+    cur_mod(NULL),
+    cur_cu(NULL),
+    cfi_debug(NULL),
+    cfi_eh(NULL),
+    probes(ps),
+    probe_units(pus);
+{
+    const char *fname = path.c_str();
     int fd = open(fname, O_RDONLY);
     if (fd == -1)
     {
@@ -738,20 +778,7 @@ int DwarfParser::parse_dwarf(std::string path);
 	return 0;
     }
     
-    Dwfl *dwfl = create_dwfl (fd, fname);
-   
-    bool seen = false; 
-    dwfl_getmodules(dwfl, handle_module, &seen, 0);
-    return 0;
-}
-
-DwarfParser::DwarfParser( std::string path) :
-    cur_mod(NULL),
-    cur_cu(NULL),
-    cfi_debug(NULL),
-    cfi_eh(NULL),
-    elf_path(path)
-{
+    dwfl = create_dwfl (fd, fname);
 }
 
 DwarfParser::~DwarfParser()

@@ -5,7 +5,14 @@
 
 class DwarfParser {
 
+public:
+    typedef std::map<std::string, std::vector<std::vector<std::string>> > probes_t;
 private:
+    typedef std::unordered_map<std::string, Dwarf_Die> cu_type_cache_t;
+    typedef std::unordered_map<void*, cu_type_cache_t> mod_cu_type_cache_t;
+
+private:
+    Dwfl *dwfl;
     Dwarf_Module *cur_mod;
     Dwarf_Die *cur_cu;
     Dwarf_CFI * cfi_debug;
@@ -13,19 +20,24 @@ private:
     Dwarf_Addr cfi_debug_bias;
     Dwarf_Addr cfi_eh_bias;
 
-    std::string elf_path;
+    mod_cu_type_cache_t global_type_cache;
 
+    std::vector<std::string> probe_units; 
+    probes_t probes;
+
+    std::map<std::string, std::vector<VarField>> func2vf;
+    std::map<std::string, Dwarf_Addr> func2pc;
 public: 
-    int parse_dwarf(std::string path);
+    int parse_dwarf();
 
-    DwarfParser(Dwfl_Module*, 
-	        Dwarf_Die*,
-		Dwarf_CFI*,
-		Dwarf_CFI*,
-		Dwarf_Addr,
-		Dwarf_Addr);
+    DwarfParser(std::string,
+	        probes_t probes,
+	        std::vector<std::string> probe_units	
+		);
+
     ~DwarfParser();
 private:
+    void print_die(Dwarf_Die*); 
     bool die_has_loclist(Dwarf_Die*);
     bool has_loclist();
     Dwarf_Addr find_prologue(Dwarf_Die*);

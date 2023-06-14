@@ -31,10 +31,11 @@ extern "C" {
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 
 
-typedef std::map<std::string, std::vector<std::vector<std::string>> > probes_t;
+std::vector<std::string> probe_units = {"OSD.cc", "BlueStore.cc", "PrimaryLogPG.cc", "ReplicatedBackend.cc"};
+
 typedef std::map<std::string, int> func_id_t;
 
-func_id_t func_id = {
+func_id_t osdfunc_id = {
     {"OSD::enqueue_op", 0},
     {"OSD::dequeue_op", 10},
     {"PrimaryLogPG::execute_ctx", 20},
@@ -47,9 +48,8 @@ func_id_t func_id = {
     {"PrimaryLogPG::log_op_stats", 90} 
 };
 
-std::vector<std::string> probe_units = {"OSD.cc", "BlueStore.cc", "PrimaryLogPG.cc", "ReplicatedBackend.cc"};
 
-probes_t probes = {
+DwarfParser::probes_t osd_probes = {
 
     { "OSD::enqueue_op", { 
 			     {"op", "px", "request", "header", "type"},
@@ -119,15 +119,6 @@ probes_t probes = {
     
 };
 
-std::map<std::string, std::vector<VarField>> func2vf;
-std::map<std::string, Dwarf_Addr> func2pc;
-
-
-typedef std::unordered_map<std::string, Dwarf_Die> cu_type_cache_t;
-typedef std::unordered_map<void*, cu_type_cache_t> mod_cu_type_cache_t;
-
-mod_cu_type_cache_t global_type_cache;
-
 enum mode_e {
     MODE_AVG=1, MODE_MAX
 };
@@ -176,30 +167,6 @@ struct timespec lasttime;
 __u32 period = 0; 
 
 
-void print_die(Dwarf_Die *die) {
-    //printf("DIE information:\n");
-    //printf("  Offset: %llu\n", static_cast<unsigned long long>(dwarf_dieoffset(die)));
-    //printf("  Tag: %s\n", dwarf_tag_string(dwarf_tag(die)));
-    //printf("  Name: %s\n", dwarf_diename(die));
-
-    /*TODO print attribute
-    Dwarf_Attribute attr;
-    Dwarf_Attribute *attr_result = nullptr;
-    while ((attr_result = dwarf_attr_integrate(die, attr_result ? attr.code + 1 : 0, &attr)) != nullptr) {
-        const char *attr_name = dwarf_attr_string(attr.code);
-        printf("  Attribute: %s\n", attr_name);
-
-        Dwarf_Word value;
-        if (dwarf_formudata(&attr, &value) == 0) {
-            printf("    Value: %llu\n", static_cast<unsigned long long>(value));
-        } else {
-            const char *str_value = dwarf_formstring(&attr);
-            if (str_value) {
-                printf("    Value: %s\n", str_value);
-            }
-        }
-    }*/
-}
 
 int exists(int id)
 {
