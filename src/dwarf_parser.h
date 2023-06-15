@@ -28,7 +28,7 @@ private:
     std::map<std::string, std::vector<VarField>> func2vf;
     std::map<std::string, Dwarf_Addr> func2pc;
 public: 
-    int parse_dwarf();
+    int parse();
 
     DwarfParser(std::string,
 	        probes_t probes,

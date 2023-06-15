@@ -1,3 +1,27 @@
+#include <errno.h>
+#include <stdio.h>
+#include <sys/resource.h>
+#include <bpf/libbpf.h>
+#include <time.h>
+#include <getopt.h>
+#include "uprobe_osd.skel.h"
+#include <vector>
+#include <map>
+#include <unordered_map>
+#include <string>
+#include <iostream>
+#include <cassert>
+#include <cstring>
+#include <ctime>
+extern "C" {
+#include <unistd.h>
+#include <fcntl.h>
+#include <elfutils/libdwfl.h>
+#include <elfutils/libdw.h>
+#include <dwarf.h>
+#include <elf.h>
+}
+#include "bpf_osd_types.h"
 #include "dwarf_parser.h"
 
 bool DwarfParser::die_has_loclist(Dwarf_die *begin_die)
@@ -728,7 +752,7 @@ int DwarfParser::handle_module (Dwfl_Module *dwflmod, void **userdata,
     return 0;
 }
 
-int DwarfParser::parse_dwarf();
+int DwarfParser::parse();
 {
     bool seen = false; 
     dwfl_getmodules(dwfl, handle_module, &seen, 0);

@@ -16,12 +16,9 @@
 extern "C" {
 #include <unistd.h>
 #include <fcntl.h>
-#include <elfutils/libdwfl.h>
-#include <elfutils/libdw.h>
-#include <dwarf.h>
-#include <elf.h>
 }
 #include "bpf_osd_types.h"
+#include "dwarf_parser.h"
 
 #define MAX_CNT 100000ll
 #define MAX_OSD 4000
@@ -35,7 +32,7 @@ std::vector<std::string> probe_units = {"OSD.cc", "BlueStore.cc", "PrimaryLogPG.
 
 typedef std::map<std::string, int> func_id_t;
 
-func_id_t osdfunc_id = {
+func_id_t func_id = {
     {"OSD::enqueue_op", 0},
     {"OSD::dequeue_op", 10},
     {"PrimaryLogPG::execute_ctx", 20},
@@ -391,10 +388,12 @@ int main(int argc, char **argv)
 
 	DEBUG("Start to parse ceph dwarf info\n");
 
-	//parse_ceph_dwarf("/usr/bin/ceph-osd");
-	parse_ceph_dwarf("/home/taodd/Git/ceph/build/bin/ceph-osd");
+	std::string path = "/home/taodd/Git/ceph/build/bin/ceph-osd";
+	DwarfParser dwarfparser = new DwarfParser(path, osd_probes, probe_units);
+	dwarfparser.parse();
 
 	libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
+
 	/* Set up libbpf errors and debug info callback */
 	libbpf_set_print(libbpf_print_fn);
 
@@ -420,7 +419,7 @@ int main(int argc, char **argv)
 							    //176928 /* self pid */,
 							    -1,
 							    //"/usr/bin/ceph-osd",
-							    "/home/taodd/Git/ceph/build/bin/ceph-osd",
+							    path.c_str(),
 							    enqueue_op_addr);
 	if (!ulink) {
 		DEBUG("Failed to attach uprobe to uprobe_dequeue_op\n");
@@ -434,8 +433,7 @@ int main(int argc, char **argv)
 							    false ,
 							    -1,
 							   //176928,
-							    //"/usr/bin/ceph-osd",
-							    "/home/taodd/Git/ceph/build/bin/ceph-osd",
+							    path.c_str(),
 							    dequeue_op_addr);
 	
 	DEBUG("uprobe_dequeue_op attached\n");	
@@ -449,9 +447,7 @@ int main(int argc, char **argv)
 	ulink = bpf_program__attach_uprobe(skel->progs.uprobe_execute_ctx,
 							    false ,
 							    -1,
-							    //176928,
-							    //"/usr/bin/ceph-osd",
-							    "/home/taodd/Git/ceph/build/bin/ceph-osd",
+							    path.c_str(),
 							    execute_ctx_addr);
 	
 	DEBUG("uprobe_execute_ctx attached\n");	
@@ -464,10 +460,8 @@ int main(int argc, char **argv)
 	__u64 submit_transaction_addr = func2pc["ReplicatedBackend::submit_transaction"];
 	ulink = bpf_program__attach_uprobe(skel->progs.uprobe_submit_transaction,
 							    false,
-							    //176928,
 							    -1,
-							    //"/usr/bin/ceph-osd",
-							    "/home/taodd/Git/ceph/build/bin/ceph-osd",
+							    path.c_str(),
 							    submit_transaction_addr);
 	
 	if (!ulink) {
@@ -479,10 +473,8 @@ int main(int argc, char **argv)
 	__u64 log_op_stats_addr = func2pc["PrimaryLogPG::log_op_stats"];
 	ulink = bpf_program__attach_uprobe(skel->progs.uprobe_log_op_stats,
 							    false ,
-							    //176928 ,
 							    -1,
-							    //"/usr/bin/ceph-osd",
-							    "/home/taodd/Git/ceph/build/bin/ceph-osd",
+							    path.c_str(),
 							    log_op_stats_addr);
 	
 	if (!ulink) {
@@ -496,10 +488,8 @@ int main(int argc, char **argv)
 	__u64 do_write_addr = func2pc["BlueStore::_do_write"];
 	ulink = bpf_program__attach_uprobe(skel->progs.uprobe_do_write,
 							    false ,
-							    //176928 ,
 							    -1,
-							    //"/usr/bin/ceph-osd",
-							    "/home/taodd/Git/ceph/build/bin/ceph-osd",
+							    path.c_str(),
 							    do_write_addr);
 	
 	if (!ulink) {
@@ -511,10 +501,8 @@ int main(int argc, char **argv)
 	__u64 wctx_finish_addr = func2pc["BlueStore::_wctx_finish"];
 	ulink = bpf_program__attach_uprobe(skel->progs.uprobe_wctx_finish,
 							    false ,
-							    //176928 ,
 							    -1,
-							    //"/usr/bin/ceph-osd",
-							    "/home/taodd/Git/ceph/build/bin/ceph-osd",
+							    path.c_str(),
 							    wctx_finish_addr);
 	
 	if (!ulink) {
@@ -525,11 +513,9 @@ int main(int argc, char **argv)
 
 	__u64 txc_state_proc_addr = func2pc["BlueStore::_txc_state_proc"];
 	ulink = bpf_program__attach_uprobe(skel->progs.uprobe_txc_state_proc,
-							    false ,
-							    //176928 ,
+							    false,
 							    -1,
-							    //"/usr/bin/ceph-osd",
-							    "/home/taodd/Git/ceph/build/bin/ceph-osd",
+							    path.c_str(),
 							    txc_state_proc_addr);
 	
 	if (!ulink) {
@@ -541,10 +527,8 @@ int main(int argc, char **argv)
 	__u64 txc_apply_kv_addr = func2pc["BlueStore::_txc_apply_kv"];
 	ulink = bpf_program__attach_uprobe(skel->progs.uprobe_txc_apply_kv,
 							    false ,
-							    //176928 ,
 							    -1,
-							    //"/usr/bin/ceph-osd",
-							    "/home/taodd/Git/ceph/build/bin/ceph-osd",
+							    path.c_str(),
 							    txc_apply_kv_addr);
 	
 	if (!ulink) {
