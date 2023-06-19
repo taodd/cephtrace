@@ -4,7 +4,7 @@
 #include <bpf/libbpf.h>
 #include <time.h>
 #include <getopt.h>
-#include "uprobe_osd.skel.h"
+#include "osdtrace.skel.h"
 #include <vector>
 #include <map>
 #include <unordered_map>
@@ -24,7 +24,7 @@ extern "C" {
 #include "bpf_osd_types.h"
 #include "dwarf_parser.h"
 
-bool DwarfParser::die_has_loclist(Dwarf_die *begin_die)
+bool DwarfParser::die_has_loclist(Dwarf_Die *begin_die)
 {
   Dwarf_Die die;
   Dwarf_Attribute loc;
@@ -60,36 +60,6 @@ bool DwarfParser::has_loclist()
     assert(cur_cu);
     return die_has_loclist(cur_cu);
 }
-
-Dwarf_Addr DwarfParser::find_prologue(Dwarf_Die *func)
-{
-  Dwarf_Addr entrypc;
-  if (func_entrypc (func, &entrypc) == false)
-    printf("error in func_entrypc: %s: %s",
-           dwarf_diename (func), dwarf_errmsg (-1));
-
-  int dwbias = 0;
-  entrypc += dwbias;
-
-  //identify whether it's compiled with -O2 -g 
-  if(has_loclist())
-      return entrypc;
-
-  Dwarf_Addr *bkpts = NULL;
-  Dwarf_Addr pc = 0;
-  int bcnt = dwarf_entry_breakpoints (func, &bkpts);
-  if (bcnt <= 0)
-    printf ("\t%s\n", dwarf_errmsg (-1));
-  else
-  {
-      if(bcnt > 1) 
-	  printf("Found more than 1 prolgue\n");
-      pc = bkpts[0];
-      std::cout << "prologue is " << pc << std::endl;
-  }
-  return pc;
-}
-
 
 bool DwarfParser::func_entrypc(Dwarf_Die *func, Dwarf_Addr *addr)
 {
@@ -210,7 +180,6 @@ int DwarfParser::iterate_types_in_cu(Dwarf_Die *cu_die)
 void DwarfParser::traverse_module(
 	Dwfl_Module *mod,
         Dwarf *dw, 	
-	int (*callback)(Dwarf_Die*),
 	bool want_type)
 {
     assert(dw && mod);
@@ -226,7 +195,7 @@ void DwarfParser::traverse_module(
         die = dwarf_offdie (dw, off + cuhl, &die_mem);
         /* Skip partial units. */
         if (dwarf_tag (die) == DW_TAG_compile_unit)
-           (*callback)(die); 
+           iterate_types_in_cu(die); 
         off = noff;
     }
 
@@ -244,7 +213,7 @@ void DwarfParser::traverse_module(
           Dwarf_Die *die;
           die = dwarf_offdie_types (dw, off + cuhl, &die_mem);
           if (dwarf_tag (die) == DW_TAG_type_unit)
-            (*callback)(die);
+	      iterate_types_in_cu(die);
           off = noff;
 	}
      }
@@ -268,29 +237,6 @@ Dwarf_Attribute * DwarfParser::find_func_frame_base(Dwarf_Die *func, Dwarf_Attri
     fb_attr = dwarf_attr_integrate(func, DW_AT_frame_base, fb_attr_mem);
     return fb_attr;
 }
-
-VarLocation DwarfParser::translate_param_location(Dwarf_Die *func, std::string symbol, Dwarf_Addr pc, Dwarf_Die &vardie)
-{
-    vardie = find_param(func, symbol);
-    Dwarf_Attribute fb_attr_mem;
-    Dwarf_Attribute *fb_attr = find_func_frame_base(func, &fb_attr_mem);
-
-    //Assume the vardie must has a DW_AT_location
-    Dwarf_Attribute loc_attr;
-    dwarf_attr_integrate(&vardie, DW_AT_location, &loc_attr);
-
-    Dwarf_Op *expr;
-    size_t len;
-    int r = dwarf_getlocation_addr(&loc_attr, pc, &expr, &len, 1);
-    if(r != 1 || len <= 0) {
-	printf("Get var location expr failed for symbol %s\n", symbol.c_str());
-    }
-
-    VarLocation varloc;
-    translate_expr(fb_attr, expr, pc, varloc);    
-    return varloc;
-}
-
 
 VarLocation DwarfParser::translate_param_location(Dwarf_Die *func, std::string symbol, Dwarf_Addr pc, Dwarf_Die &vardie)
 {
@@ -519,10 +465,12 @@ bool DwarfParser::filter_cu(std::string unitname)
     return false;
 }
 
-int DwarfParser::handle_function(Dwarf_Die *die, void *data)
+static int handle_function(Dwarf_Die *die, void *data)
 {
+    assert(data != NULL);
+    DwarfParser *dp = (DwarfParser *)data;
     const char *funcname = dwarf_diename(die); 
-    if(!filter_func(funcname))
+    if(!dp->filter_func(funcname))
 	return 0;
     Dwarf_Die func_spec = *die;
     if (dwarf_hasattr(die, DW_AT_specification))
@@ -542,26 +490,27 @@ int DwarfParser::handle_function(Dwarf_Die *die, void *data)
     }
 
     //printf("function fullname is %s\n", fullname.c_str());
-    if(probes.find(fullname) == probes.end()) {
+    if(dp->probes.find(fullname) == dp->probes.end()) {
 	return 0;
     }
     //TODO need to check if the class name matches
-    Dwarf_Addr pc = find_prologue(die);
-    func2pc[fullname] =  pc;
-    std::vector<VarField> &vf = func2vf[fullname];
-    auto arr = probes[fullname];
+    Dwarf_Addr pc = dp->find_prologue(die);
+    dp->func2pc[fullname] =  pc;
+    std::vector<VarField> &vf = dp->func2vf[fullname];
+    auto arr = dp->probes[fullname];
     vf.resize(arr.size());
+    
     for (int i = 0; i < (int)arr.size(); ++i) {
 	std::string varname = arr[i][0];
 	Dwarf_Die vardie, typedie;
-	VarLocation varloc = translate_param_location(die, varname, pc, vardie);
+	VarLocation varloc = dp->translate_param_location(die, varname, pc, vardie);
 	//printf("var location : register %d, offset %d, stack %d\n", varloc.reg, varloc.offset, varloc.stack);
 	vf[i].varloc = varloc;
 
 	// translate fileds
-	dwarf_die_type(&vardie, &typedie);
+	dp->dwarf_die_type(&vardie, &typedie);
 	vf[i].fields.resize(arr[i].size());
-	translate_fields(&vardie, &typedie, pc, arr[i], vf[i].fields);
+	dp->translate_fields(&vardie, &typedie, pc, arr[i], vf[i].fields);
 	for (int j = 1; j < (int)vf[i].fields.size(); ++j) {
 	    //printf("Field %s is at offset %d, defref %d\n", arr[i][j].c_str(), vf[i].fields[j].offset, vf[i].fields[j].pointer);
 	}
@@ -722,7 +671,7 @@ int DwarfParser::handle_module (Dwfl_Module *dwflmod, void **userdata,
     }
 
     int start_time = clock();
-    traverse_module(dwflmod, dwarf, iterate_types_in_cu, true);
+    traverse_module(dwflmod, dwarf, true);
     int end_process_types_time = clock();
 
     Dwarf_Off offset = 0;
@@ -740,7 +689,7 @@ int DwarfParser::handle_module (Dwfl_Module *dwflmod, void **userdata,
             if (filter_cu(cu_name)) {
 		std::cout << "cu name " << cu_name << std::endl;
 	        cur_cu = &cu_die;
-                dwarf_getfuncs(&cu_die, &handle_function, NULL, 0);
+                dwarf_getfuncs(&cu_die, (int (*)(Dwarf_Die*, void *))handle_function, this, 0);
 	    }
         }
         offset = next_offset;
@@ -752,7 +701,7 @@ int DwarfParser::handle_module (Dwfl_Module *dwflmod, void **userdata,
     return 0;
 }
 
-int DwarfParser::parse();
+int DwarfParser::parse()
 {
     bool seen = false; 
     dwfl_getmodules(dwfl, handle_module, &seen, 0);

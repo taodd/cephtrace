@@ -4,7 +4,7 @@
 #include <bpf/libbpf.h>
 #include <time.h>
 #include <getopt.h>
-#include "uprobe_osd.skel.h"
+#include "osdtrace.skel.h"
 #include <vector>
 #include <map>
 #include <unordered_map>
@@ -13,10 +13,12 @@
 #include <cassert>
 #include <cstring>
 #include <ctime>
+
 extern "C" {
 #include <unistd.h>
 #include <fcntl.h>
 }
+
 #include "bpf_osd_types.h"
 #include "dwarf_parser.h"
 
@@ -28,9 +30,9 @@ extern "C" {
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 
 
-std::vector<std::string> probe_units = {"OSD.cc", "BlueStore.cc", "PrimaryLogPG.cc", "ReplicatedBackend.cc"};
-
 typedef std::map<std::string, int> func_id_t;
+
+std::vector<std::string> probe_units = {"OSD.cc", "BlueStore.cc", "PrimaryLogPG.cc", "ReplicatedBackend.cc"};
 
 func_id_t func_id = {
     {"OSD::enqueue_op", 0},
@@ -353,9 +355,9 @@ int parse_args(int argc, char **argv)
     return 0;
 }
 
-void fill_map_hprobes(struct bpf_map *hprobes)
+void fill_map_hprobes(DwarfParser &dwarfparser, struct bpf_map *hprobes)
 {
-    for(auto x : func2vf)
+    for(auto x : dwarfparser.func2vf)
     {
 	
 	std::string funcname = x.first;
@@ -381,7 +383,7 @@ int main(int argc, char **argv)
         if(parse_args(argc, argv) < 0)
 	    return 0;
 
-        struct uprobe_osd_bpf *skel;
+        struct osdtrace_bpf *skel;
         //long uprobe_offset;
         int ret=0;
 	struct ring_buffer *rb;
@@ -389,7 +391,7 @@ int main(int argc, char **argv)
 	DEBUG("Start to parse ceph dwarf info\n");
 
 	std::string path = "/home/taodd/Git/ceph/build/bin/ceph-osd";
-	DwarfParser dwarfparser = new DwarfParser(path, osd_probes, probe_units);
+	DwarfParser dwarfparser(path, osd_probes, probe_units);
 	dwarfparser.parse();
 
 	libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
@@ -400,7 +402,7 @@ int main(int argc, char **argv)
 	/* Load and verify BPF application */
 	DEBUG("Start to load uprobe\n");
 
-	skel = uprobe_osd_bpf__open_and_load();
+	skel = osdtrace_bpf__open_and_load();
 	if (!skel) {
 		fprintf(stderr, "Failed to open and load BPF skeleton\n");
 		return 1;
@@ -408,12 +410,12 @@ int main(int argc, char **argv)
 
 	//map_fd = bpf_object__find_map_fd_by_name(skel->obj, "hprobes");
 
-	fill_map_hprobes(skel->maps.hprobes);
+	fill_map_hprobes(dwarfparser, skel->maps.hprobes);
 
 	/* Attach tracepoint handler */
 	DEBUG("BPF prog loaded\n");
 
-        size_t enqueue_op_addr = func2pc["OSD::enqueue_op"];	
+        size_t enqueue_op_addr = dwarfparser.func2pc["OSD::enqueue_op"];	
 	struct bpf_link *ulink = bpf_program__attach_uprobe(skel->progs.uprobe_enqueue_op,
 							    false /* not uretprobe */,
 							    //176928 /* self pid */,
@@ -428,7 +430,7 @@ int main(int argc, char **argv)
 	
 	DEBUG("uprobe_enqueue_op attached\n");	
 
-	__u64 dequeue_op_addr = func2pc["OSD::dequeue_op"];
+	__u64 dequeue_op_addr = dwarfparser.func2pc["OSD::dequeue_op"];
 	ulink = bpf_program__attach_uprobe(skel->progs.uprobe_dequeue_op,
 							    false ,
 							    -1,
@@ -443,7 +445,7 @@ int main(int argc, char **argv)
 		return -errno;
 	}
 
-	__u64 execute_ctx_addr = func2pc["PrimaryLogPG::execute_ctx"];
+	__u64 execute_ctx_addr = dwarfparser.func2pc["PrimaryLogPG::execute_ctx"];
 	ulink = bpf_program__attach_uprobe(skel->progs.uprobe_execute_ctx,
 							    false ,
 							    -1,
@@ -457,7 +459,7 @@ int main(int argc, char **argv)
 		return -errno;
 	}
 	
-	__u64 submit_transaction_addr = func2pc["ReplicatedBackend::submit_transaction"];
+	__u64 submit_transaction_addr = dwarfparser.func2pc["ReplicatedBackend::submit_transaction"];
 	ulink = bpf_program__attach_uprobe(skel->progs.uprobe_submit_transaction,
 							    false,
 							    -1,
@@ -470,7 +472,7 @@ int main(int argc, char **argv)
 	}
 	DEBUG("uprobe_submit_transaction attached\n");	
 	
-	__u64 log_op_stats_addr = func2pc["PrimaryLogPG::log_op_stats"];
+	__u64 log_op_stats_addr = dwarfparser.func2pc["PrimaryLogPG::log_op_stats"];
 	ulink = bpf_program__attach_uprobe(skel->progs.uprobe_log_op_stats,
 							    false ,
 							    -1,
@@ -485,7 +487,7 @@ int main(int argc, char **argv)
 	DEBUG("uprobe_log_op_stats attached\n");	
 
 
-	__u64 do_write_addr = func2pc["BlueStore::_do_write"];
+	__u64 do_write_addr = dwarfparser.func2pc["BlueStore::_do_write"];
 	ulink = bpf_program__attach_uprobe(skel->progs.uprobe_do_write,
 							    false ,
 							    -1,
@@ -498,7 +500,7 @@ int main(int argc, char **argv)
 	}
 	DEBUG("uprobe_do_write attached\n");	
 
-	__u64 wctx_finish_addr = func2pc["BlueStore::_wctx_finish"];
+	__u64 wctx_finish_addr = dwarfparser.func2pc["BlueStore::_wctx_finish"];
 	ulink = bpf_program__attach_uprobe(skel->progs.uprobe_wctx_finish,
 							    false ,
 							    -1,
@@ -511,7 +513,7 @@ int main(int argc, char **argv)
 	}
 	DEBUG("uprobe_wctx_finish attached\n");	
 
-	__u64 txc_state_proc_addr = func2pc["BlueStore::_txc_state_proc"];
+	__u64 txc_state_proc_addr = dwarfparser.func2pc["BlueStore::_txc_state_proc"];
 	ulink = bpf_program__attach_uprobe(skel->progs.uprobe_txc_state_proc,
 							    false,
 							    -1,
@@ -524,7 +526,7 @@ int main(int argc, char **argv)
 	}
 	DEBUG("uprobe_txc_state_proc attached\n");	
 
-	__u64 txc_apply_kv_addr = func2pc["BlueStore::_txc_apply_kv"];
+	__u64 txc_apply_kv_addr = dwarfparser.func2pc["BlueStore::_txc_apply_kv"];
 	ulink = bpf_program__attach_uprobe(skel->progs.uprobe_txc_apply_kv,
 							    false ,
 							    -1,
@@ -568,6 +570,6 @@ int main(int argc, char **argv)
 cleanup:
 	printf("Clean up the eBPF program\n");
 	ring_buffer__free(rb);
-	uprobe_osd_bpf__destroy(skel);
+	osdtrace_bpf__destroy(skel);
 	return -errno;
 }
