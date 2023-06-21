@@ -10,7 +10,7 @@ BPFTOOL_OUTPUT ?= $(abspath $(OUTPUT)/bpftool)
 BPFTOOL ?= $(BPFTOOL_OUTPUT)/bootstrap/bpftool
 BPFTOOL_SRC = $(abspath ./bpftool/src)
 
-OSDTRACE_OFILES = $(OUTPUT)/dwarf_parser.o $(OUTPUT)/osdtrace.o
+OSDTRACE_OBJS = $(OUTPUT)/dwarf_parser.o $(OUTPUT)/osdtrace.o
 
 LIBBPF_TOP = $(abspath ./libbpf)
 LIBBPF_SRC = $(LIBBPF_TOP)/src
@@ -72,15 +72,18 @@ $(OUTPUT)/%.skel.h: $(OUTPUT)/%.bpf.o | $(OUTPUT) $(BPFTOOL)
 	$(call msg,GEN-SKEL,$@)
 	$(BPFTOOL) gen skeleton $< > $@
 
-$(OUTPUT)/%.o: $(OSDTRACE_SRC)/%.cc $(OSDTRACE_SRC)/%.h $(OUTPUT)/osdtrace.skel.h | $(OUTPUT) $(LIBBPF_OBJ)
-	$(CXX) -g -O2 -D__TARGET_ARCH_$(ARCH) $(INCLUDES) $(CLANG_BPF_SYS_INCLUDES) -o $@ $<
+$(OUTPUT)/osdtrace.o: $(OSDTRACE_SRC)/osdtrace.cc $(OSDTRACE_SRC)/*.h $(OUTPUT)/osdtrace.skel.h | $(OUTPUT) $(LIBBPF_OBJ)
+	$(CXX) -g $(INCLUDES) -c -o $@ $<
+
+$(OUTPUT)/dwarf_parser.o: $(OSDTRACE_SRC)/dwarf_parser.cc $(OSDTRACE_SRC)/*.h $(OUTPUT)/osdtrace.skel.h | $(OUTPUT) $(LIBBPF_OBJ)
+	$(CXX) -g $(INCLUDES) -c -o $@ $<
 
 # Generate osdtrace
 #osdtrace: $(OSDTRACE_SRC)/osdtrace.cc $(OSDTRACE_SRC)/*.h $(OUTPUT)/osdtrace.skel.h $(LIBBPF_OBJ) | $(OUTPUT)
 #	$(CXX)  -g -O2 -D__TARGET_ARCH_$(ARCH) $(INCLUDES) $(CLANG_BPF_SYS_INCLUDES) -o $@ $< $(LIBBPF_OBJ) -lelf -ldw -lz
 
-osdtrace: $(OSDTRACE_OFILES) $(OUTPUT)/osdtrace.skel.h $(LIBBPF_OBJ) | $(OUTPUT)
-	$(CXX)  -g -O2 -o $@ $< $(LIBBPF_OBJ) -lelf -ldw -lz
+osdtrace: $(OUTPUT)/osdtrace.o $(OUTPUT)/dwarf_parser.o $(OUTPUT)/osdtrace.skel.h $(LIBBPF_OBJ) | $(OUTPUT)
+	$(CXX)  -g -O2 -D__TARGET_ARCH_$(ARCH) $(INCLUDES) $(CLANG_BPF_SYS_INCLUDES) -o $@ $(OSDTRACE_OBJS) $(LIBBPF_OBJ) -lelf -ldw -lz
 
 
 

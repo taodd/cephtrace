@@ -656,12 +656,14 @@ Dwfl* DwarfParser::create_dwfl (int fd, const char *fname)
   return dwfl;
 }
 
-int DwarfParser::handle_module (Dwfl_Module *dwflmod, void **userdata,
+static int handle_module(Dwfl_Module *dwflmod, void **userdata,
 	                        const char *name, Dwarf_Addr base,
 	                        void *arg)
 {
-    assert(dwflmod != NULL);
-    cur_mod = dwflmod;
+    DwarfParser *dp = (DwarfParser*)arg;
+    assert(dwflmod != NULL && dp != NULL);
+
+    dp->cur_mod = dwflmod;
     Dwarf_Addr modbias;
     Dwarf *dwarf = dwfl_module_getdwarf(dwflmod, &modbias);
 
@@ -671,7 +673,7 @@ int DwarfParser::handle_module (Dwfl_Module *dwflmod, void **userdata,
     }
 
     int start_time = clock();
-    traverse_module(dwflmod, dwarf, true);
+    dp->traverse_module(dwflmod, dwarf, true);
     int end_process_types_time = clock();
 
     Dwarf_Off offset = 0;
@@ -681,15 +683,15 @@ int DwarfParser::handle_module (Dwfl_Module *dwflmod, void **userdata,
 
     while (dwarf_nextcu(dwarf, offset, &next_offset, &header_size, nullptr, nullptr, nullptr) == 0) {
         if (dwarf_offdie(dwarf, offset + header_size, &cu_die) != nullptr) {
-	    cfi_debug = dwfl_module_dwarf_cfi (dwflmod, &cfi_debug_bias);
-	    cfi_eh = dwfl_module_eh_cfi (dwflmod, &cfi_eh_bias);
-	    assert (cfi_debug == NULL || cfi_debug_bias == 0);
+	    dp->cfi_debug = dwfl_module_dwarf_cfi (dwflmod, &dp->cfi_debug_bias);
+	    dp->cfi_eh = dwfl_module_eh_cfi (dwflmod, &dp->cfi_eh_bias);
+	    assert (dp->cfi_debug == NULL || dp->cfi_debug_bias == 0);
 
 	    std::string cu_name = dwarf_diename (&cu_die) ?: "<unknown>";
-            if (filter_cu(cu_name)) {
+            if (dp->filter_cu(cu_name)) {
 		std::cout << "cu name " << cu_name << std::endl;
-	        cur_cu = &cu_die;
-                dwarf_getfuncs(&cu_die, (int (*)(Dwarf_Die*, void *))handle_function, this, 0);
+	        dp->cur_cu = &cu_die;
+                dwarf_getfuncs(&cu_die, (int (*)(Dwarf_Die*, void *))handle_function, dp, 0);
 	    }
         }
         offset = next_offset;
@@ -703,8 +705,7 @@ int DwarfParser::handle_module (Dwfl_Module *dwflmod, void **userdata,
 
 int DwarfParser::parse()
 {
-    bool seen = false; 
-    dwfl_getmodules(dwfl, handle_module, &seen, 0);
+    dwfl_getmodules(dwfl, handle_module, this, 0);
     return 0;
 }
 
@@ -741,14 +742,13 @@ DwarfParser::DwarfParser( std::string path,
     cfi_debug(NULL),
     cfi_eh(NULL),
     probes(ps),
-    probe_units(pus);
+    probe_units(pus)
 {
     const char *fname = path.c_str();
     int fd = open(fname, O_RDONLY);
     if (fd == -1)
     {
 	printf("cannot open input file '%s'", fname);
-	return 0;
     }
     
     dwfl = create_dwfl (fd, fname);

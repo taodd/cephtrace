@@ -6,10 +6,16 @@
 #include <dwarf.h>
 #include <elf.h>
 
+class DwarfParser;
+static int handle_function(Dwarf_Die*,void*);
+static int handle_module (Dwfl_Module*, void **, const char*, Dwarf_Addr,void*);
 
 class DwarfParser {
 
 private:
+    friend int handle_module (Dwfl_Module*, void **, const char*, Dwarf_Addr,void*);
+    friend int handle_function(Dwarf_Die*,void*);
+
     typedef std::unordered_map<std::string, Dwarf_Die> cu_type_cache_t;
     typedef std::unordered_map<void*, cu_type_cache_t> mod_cu_type_cache_t;
 
@@ -63,7 +69,5 @@ public:
 
 };
 
-static int handle_function(Dwarf_Die*,void*);
-static int handle_module (Dwfl_Module*, void **, const char*, Dwarf_Addr,void*);
 
 #endif
