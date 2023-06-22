@@ -28,7 +28,7 @@ extern "C" {
 
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
-
+using namespace std;
 
 typedef std::map<std::string, int> func_id_t;
 
@@ -340,15 +340,15 @@ int parse_args(int argc, char **argv)
 		} else if(0 == strcmp(optarg, "max")) {
 		    mode = MODE_MAX;
 		} else {
-		    printf("Unknown mode\n");
+		    clog << "Unknown mode" << endl;
 		    return -1;
 		}
                 break;
 	    case '?':
-		printf("Unknown option: %c \n ", optopt);
+		clog << "Unknown option: " << optopt << endl;
 	        return -1;
 	    case ':':
-		printf("Missing arg for %c \n", optopt);
+		clog << "Missing arg for " << optopt << endl;
 	        return -1;
         }
     }
@@ -366,7 +366,11 @@ void fill_map_hprobes(DwarfParser &dwarfparser, struct bpf_map *hprobes)
 	{
 	   struct VarField_Kernel vfk;
 	   vfk.varloc = vf.varloc;
-	   printf("fill_map_hprobes: function %s var location : register %d, offset %d, stack %d\n", funcname.c_str(), vfk.varloc.reg, vfk.varloc.offset, vfk.varloc.stack);
+	   clog << "fill_map_hprobes: "
+	        << "function " << funcname
+		<< " var location : register " << vfk.varloc.reg 
+		<< " offset " << vfk.varloc.offset 
+	        << " stack " << vfk.varloc.stack << endl;	
 	   vfk.size = vf.fields.size();
 	   for (int i = 0; i < vfk.size; ++i) {
 	       vfk.fields[i] = vf.fields[i];
@@ -388,7 +392,7 @@ int main(int argc, char **argv)
         int ret=0;
 	struct ring_buffer *rb;
 
-	DEBUG("Start to parse ceph dwarf info\n");
+	clog << "Start to parse ceph dwarf info" << endl;
 
 	std::string path = "/home/taodd/Git/ceph/build/bin/ceph-osd";
 	DwarfParser dwarfparser(path, osd_probes, probe_units);
@@ -400,12 +404,12 @@ int main(int argc, char **argv)
 	libbpf_set_print(libbpf_print_fn);
 
 	/* Load and verify BPF application */
-	DEBUG("Start to load uprobe\n");
+	clog << "Start to load uprobe" << endl;
 
 	skel = osdtrace_bpf__open_and_load();
 	if (!skel) {
-		fprintf(stderr, "Failed to open and load BPF skeleton\n");
-		return 1;
+	    cerr << "Failed to open and load BPF skeleton" << endl;
+	    return 1;
 	}
 
 	//map_fd = bpf_object__find_map_fd_by_name(skel->obj, "hprobes");
@@ -413,7 +417,7 @@ int main(int argc, char **argv)
 	fill_map_hprobes(dwarfparser, skel->maps.hprobes);
 
 	/* Attach tracepoint handler */
-	DEBUG("BPF prog loaded\n");
+	clog << "BPF prog loaded" << endl;
 
         size_t enqueue_op_addr = dwarfparser.func2pc["OSD::enqueue_op"];	
 	struct bpf_link *ulink = bpf_program__attach_uprobe(skel->progs.uprobe_enqueue_op,
@@ -424,11 +428,11 @@ int main(int argc, char **argv)
 							    path.c_str(),
 							    enqueue_op_addr);
 	if (!ulink) {
-		DEBUG("Failed to attach uprobe to uprobe_dequeue_op\n");
+		cerr << "Failed to attach uprobe to uprobe_dequeue_op" << endl;
 		return -errno;
 	}
 	
-	DEBUG("uprobe_enqueue_op attached\n");	
+	clog << "uprobe_enqueue_op attached" << endl;	
 
 	__u64 dequeue_op_addr = dwarfparser.func2pc["OSD::dequeue_op"];
 	ulink = bpf_program__attach_uprobe(skel->progs.uprobe_dequeue_op,
@@ -438,10 +442,10 @@ int main(int argc, char **argv)
 							    path.c_str(),
 							    dequeue_op_addr);
 	
-	DEBUG("uprobe_dequeue_op attached\n");	
+	clog << "uprobe_dequeue_op attached" << endl;	
 
 	if (!ulink) {
-		DEBUG("Failed to attach uprobe to uprobe_dequeue_op\n");
+		cerr << "Failed to attach uprobe to uprobe_dequeue_op" << endl;
 		return -errno;
 	}
 
@@ -452,10 +456,10 @@ int main(int argc, char **argv)
 							    path.c_str(),
 							    execute_ctx_addr);
 	
-	DEBUG("uprobe_execute_ctx attached\n");	
+	clog << "uprobe_execute_ctx attached" << endl;	
 
 	if (!ulink) {
-		DEBUG("Failed to attach uprobe to uprobe_execute_ctx\n");
+		cerr << "Failed to attach uprobe to uprobe_execute_ctx" << endl;
 		return -errno;
 	}
 	
@@ -467,10 +471,10 @@ int main(int argc, char **argv)
 							    submit_transaction_addr);
 	
 	if (!ulink) {
-		DEBUG("Failed to attach uprobe to uprobe_submit_transaction\n");
+		cerr << "Failed to attach uprobe to uprobe_submit_transaction" << endl;
 		return -errno;
 	}
-	DEBUG("uprobe_submit_transaction attached\n");	
+	clog << "uprobe_submit_transaction attached" << endl;	
 	
 	__u64 log_op_stats_addr = dwarfparser.func2pc["PrimaryLogPG::log_op_stats"];
 	ulink = bpf_program__attach_uprobe(skel->progs.uprobe_log_op_stats,
@@ -480,11 +484,11 @@ int main(int argc, char **argv)
 							    log_op_stats_addr);
 	
 	if (!ulink) {
-		DEBUG("Failed to attach uprobe to log_op_stats\n");
+		cerr << "Failed to attach uprobe to log_op_stats" << endl;
 		return -errno;
 	}
 
-	DEBUG("uprobe_log_op_stats attached\n");	
+	clog << "uprobe_log_op_stats attached" << endl;	
 
 
 	__u64 do_write_addr = dwarfparser.func2pc["BlueStore::_do_write"];
@@ -495,10 +499,10 @@ int main(int argc, char **argv)
 							    do_write_addr);
 	
 	if (!ulink) {
-		DEBUG("Failed to attach uprobe to do_write_addr\n");
+		cerr << "Failed to attach uprobe to do_write_addr" << endl;
 		return -errno;
 	}
-	DEBUG("uprobe_do_write attached\n");	
+	clog << "uprobe_do_write attached" << endl;	
 
 	__u64 wctx_finish_addr = dwarfparser.func2pc["BlueStore::_wctx_finish"];
 	ulink = bpf_program__attach_uprobe(skel->progs.uprobe_wctx_finish,
@@ -508,10 +512,10 @@ int main(int argc, char **argv)
 							    wctx_finish_addr);
 	
 	if (!ulink) {
-		DEBUG("Failed to attach uprobe to wctx_finish_addr\n");
+		cerr << "Failed to attach uprobe to wctx_finish_addr" << endl;
 		return -errno;
 	}
-	DEBUG("uprobe_wctx_finish attached\n");	
+	clog << "uprobe_wctx_finish attached" << endl;	
 
 	__u64 txc_state_proc_addr = dwarfparser.func2pc["BlueStore::_txc_state_proc"];
 	ulink = bpf_program__attach_uprobe(skel->progs.uprobe_txc_state_proc,
@@ -521,7 +525,7 @@ int main(int argc, char **argv)
 							    txc_state_proc_addr);
 	
 	if (!ulink) {
-		DEBUG("Failed to attach uprobe to txc_state_proc_addr\n");
+		cerr << "Failed to attach uprobe to txc_state_proc_addr" << endl;
 		return -errno;
 	}
 	DEBUG("uprobe_txc_state_proc attached\n");	
@@ -534,21 +538,21 @@ int main(int argc, char **argv)
 							    txc_apply_kv_addr);
 	
 	if (!ulink) {
-		DEBUG("Failed to attach uprobe to txc_apply_kv\n");
+		cerr << "Failed to attach uprobe to txc_apply_kv" << endl;
 		return -errno;
 	}
-	DEBUG("uprobe_txc_apply_kv attached\n");	
+	clog << "uprobe_txc_apply_kv attached" << endl;	
 
 	bootstamp = get_bootstamp();
-	DEBUG("New a ring buffer\n");
+	clog << "New a ring buffer" << endl;
 	
 	rb = ring_buffer__new(bpf_map__fd(skel->maps.rb), handle_event, NULL, NULL);
 	if(!rb) {
-		printf("failed to setup ring_buffer\n");
+		cerr << "failed to setup ring_buffer" << endl;
 		goto cleanup;
 	}
 
-	DEBUG("Started to poll from ring buffer\n");
+	clog << "Started to poll from ring buffer" << endl;
 
 	clock_gettime(CLOCK_BOOTTIME, &lasttime);
 	memset(op_stat, 0, MAX_OSD * sizeof(op_stat[0]));
@@ -565,10 +569,10 @@ int main(int argc, char **argv)
 	/* Let libbpf perform auto-attach for uprobe_sub/uretprobe_sub
 	 * NOTICE: we provide path and symbol info in SEC for BPF programs
 	 */
-	DEBUG("Unexpected line hit\n");
+	clog << "Unexpected line hit" << endl;
         sleep(600);
 cleanup:
-	printf("Clean up the eBPF program\n");
+	clog << "Clean up the eBPF program" << endl;
 	ring_buffer__free(rb);
 	osdtrace_bpf__destroy(skel);
 	return -errno;

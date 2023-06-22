@@ -24,6 +24,8 @@ extern "C" {
 #include "bpf_osd_types.h"
 #include "dwarf_parser.h"
 
+using namespace std;
+
 bool DwarfParser::die_has_loclist(Dwarf_Die *begin_die)
 {
   Dwarf_Die die;
@@ -91,7 +93,7 @@ Dwarf_Die * DwarfParser::resolve_typedecl(Dwarf_Die *type)
     if(!name)
 	return NULL;
 
-    std::string type_name = cache_type_prefix(type) + std::string(name);
+    string type_name = cache_type_prefix(type) + string(name);
   
     for (auto i = global_type_cache.begin(); i != global_type_cache.end(); ++i)
     {
@@ -159,7 +161,7 @@ int DwarfParser::iterate_types_in_cu(Dwarf_Die *cu_die)
 	      if (!name || dwarf_hasattr(&die, DW_AT_declaration)
 		      /*TODO || has_only_decl_members(die)*/)
 		  continue;
-	      std::string type_name = cache_type_prefix(&die) + std::string(name);
+	      string type_name = cache_type_prefix(&die) + string(name);
 	      if (v.find(type_name) == v.end())
 		      v[type_name] = die;
 
@@ -219,7 +221,7 @@ void DwarfParser::traverse_module(
      }
 }
 
-Dwarf_Die DwarfParser::find_param(Dwarf_Die *func, std::string symbol)
+Dwarf_Die DwarfParser::find_param(Dwarf_Die *func, string symbol)
 {
     Dwarf_Die vardie;
 
@@ -238,7 +240,7 @@ Dwarf_Attribute * DwarfParser::find_func_frame_base(Dwarf_Die *func, Dwarf_Attri
     return fb_attr;
 }
 
-VarLocation DwarfParser::translate_param_location(Dwarf_Die *func, std::string symbol, Dwarf_Addr pc, Dwarf_Die &vardie)
+VarLocation DwarfParser::translate_param_location(Dwarf_Die *func, string symbol, Dwarf_Addr pc, Dwarf_Die &vardie)
 {
     vardie = find_param(func, symbol);
     Dwarf_Attribute fb_attr_mem;
@@ -252,7 +254,7 @@ VarLocation DwarfParser::translate_param_location(Dwarf_Die *func, std::string s
     size_t len;
     int r = dwarf_getlocation_addr(&loc_attr, pc, &expr, &len, 1);
     if(r != 1 || len <= 0) {
-	printf("Get var location expr failed for symbol %s\n", symbol.c_str());
+	cerr << "Get param location expr failed for symbol " << symbol << endl;
     }
 
     VarLocation varloc;
@@ -260,33 +262,12 @@ VarLocation DwarfParser::translate_param_location(Dwarf_Die *func, std::string s
     return varloc;
 }
 
-bool func_entrypc(Dwarf_Die *func, Dwarf_Addr *addr)
-{
-  assert (func);
-
-  *addr = 0;
-
-  if (dwarf_entrypc (func, addr) == 0 && *addr != 0)
-    return true;
-
-  Dwarf_Addr start = 0, end;
-  if (dwarf_ranges (func, 0, addr, &start, &end) >= 0)
-    {
-      if (*addr == 0)
-	*addr = start;
-
-      return *addr != 0;
-    }
-
-  return false;
-}
-
 Dwarf_Addr DwarfParser::find_prologue(Dwarf_Die *func)
 {
   Dwarf_Addr entrypc;
+  string funcname = dwarf_diename(func);
   if (func_entrypc (func, &entrypc) == false)
-    printf("error in func_entrypc: %s: %s",
-           dwarf_diename (func), dwarf_errmsg (-1));
+      cerr << "Error in func_entrypc " << funcname << endl;
 
   int dwbias = 0;
   entrypc += dwbias;
@@ -299,13 +280,13 @@ Dwarf_Addr DwarfParser::find_prologue(Dwarf_Die *func)
   Dwarf_Addr pc = 0;
   int bcnt = dwarf_entry_breakpoints (func, &bkpts);
   if (bcnt <= 0)
-    printf ("\t%s\n", dwarf_errmsg (-1));
+      cerr << "Couldn't found prologue for function " << funcname << endl;
   else
   {
       if(bcnt > 1) 
-	  printf("Found more than 1 prolgue\n");
+	  cout << "Found more than 1 prologue for function " << funcname << endl;
       pc = bkpts[0];
-      std::cout << "prologue is " << pc << std::endl;
+      cout << "prologue is " << pc << endl;
   }
   return pc;
 }
@@ -317,21 +298,21 @@ void DwarfParser::dwarf_die_type (Dwarf_Die *die, Dwarf_Die *typedie_mem)
     attr = dwarf_attr_integrate (die, DW_AT_type, &attr_mem);
     Dwarf_Die *tmpdie = dwarf_formref_die (attr, typedie_mem);
     if (tmpdie != NULL && dwarf_tag(tmpdie) == DW_TAG_unspecified_type) {
-	printf("detects unspecified type\n");
+	cout << "detects unspecified type" << endl;
     } else if(tmpdie == NULL) {
-	printf("no type dectected");
+	cerr << "no type dectected" << endl;
     }
 
 }
 
 void DwarfParser::find_class_member(Dwarf_Die *vardie, Dwarf_Die *typedie,
-		       std::string member, Dwarf_Attribute *attr)
+		                    string member, Dwarf_Attribute *attr)
 {
     //TODO deal with inheritance later
     Dwarf_Die die;
     int r = dwarf_child(typedie, &die);
     if (r != 0) {
-	printf("dwarf_child no children, unexpected exit");
+	cerr << "the class " << dwarf_diename(typedie) << " has no children, unexpected and exit" << endl;
 	return;
     }
     do {
@@ -363,8 +344,8 @@ void DwarfParser::find_class_member(Dwarf_Die *vardie, Dwarf_Die *typedie,
 void DwarfParser::translate_fields(Dwarf_Die *vardie,
 	              Dwarf_Die *typedie,
 		      Dwarf_Addr pc,
-		      std::vector<std::string> fields,
-		      std::vector<Field> &res)
+		      vector<string> fields,
+		      vector<Field> &res)
 {
     int i = 1;
     for (auto x : res) {
@@ -392,7 +373,7 @@ void DwarfParser::translate_fields(Dwarf_Die *vardie,
           /* A pointer with no type is a void* -- can't dereference it. */
           if (!dwarf_hasattr_integrate (typedie, DW_AT_type))
 	  {
-	      printf("invalid access pointer %s", fields[i].c_str());
+	      clog << "invalid access pointer " << fields[i] << endl;
 	      return;
 	  }
 	  res[i].pointer = true;
@@ -409,7 +390,7 @@ void DwarfParser::translate_fields(Dwarf_Die *vardie,
           {
               Dwarf_Die *tmpdie = resolve_typedecl(typedie);
               if (tmpdie == NULL) {
-	         printf("couldn't resolve type at %s", fields[i].c_str());
+	         clog << "couldn't resolve type at " << fields[i] << endl;
 		 return;
 	      }
                
@@ -420,7 +401,7 @@ void DwarfParser::translate_fields(Dwarf_Die *vardie,
 	  Dwarf_Op *expr;
 	  size_t len;
 	  if (dwarf_getlocation_addr(&attr, pc, &expr, &len, 1) != 1) {
-	      printf("failed to get location of attr for %s", fields[i].c_str());
+	      clog << "failed to get location of attr for " << fields[i] << endl;
 	      return;
 	  }
 	  VarLocation varloc;
@@ -433,30 +414,30 @@ void DwarfParser::translate_fields(Dwarf_Die *vardie,
 	break;
         case DW_TAG_enumeration_type:
         case DW_TAG_base_type:
-	  printf("invalid access enum or base type %s", fields[i].c_str());
+	  clog << "invalid access enum or base type " << fields[i] << endl;
 	  break;
 	default:
-	  printf("unexpected type %s", fields[i].c_str());
+	  clog << "unexpected type " << fields[i] << endl;
 	  break;
 	}
     }
 }
 
-bool DwarfParser::filter_func(std::string funcname)
+bool DwarfParser::filter_func(string funcname)
 {
     for(auto x : probes) {
-	std::size_t found = x.first.find_last_of(":");
-	std::string name = x.first.substr(found+1);
+	size_t found = x.first.find_last_of(":");
+	string name = x.first.substr(found+1);
 	if(funcname == name) 
 	    return true;
     }
     return false;
 }
 
-bool DwarfParser::filter_cu(std::string unitname)
+bool DwarfParser::filter_cu(string unitname)
 {
-    std::size_t found = unitname.find_last_of("/");
-    std::string name = unitname.substr(found+1);
+    size_t found = unitname.find_last_of("/");
+    string name = unitname.substr(found+1);
     
     for(auto x : probe_units) {
 	if(x == name) 
@@ -482,29 +463,29 @@ static int handle_function(Dwarf_Die *die, void *data)
     Dwarf_Die *scopes;
     int nscopes = dwarf_getscopes_die(&func_spec, &scopes);
     
-    std::string fullname = funcname;
+    string fullname = funcname;
     if (nscopes > 1)
     {
        fullname = "::" + fullname;
        fullname = dwarf_diename(&scopes[1]) + fullname;
     }
 
-    //printf("function fullname is %s\n", fullname.c_str());
+    //debug: printf("function fullname is %s\n", fullname.c_str());
     if(dp->probes.find(fullname) == dp->probes.end()) {
 	return 0;
     }
     //TODO need to check if the class name matches
     Dwarf_Addr pc = dp->find_prologue(die);
     dp->func2pc[fullname] =  pc;
-    std::vector<VarField> &vf = dp->func2vf[fullname];
+    vector<VarField> &vf = dp->func2vf[fullname];
     auto arr = dp->probes[fullname];
     vf.resize(arr.size());
     
     for (int i = 0; i < (int)arr.size(); ++i) {
-	std::string varname = arr[i][0];
+	string varname = arr[i][0];
 	Dwarf_Die vardie, typedie;
 	VarLocation varloc = dp->translate_param_location(die, varname, pc, vardie);
-	//printf("var location : register %d, offset %d, stack %d\n", varloc.reg, varloc.offset, varloc.stack);
+	//debug: printf("var location : register %d, offset %d, stack %d\n", varloc.reg, varloc.offset, varloc.stack);
 	vf[i].varloc = varloc;
 
 	// translate fileds
@@ -558,7 +539,7 @@ void DwarfParser::translate_expr(Dwarf_Attribute *fb_attr, Dwarf_Op *expr, Dwarf
         case DW_OP_stack_value:
         case DW_OP_form_tls_address:
         /* No arguments. */
-          printf ("atom %d ", atom);
+          clog << "atom " << atom << endl;
           break;
 
 	case DW_OP_bregx:
@@ -577,7 +558,7 @@ void DwarfParser::translate_expr(Dwarf_Attribute *fb_attr, Dwarf_Op *expr, Dwarf
 	     size_t fb_exprlen;
 	     int res = dwarf_getlocation_addr(fb_attr, pc, &fb_expr, &fb_exprlen, 1);
 	     if (res != 1) {
-	         printf("translate_expr get fb_expr failed\n");
+	         cerr << "translate_expr get fb_expr failed" << endl;
 	     }
 	   
 	     translate_expr(fb_attr, fb_expr, pc, varloc);
@@ -596,7 +577,7 @@ void DwarfParser::translate_expr(Dwarf_Attribute *fb_attr, Dwarf_Op *expr, Dwarf
 	         if(dwarf_cfi_addrframe(cfi_debug, pc, &frame) == 0) {
 	              dwarf_frame_cfa(frame, &cfa_ops, &cfa_nops);
 	         } else {
-	              printf("dwarf_frame_cfa add debug frame failed\n");
+	              cerr << "dwarf_frame_cfa add debug frame failed" << endl;
 	         }
              }
 
@@ -604,7 +585,7 @@ void DwarfParser::translate_expr(Dwarf_Attribute *fb_attr, Dwarf_Op *expr, Dwarf
 	         if(dwarf_cfi_addrframe(cfi_eh, pc, &frame) == 0) {
 	              dwarf_frame_cfa(frame, &cfa_ops, &cfa_nops);
 	         } else {
-	              printf("dwarf_frame_cfa add eh frame failed\n");
+	              cerr << "dwarf_frame_cfa add eh frame failed" << endl;
 	         }
              }
 
@@ -629,7 +610,7 @@ Dwfl* DwarfParser::create_dwfl (int fd, const char *fname)
   int dwfl_fd = dup (fd);
   Dwfl *dwfl = NULL;
   if (dwfl_fd < 0) {
-      printf("create_dwfl dup failed\n");
+      cerr << "create_dwfl dup failed" << endl;
       return 0; 
   }
 
@@ -646,7 +627,7 @@ Dwfl* DwarfParser::create_dwfl (int fd, const char *fname)
 
   if (dwfl_report_offline (dwfl, fname, fname, dwfl_fd) == NULL)
     {
-	printf("dwfl_report_offline open dwfl failed");
+	cerr << "dwfl_report_offline open dwfl failed" << endl;
         close (dwfl_fd);		
         dwfl = NULL;
     }
@@ -668,7 +649,7 @@ static int handle_module(Dwfl_Module *dwflmod, void **userdata,
     Dwarf *dwarf = dwfl_module_getdwarf(dwflmod, &modbias);
 
     if (!dwarf) {
-        printf("handle_module dwarf get error");
+        cerr << "handle_module dwarf get error" << endl;
         return EXIT_FAILURE;
     }
 
@@ -687,9 +668,9 @@ static int handle_module(Dwfl_Module *dwflmod, void **userdata,
 	    dp->cfi_eh = dwfl_module_eh_cfi (dwflmod, &dp->cfi_eh_bias);
 	    assert (dp->cfi_debug == NULL || dp->cfi_debug_bias == 0);
 
-	    std::string cu_name = dwarf_diename (&cu_die) ?: "<unknown>";
+	    string cu_name = dwarf_diename (&cu_die) ?: "<unknown>";
             if (dp->filter_cu(cu_name)) {
-		std::cout << "cu name " << cu_name << std::endl;
+		cout << "cu name " << cu_name << endl;
 	        dp->cur_cu = &cu_die;
                 dwarf_getfuncs(&cu_die, (int (*)(Dwarf_Die*, void *))handle_function, dp, 0);
 	    }
@@ -698,8 +679,8 @@ static int handle_module(Dwfl_Module *dwflmod, void **userdata,
     }
     int end_process_funcs_time = clock();
 
-    std::cout<<"process types take " << (end_process_types_time-start_time)/double(CLOCKS_PER_SEC)*1000 << std::endl; 
-    std::cout<<"process functions take " << (end_process_funcs_time - start_time)/double(CLOCKS_PER_SEC)*1000 << std::endl; 
+    clog <<"process types take " << (end_process_types_time-start_time)/double(CLOCKS_PER_SEC)*1000 << endl; 
+    clog <<"process functions take " << (end_process_funcs_time - start_time)/double(CLOCKS_PER_SEC)*1000 << endl; 
     return 0;
 }
 
@@ -734,9 +715,9 @@ void DwarfParser::print_die(Dwarf_Die *die) {
     }*/
 }
 
-DwarfParser::DwarfParser( std::string path,
+DwarfParser::DwarfParser( string path,
 	                  probes_t ps,
-			  std::vector<std::string> pus) :
+			  vector<string> pus) :
     cur_mod(NULL),
     cur_cu(NULL),
     cfi_debug(NULL),
@@ -748,7 +729,7 @@ DwarfParser::DwarfParser( std::string path,
     int fd = open(fname, O_RDONLY);
     if (fd == -1)
     {
-	printf("cannot open input file '%s'", fname);
+	cerr << "cannot open input file " << fname;
     }
     
     dwfl = create_dwfl (fd, fname);
