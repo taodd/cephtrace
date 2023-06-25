@@ -2,9 +2,9 @@
 #define BPF_OSD_TYPES_H
 
 struct op_k {
-  __u32 pid; //process id
-  __u64 owner; //client id
-  __u64 tid;   //request id from the client
+  __u32 pid;    // process id
+  __u64 owner;  // client id
+  __u64 tid;    // request id from the client
 };
 
 struct op_v {
@@ -31,36 +31,39 @@ struct op_v {
 };
 
 typedef struct VarLocation {
-    int reg;
-    int offset;
-    bool stack;
+  int reg;
+  int offset;
+  bool stack;
 #ifndef BPF_KERNEL_SPACE
-    VarLocation() { reg=0; offset=0; stack=false; }
+  VarLocation() {
+    reg = 0;
+    offset = 0;
+    stack = false;
+  }
 #endif
 } VarLocation;
 
-
 struct Field {
-    int offset;
-    bool pointer;
+  int offset;
+  bool pointer;
 };
 
 #ifdef BPF_KERNEL_SPACE
 struct VarField {
-    VarLocation varloc;
-    struct Field fields[8];
-    int size;
+  VarLocation varloc;
+  struct Field fields[8];
+  int size;
 };
 #else
 struct VarField {
-    VarLocation varloc;
-    std::vector<Field> fields;
+  VarLocation varloc;
+  std::vector<Field> fields;
 };
 
 struct VarField_Kernel {
-    VarLocation varloc;
-    struct Field fields[8];
-    int size;
+  VarLocation varloc;
+  struct Field fields[8];
+  int size;
 };
 #endif
 
