@@ -1,10 +1,9 @@
-
 #define BPF_KERNEL_SPACE
 
-#include <bpf/bpf_helpers.h>
-#include <bpf/bpf_tracing.h>
 #include <linux/bpf.h>
 #include <linux/ptrace.h>
+#include <bpf/bpf_helpers.h>
+#include <bpf/bpf_tracing.h>
 #include <stdbool.h>
 #include <string.h>
 
