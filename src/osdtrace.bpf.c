@@ -8,7 +8,9 @@
 #include <string.h>
 
 #include "bpf_osd_types.h"
-// Reminding myself that swtich case might cause issues
+// Reminding:  Use "swtich" statement in the bpf program might cause issues
+
+// TODO: performance improvement: We can avoid fetching the common sturct multiple times for different var
 
 char LICENSE[] SEC("license") = "Dual BSD/GPL";
 

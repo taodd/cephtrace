@@ -163,7 +163,6 @@ int osd_pid_to_id(__u32 pid) {
     id = pname[41] - '0';
   }
   close(fd);
-  // DEBUG("pid %d, osd_id %d\n", pid, id);
   return id;
 }
 
