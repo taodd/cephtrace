@@ -1,6 +1,12 @@
 #ifndef BPF_OSD_TYPES_H
 #define BPF_OSD_TYPES_H
 
+#define MSG_OSD_REPOP 112
+#define MSG_OSD_REPOPREPLY 113
+
+#define MSG_OSD_OP 42
+#define MSG_OSD_OPREPLY 43
+
 struct op_k {
   __u32 pid;    // process id
   __u64 owner;  // client id
@@ -11,6 +17,7 @@ struct op_v {
   __u32 pid;
   unsigned long long owner;
   unsigned long long tid;
+  __u16 op_type;
   unsigned long long recv_stamp;
   unsigned long long recv_complete_stamp;
   unsigned long long dispatch_stamp;
