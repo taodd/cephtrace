@@ -37,16 +37,31 @@ typedef std::map<std::string, int> func_id_t;
 std::vector<std::string> probe_units = {
     "OSD.cc", "BlueStore.cc", "PrimaryLogPG.cc", "ReplicatedBackend.cc"};
 
-func_id_t func_id = {{"OSD::enqueue_op", 0},
-                     {"OSD::dequeue_op", 10},
-                     {"PrimaryLogPG::execute_ctx", 20},
-                     {"ReplicatedBackend::submit_transaction", 30},
-                     {"BlueStore::queue_transactions", 40},
-                     {"BlueStore::_do_write", 50},
-                     {"BlueStore::_wctx_finish", 60},
-                     {"BlueStore::_txc_state_proc", 70},
-                     {"BlueStore::_txc_apply_kv", 80},
-                     {"PrimaryLogPG::log_op_stats", 90}};
+func_id_t func_id = {
+    {"OSD::enqueue_op", 0},
+    {"OSD::dequeue_op", 10},
+    {"PrimaryLogPG::execute_ctx", 20},
+    {"ReplicatedBackend::submit_transaction", 30},
+    {"BlueStore::queue_transactions", 40},
+    {"BlueStore::_do_write", 50},
+    {"BlueStore::_wctx_finish", 60},
+    {"BlueStore::_txc_state_proc", 70},
+    {"BlueStore::_txc_apply_kv", 80},
+    {"PrimaryLogPG::log_op_stats", 90}
+};
+
+std::map<std::string, int> func_uprobeid = {
+    {"OSD::enqueue_op", 0},
+    {"OSD::dequeue_op", 1},
+    {"PrimaryLogPG::execute_ctx", 2},
+    {"ReplicatedBackend::submit_transaction", 3},
+    {"BlueStore::queue_transactions", 4},
+    {"BlueStore::_do_write", 5},
+    {"BlueStore::_wctx_finish", 6},
+    {"BlueStore::_txc_state_proc", 7},
+    {"BlueStore::_txc_apply_kv", 8},
+    {"PrimaryLogPG::log_op_stats", 9}
+};
 
 DwarfParser::probes_t osd_probes = {
 
@@ -385,6 +400,47 @@ void fill_map_hprobes(DwarfParser &dwarfparser, struct bpf_map *hprobes) {
   }
 }
 
+int attach_uprobe(struct osdtrace_bpf *skel,
+	           DwarfParser &dp,
+	           std::string path,
+		   std::string funcname) {
+  size_t func_addr = dp.func2pc[funcname];
+  int uid = func_uprobeid[funcname];
+  struct bpf_link *ulink = bpf_program__attach_uprobe(
+      *skel->skeleton->progs[uid].prog, 
+      false /* not uretprobe */,
+      -1,
+      path.c_str(), func_addr);
+  if (!ulink) {
+    cerr << "Failed to attach uprobe to " << funcname << endl;
+    return -errno;
+  }
+
+  clog << "uprobe " << funcname <<  " attached" << endl;
+  return 0;
+
+}
+
+int attach_retuprobe(struct osdtrace_bpf *skel,
+	           DwarfParser &dp,
+	           std::string path,
+		   std::string funcname) {
+  size_t func_addr = dp.func2pc[funcname];
+  int uid = func_uprobeid[funcname];
+  struct bpf_link *ulink = bpf_program__attach_uprobe(
+      *skel->skeleton->progs[uid].prog, 
+      true /* uretprobe */,
+      -1,
+      path.c_str(), func_addr);
+  if (!ulink) {
+    cerr << "Failed to attach uretprobe to " << funcname << endl;
+    return -errno;
+  }
+
+  clog << "uretprobe " << funcname <<  " attached" << endl;
+  return 0;
+}
+
 int main(int argc, char **argv) {
   if (parse_args(argc, argv) < 0) return 0;
 
@@ -417,23 +473,12 @@ int main(int argc, char **argv) {
 
   fill_map_hprobes(dwarfparser, skel->maps.hprobes);
 
-  /* Attach tracepoint handler */
   clog << "BPF prog loaded" << endl;
 
-  size_t enqueue_op_addr = dwarfparser.func2pc["OSD::enqueue_op"];
-  struct bpf_link *ulink = bpf_program__attach_uprobe(
-      skel->progs.uprobe_enqueue_op, false /* not uretprobe */,
-      // 176928 /* self pid */,
-      -1,
-      //"/usr/bin/ceph-osd",
-      path.c_str(), enqueue_op_addr);
-  if (!ulink) {
-    cerr << "Failed to attach uprobe to uprobe_dequeue_op" << endl;
-    return -errno;
-  }
+  //Start to load the probes
+  attach_uprobe(skel, dwarfparser, path, "OSD::enqueue_op");
 
-  clog << "uprobe_enqueue_op attached" << endl;
-
+  struct bpf_link *ulink = NULL;
   __u64 dequeue_op_addr = dwarfparser.func2pc["OSD::dequeue_op"];
   ulink = bpf_program__attach_uprobe(skel->progs.uprobe_dequeue_op, false, -1,
                                      // 176928,
