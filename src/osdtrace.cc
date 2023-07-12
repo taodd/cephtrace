@@ -478,92 +478,21 @@ int main(int argc, char **argv) {
   //Start to load the probes
   attach_uprobe(skel, dwarfparser, path, "OSD::enqueue_op");
 
-  struct bpf_link *ulink = NULL;
-  __u64 dequeue_op_addr = dwarfparser.func2pc["OSD::dequeue_op"];
-  ulink = bpf_program__attach_uprobe(skel->progs.uprobe_dequeue_op, false, -1,
-                                     // 176928,
-                                     path.c_str(), dequeue_op_addr);
+  attach_uprobe(skel, dwarfparser, path, "OSD::dequeue_op");
 
-  clog << "uprobe_dequeue_op attached" << endl;
+  attach_uprobe(skel, dwarfparser, path, "PrimaryLogPG::execute_ctx");
 
-  if (!ulink) {
-    cerr << "Failed to attach uprobe to uprobe_dequeue_op" << endl;
-    return -errno;
-  }
+  attach_uprobe(skel, dwarfparser, path, "ReplicatedBackend::submit_transaction");
 
-  __u64 execute_ctx_addr = dwarfparser.func2pc["PrimaryLogPG::execute_ctx"];
-  ulink = bpf_program__attach_uprobe(skel->progs.uprobe_execute_ctx, false, -1,
-                                     path.c_str(), execute_ctx_addr);
+  attach_uprobe(skel, dwarfparser, path, "PrimaryLogPG::log_op_stats");
 
-  clog << "uprobe_execute_ctx attached" << endl;
+  attach_uprobe(skel, dwarfparser, path, "BlueStore::_do_write");
 
-  if (!ulink) {
-    cerr << "Failed to attach uprobe to uprobe_execute_ctx" << endl;
-    return -errno;
-  }
+  attach_uprobe(skel, dwarfparser, path, "BlueStore::_wctx_finish");
 
-  __u64 submit_transaction_addr =
-      dwarfparser.func2pc["ReplicatedBackend::submit_transaction"];
-  ulink =
-      bpf_program__attach_uprobe(skel->progs.uprobe_submit_transaction, false,
-                                 -1, path.c_str(), submit_transaction_addr);
+  attach_uprobe(skel, dwarfparser, path, "BlueStore::_txc_state_proc");
 
-  if (!ulink) {
-    cerr << "Failed to attach uprobe to uprobe_submit_transaction" << endl;
-    return -errno;
-  }
-  clog << "uprobe_submit_transaction attached" << endl;
-
-  __u64 log_op_stats_addr = dwarfparser.func2pc["PrimaryLogPG::log_op_stats"];
-  ulink = bpf_program__attach_uprobe(skel->progs.uprobe_log_op_stats, false, -1,
-                                     path.c_str(), log_op_stats_addr);
-
-  if (!ulink) {
-    cerr << "Failed to attach uprobe to log_op_stats" << endl;
-    return -errno;
-  }
-
-  clog << "uprobe_log_op_stats attached" << endl;
-
-  __u64 do_write_addr = dwarfparser.func2pc["BlueStore::_do_write"];
-  ulink = bpf_program__attach_uprobe(skel->progs.uprobe_do_write, false, -1,
-                                     path.c_str(), do_write_addr);
-
-  if (!ulink) {
-    cerr << "Failed to attach uprobe to do_write_addr" << endl;
-    return -errno;
-  }
-  clog << "uprobe_do_write attached" << endl;
-
-  __u64 wctx_finish_addr = dwarfparser.func2pc["BlueStore::_wctx_finish"];
-  ulink = bpf_program__attach_uprobe(skel->progs.uprobe_wctx_finish, false, -1,
-                                     path.c_str(), wctx_finish_addr);
-
-  if (!ulink) {
-    cerr << "Failed to attach uprobe to wctx_finish_addr" << endl;
-    return -errno;
-  }
-  clog << "uprobe_wctx_finish attached" << endl;
-
-  __u64 txc_state_proc_addr = dwarfparser.func2pc["BlueStore::_txc_state_proc"];
-  ulink = bpf_program__attach_uprobe(skel->progs.uprobe_txc_state_proc, false,
-                                     -1, path.c_str(), txc_state_proc_addr);
-
-  if (!ulink) {
-    cerr << "Failed to attach uprobe to txc_state_proc_addr" << endl;
-    return -errno;
-  }
-  DEBUG("uprobe_txc_state_proc attached\n");
-
-  __u64 txc_apply_kv_addr = dwarfparser.func2pc["BlueStore::_txc_apply_kv"];
-  ulink = bpf_program__attach_uprobe(skel->progs.uprobe_txc_apply_kv, false, -1,
-                                     path.c_str(), txc_apply_kv_addr);
-
-  if (!ulink) {
-    cerr << "Failed to attach uprobe to txc_apply_kv" << endl;
-    return -errno;
-  }
-  clog << "uprobe_txc_apply_kv attached" << endl;
+  attach_uprobe(skel, dwarfparser, path, "BlueStore::_txc_apply_kv");
 
   bootstamp = get_bootstamp();
   clog << "New a ring buffer" << endl;
@@ -590,7 +519,6 @@ int main(int argc, char **argv) {
    * NOTICE: we provide path and symbol info in SEC for BPF programs
    */
   clog << "Unexpected line hit" << endl;
-  sleep(600);
 cleanup:
   clog << "Clean up the eBPF program" << endl;
   ring_buffer__free(rb);
