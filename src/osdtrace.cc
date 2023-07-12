@@ -50,7 +50,7 @@ func_id_t func_id = {
     {"PrimaryLogPG::log_op_stats", 90}
 };
 
-std::map<std::string, int> func_uprobeid = {
+std::map<std::string, int> func_progid = {
     {"OSD::enqueue_op", 0},
     {"OSD::dequeue_op", 1},
     {"PrimaryLogPG::execute_ctx", 2},
@@ -60,7 +60,8 @@ std::map<std::string, int> func_uprobeid = {
     {"BlueStore::_wctx_finish", 6},
     {"BlueStore::_txc_state_proc", 7},
     {"BlueStore::_txc_apply_kv", 8},
-    {"PrimaryLogPG::log_op_stats", 9}
+    {"PrimaryLogPG::log_op_stats", 9},
+    {"PrimaryLogPG::log_op_stats_v2", 10}
 };
 
 DwarfParser::probes_t osd_probes = {
@@ -106,7 +107,9 @@ DwarfParser::probes_t osd_probes = {
      {{"op", "reqid", "name", "_num"},
       {"op", "reqid", "tid"},
       {"inb"},
-      {"outb"}}}
+      {"outb"},
+      {"op", "request", "recv_stamp"},
+      {"op", "request", "header", "type"}}}
 
 };
 
@@ -115,6 +118,8 @@ enum mode_e { MODE_AVG = 1, MODE_MAX };
 enum mode_e mode = MODE_AVG;
 
 static __u64 bootstamp = 0;
+
+int threshold = 0;
 
 static __u64 cnt = 0;
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format,
@@ -367,6 +372,9 @@ int parse_args(int argc, char **argv) {
           return -1;
         }
         break;
+      case 't':
+        threshold = stoi(optarg);
+        break;	
       case '?':
         clog << "Unknown option: " << optopt << endl;
         return -1;
@@ -403,11 +411,14 @@ void fill_map_hprobes(DwarfParser &dwarfparser, struct bpf_map *hprobes) {
 int attach_uprobe(struct osdtrace_bpf *skel,
 	           DwarfParser &dp,
 	           std::string path,
-		   std::string funcname) {
+		   std::string funcname,
+		   int v = 0) {
   size_t func_addr = dp.func2pc[funcname];
-  int uid = func_uprobeid[funcname];
+  if (v > 0)
+      funcname = funcname + "_v" + std::to_string(v); 
+  int pid = func_progid[funcname];
   struct bpf_link *ulink = bpf_program__attach_uprobe(
-      *skel->skeleton->progs[uid].prog, 
+      *skel->skeleton->progs[pid].prog, 
       false /* not uretprobe */,
       -1,
       path.c_str(), func_addr);
@@ -424,11 +435,14 @@ int attach_uprobe(struct osdtrace_bpf *skel,
 int attach_retuprobe(struct osdtrace_bpf *skel,
 	           DwarfParser &dp,
 	           std::string path,
-		   std::string funcname) {
+		   std::string funcname,
+		   int v = 0) {
   size_t func_addr = dp.func2pc[funcname];
-  int uid = func_uprobeid[funcname];
+  if (v > 0)
+      funcname = funcname + "_v" + std::to_string(v); 
+  int pid = func_progid[funcname];
   struct bpf_link *ulink = bpf_program__attach_uprobe(
-      *skel->skeleton->progs[uid].prog, 
+      *skel->skeleton->progs[pid].prog, 
       true /* uretprobe */,
       -1,
       path.c_str(), func_addr);

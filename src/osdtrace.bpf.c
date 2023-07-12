@@ -132,7 +132,7 @@ __u64 fetch_var_member_addr(__u64 cur_addr, struct VarField *vf) {
   if (vf == NULL) return 0;
   //__u64 cur_addr = fetch_register(ctx, vf->varloc.reg);
   if (cur_addr == 0) return 0;
-  // special handle for the first member
+  // special handling for the first member
   __u64 tmpaddr;
   if (vf->varloc.stack) {
     cur_addr += vf->varloc.offset;
@@ -687,8 +687,6 @@ int uprobe_log_op_stats(struct pt_regs *ctx) {
       return 0;
     }
     *e = *vp;
-    bpf_printk("Output tid %lld, execute_ctx %lld \n", key.tid,
-               vp->execute_ctx_stamp);
     bpf_ringbuf_submit(e, 0);
   } else {
     bpf_printk(
@@ -698,4 +696,72 @@ int uprobe_log_op_stats(struct pt_regs *ctx) {
 end:
   bpf_map_delete_elem(&ops, &key);
   return 0;
+}
+
+SEC("uprobe")
+int uprobe_log_op_stats_v2(struct pt_regs *ctx) {
+  bpf_printk("Entered into uprobe_log_op_stats v2\n");
+  int varid = 90;
+  struct op_v op;
+  memset(&op, 0, sizeof(op));
+  // read num
+  struct VarField *vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL != vf) {
+    __u64 v = 0;
+    v = fetch_register(ctx, vf->varloc.reg);
+    __u64 num_addr = fetch_var_member_addr(v, vf);
+    bpf_probe_read_user(&op.owner, sizeof(op.owner), (void *)num_addr);
+  } else {
+    bpf_printk("uprobe_log_op_stats_v2 got NULL vf at varid %d\n", varid);
+  }
+  // read tid
+  ++varid;
+  vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL != vf) {
+    __u64 v = 0;
+    v = fetch_register(ctx, vf->varloc.reg);
+    __u64 tid_addr = fetch_var_member_addr(v, vf);
+    bpf_probe_read_user(&op.tid, sizeof(op.tid), (void *)tid_addr);
+  } else {
+    bpf_printk("uprobe_log_op_stats_v2 got NULL vf at varid %d\n", varid);
+    return 0;
+  }
+  op.pid = get_pid();
+  op.reply_stamp = bpf_ktime_get_boot_ns();
+  ++varid;
+  op.wb = PT_REGS_PARM3(ctx);
+  ++varid;
+  op.rb = PT_REGS_PARM4(ctx);
+  //read recv_stamp
+  ++varid;
+  vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL != vf) {
+    __u64 v = 0;
+    v = fetch_register(ctx, vf->varloc.reg);
+    __u64 recv_stamp_addr = fetch_var_member_addr(v, vf);
+    bpf_probe_read_user(&op.recv_stamp, sizeof(op.recv_stamp), (void *)recv_stamp_addr);
+  } else {
+    bpf_printk("uprobe_log_op_stats_v2 got NULL vf at varid %d\n", varid);
+    return 0;
+  }
+  //read op type 
+  ++varid;
+  vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL != vf) {
+    __u64 v = 0;
+    v = fetch_register(ctx, vf->varloc.reg);
+    __u64 op_type_addr = fetch_var_member_addr(v, vf);
+    bpf_probe_read_user(&op.op_type, sizeof(op.op_type), (void *)op_type_addr);
+  } else {
+    bpf_printk("uprobe_log_op_stats_v2 got NULL vf at varid %d\n", varid);
+    return 0;
+  }
+  //submit the op
+  struct op_v *e = bpf_ringbuf_reserve(&rb, sizeof(struct op_v), 0);
+  if (NULL == e) {
+    return 0;
+  }
+  *e = op;
+  bpf_ringbuf_submit(e, 0);
+
 }
