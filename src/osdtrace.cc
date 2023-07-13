@@ -117,9 +117,18 @@ enum mode_e { MODE_AVG = 1, MODE_MAX };
 
 enum mode_e mode = MODE_AVG;
 
+enum probe_mode_e {
+    SINGLE_PROBE = 1,
+    FULL_PROBE
+};
+
+enum probe_mode_e probe_mode = SINGLE_PROBE;
+
 static __u64 bootstamp = 0;
 
 int threshold = 0;
+
+
 
 static __u64 cnt = 0;
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format,
@@ -374,7 +383,10 @@ int parse_args(int argc, char **argv) {
         break;
       case 't':
         threshold = stoi(optarg);
-        break;	
+        break;
+      case 'x':
+        probe_mode = FULL_PROBE;
+	break;
       case '?':
         clog << "Unknown option: " << optopt << endl;
         return -1;
@@ -490,23 +502,27 @@ int main(int argc, char **argv) {
   clog << "BPF prog loaded" << endl;
 
   //Start to load the probes
-  attach_uprobe(skel, dwarfparser, path, "OSD::enqueue_op");
+  if (probe_mode == SINGLE_PROBE) {
+    attach_uprobe(skel, dwarfparser, path, "PrimaryLogPG::log_op_stats", 2);
+  } else if (probe_mode == FULL_PROBE) {
+    attach_uprobe(skel, dwarfparser, path, "OSD::enqueue_op");
 
-  attach_uprobe(skel, dwarfparser, path, "OSD::dequeue_op");
+    attach_uprobe(skel, dwarfparser, path, "OSD::dequeue_op");
 
-  attach_uprobe(skel, dwarfparser, path, "PrimaryLogPG::execute_ctx");
+    attach_uprobe(skel, dwarfparser, path, "PrimaryLogPG::execute_ctx");
 
-  attach_uprobe(skel, dwarfparser, path, "ReplicatedBackend::submit_transaction");
+    attach_uprobe(skel, dwarfparser, path, "ReplicatedBackend::submit_transaction");
 
-  attach_uprobe(skel, dwarfparser, path, "PrimaryLogPG::log_op_stats");
+    attach_uprobe(skel, dwarfparser, path, "BlueStore::_do_write");
 
-  attach_uprobe(skel, dwarfparser, path, "BlueStore::_do_write");
+    attach_uprobe(skel, dwarfparser, path, "BlueStore::_wctx_finish");
 
-  attach_uprobe(skel, dwarfparser, path, "BlueStore::_wctx_finish");
+    attach_uprobe(skel, dwarfparser, path, "BlueStore::_txc_state_proc");
 
-  attach_uprobe(skel, dwarfparser, path, "BlueStore::_txc_state_proc");
-
-  attach_uprobe(skel, dwarfparser, path, "BlueStore::_txc_apply_kv");
+    attach_uprobe(skel, dwarfparser, path, "BlueStore::_txc_apply_kv");
+    
+    attach_uprobe(skel, dwarfparser, path, "PrimaryLogPG::log_op_stats");
+  }
 
   bootstamp = get_bootstamp();
   clog << "New a ring buffer" << endl;
