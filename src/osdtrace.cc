@@ -505,8 +505,6 @@ int main(int argc, char **argv) {
   if (probe_mode == SINGLE_PROBE) {
     attach_uprobe(skel, dwarfparser, path, "PrimaryLogPG::log_op_stats", 2);
   } else if (probe_mode == FULL_PROBE) {
-    attach_uprobe(skel, dwarfparser, path, "OSD::enqueue_op");
-
     attach_uprobe(skel, dwarfparser, path, "OSD::dequeue_op");
 
     attach_uprobe(skel, dwarfparser, path, "PrimaryLogPG::execute_ctx");
@@ -522,6 +520,8 @@ int main(int argc, char **argv) {
     attach_uprobe(skel, dwarfparser, path, "BlueStore::_txc_apply_kv");
     
     attach_uprobe(skel, dwarfparser, path, "PrimaryLogPG::log_op_stats");
+    
+    attach_uprobe(skel, dwarfparser, path, "OSD::enqueue_op");
   }
 
   bootstamp = get_bootstamp();
