@@ -235,18 +235,12 @@ __u64 get_bootstamp() {
   return (prevtime.tv_sec * 1000000000ull) + prevtime.tv_nsec;
 }
 
-static int handle_event(void *ctx, void *data, size_t size) {
-  struct op_v *val = (struct op_v *)data;
+void print_single(struct op_v *val, int osd_id) {
+  __u64 op_lat = (val->reply_stamp - (val->recv_stamp - bootstamp)); 
+  printf("osd %d op latency %lld", osd_id, op_lat);
+}
 
-  if (val->wb == 0) {  // TODO handling read
-    return 0;
-  }
-
-  int osd_id = osd_pid_to_id(val->pid);
-  if (!exists(osd_id)) {
-    osds[num_osd] = osd_id;
-    pids[num_osd++] = val->pid;
-  }
+void print_full(struct op_v *val, int osd_id) {
   op_stat[osd_id].recv_lat += (val->recv_complete_stamp - val->recv_stamp);
   op_stat[osd_id].max_recv_lat =
       MAX(op_stat[osd_id].max_recv_lat,
@@ -283,6 +277,7 @@ static int handle_event(void *ctx, void *data, size_t size) {
   op_stat[osd_id].w_cnt += (val->wb ? 1 : 0);
   op_stat[osd_id].rbytes += val->rb;
   op_stat[osd_id].wbytes += val->wb;
+
   // printf("Number is %lld Client.%lld tid %lld recv_stamp %lld
   // recv_complete_stamp %lld dispatch_stamp %lld enqueue_stamp %lld
   // dequeue_stamp %lld execute_ctx_stamp %lld submit_transaction %lld
@@ -353,7 +348,26 @@ static int handle_event(void *ctx, void *data, size_t size) {
   // val->wb, val->rb); printf("The current number is %lld Client.%lld tid %lld
   // enqueue_stamp %lld dequeue_stamp %lld\n",cnt, val->owner, val->tid,
   // val->enqueue_stamp, val->dequeue_stamp);
+}
 
+static int handle_event(void *ctx, void *data, size_t size) {
+  struct op_v *val = (struct op_v *)data;
+
+  if (val->wb == 0) {  // TODO handling read
+    return 0;
+  }
+
+  int osd_id = osd_pid_to_id(val->pid);
+  if (!exists(osd_id)) {
+    osds[num_osd] = osd_id;
+    pids[num_osd++] = val->pid;
+  }
+
+  if (probe_mode == SINGLE_PROBE) {
+    print_single(val, osd_id);
+  } else {
+    print_full(val, osd_id);
+  }
   return 0;
 }
 
