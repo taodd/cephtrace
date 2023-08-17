@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <sys/resource.h>
 #include <time.h>
+#include <signal.h>
+#include <bits/stdc++.h>
 
 #include <cassert>
 #include <cstring>
@@ -168,6 +170,29 @@ struct op_stat_s op_stat[MAX_OSD];
 struct timespec lasttime;
 __u32 period = 0;
 
+//@write
+//(0, 4k) num {min=, max=, avg=, 10%=, 50%=, 90%=, 95%=, 99%=, 99.9%=}
+//[4k, 8k) 
+//...
+//
+//@read
+//(0, 4k) num {min=, max=, avg=, 10%=, 50%=, 90%=, 95%=, 99%=, 99.9%=}
+//[4k, 8k) 
+//...
+std::vector<string> size_ranges = {"(0, 4k)", 
+                                   "[4k, 8k)", 
+                                   "[8K, 16k)",
+                                   "[16k, 32k)",
+                                   "[32k, 64k)",
+                                   "[64k, 128k)",
+                                   "[128k, 256k)",
+                                   "[256k, 512k)",
+                                   "[512k, 1M)",
+                                   "[1M, )"
+                                  };
+typedef std::vector<std::vector<__u64>> SizeRangeLatVec;   
+std::map<int, SizeRangeLatVec> osd_srl;
+
 int exists(int id) {
   for (int i = 0; i < num_osd; ++i) {
     if (osds[i] == id) return 1;
@@ -235,9 +260,118 @@ __u64 get_bootstamp() {
   return (prevtime.tv_sec * 1000000000ull) + prevtime.tv_nsec;
 }
 
-void print_single(struct op_v *val, int osd_id) {
+
+int knum(__u64 x) {
+    return x / 1024;
+}
+
+int lsb (int x) {
+    int r = 0;
+    while (x > 0) {
+	r++;
+	x = x >> 1;
+    }
+    return r;
+}
+
+int index(int k) {
+    int b = lsb(k);
+    if (b <= 1)
+	return 0;
+    else 
+	return min(10, b - 1); 
+}
+
+void handle_single(struct op_v *val, int osd_id) {
+  auto wvecs = osd_srl[osd_id];
+  if(wvecs.empty()) {
+    wvecs.resize(11);
+  }
+
+  auto rvecs = osd_srl[osd_id];
+  if(rvecs.empty()) {
+    rvecs.resize(11);
+  }
+
   __u64 op_lat = (val->reply_stamp - (val->recv_stamp - bootstamp)); 
+  __u64 wb = val->wb;
+  __u64 rb = val->rb;
+  int k, idx;
+  if (wb > 0) {
+    k = knum(wb);
+    idx = index(k);
+    wvecs[idx].push_back(op_lat);
+  } else if (rb > 0) {
+    k = knum(rb);
+    idx = index(k);
+    rvecs[idx].push_back(op_lat);
+  } else {
+      //TODO operation to access object omap or xattr
+      //
+  }
   printf("osd %d op latency %lld", osd_id, op_lat);
+}
+
+void print_lat_dist(std::vector<__u64> v, int l) {
+  printf("min=%lld ", v[0] / 1000);	
+  printf("max=%lld ", v[l-1] / 1000);	
+  __u64 sum = 0;
+  for (auto x : v) {
+    sum += x / 1000;
+  }
+  __u64 avg = sum / l;
+  printf("avg=%lld ", avg);
+  printf("10.00th=%lld ", v[l * 0.1]);
+  printf("50.00th=%lld ", v[l * 0.5]);
+  printf("90.00th=%lld ", v[l * 0.9]);
+  printf("95.00th=%lld ", v[l * 0.95]);
+  printf("99.00th=%lld ", v[l * 0.99]);
+  printf("99.50th=%lld ", v[l * 0.995]);
+}
+
+
+void print_srl(int osd) {
+  auto wvecs = osd_srl[osd];
+  auto rvecs = osd_srl[osd];
+  int idx = 0;
+  printf("@write:\n");
+  for (auto wv: wvecs) {
+    sort(wv.begin(), wv.end());
+    int l = wv.size();
+    printf("%s , %d", size_ranges[idx].c_str(), l);
+    if(l > 0) {
+      print_lat_dist(wv, l);	
+    }
+    printf("\n");
+    idx++;
+  }
+
+  printf("@read:\n");
+  idx = 0;
+  for (auto rv: rvecs) {
+    sort(rv.begin(), rv.end());
+    int l = rv.size();
+    printf("%s , %d", size_ranges[idx].c_str(), l);
+    if(l > 0) {
+      print_lat_dist(rv, l);	
+    }
+    printf("\n");
+    idx++;
+  } 
+}
+
+void print_all_srl() {
+  for (auto item : osd_srl) {
+    print_srl(item.first);
+  }
+}
+
+void signal_handler(int signum){
+  clog << "Caught signal " << signum << endl;
+  if (signum == SIGINT) {
+      print_all_srl();
+  }
+  exit(signum);
 }
 
 void print_full(struct op_v *val, int osd_id) {
@@ -364,7 +498,7 @@ static int handle_event(void *ctx, void *data, size_t size) {
   }
 
   if (probe_mode == SINGLE_PROBE) {
-    print_single(val, osd_id);
+    handle_single(val, osd_id);
   } else {
     print_full(val, osd_id);
   }
@@ -482,6 +616,8 @@ int attach_retuprobe(struct osdtrace_bpf *skel,
 }
 
 int main(int argc, char **argv) {
+  signal(SIGINT, signal_handler); 
+
   if (parse_args(argc, argv) < 0) return 0;
 
   struct osdtrace_bpf *skel;
