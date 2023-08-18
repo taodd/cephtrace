@@ -700,7 +700,7 @@ end:
 
 SEC("uprobe")
 int uprobe_log_op_stats_v2(struct pt_regs *ctx) {
-  bpf_printk("Entered into uprobe_log_op_stats v2\n");
+  //bpf_printk("Entered into uprobe_log_op_stats v2\n");
   int varid = 90;
   struct op_v op;
   memset(&op, 0, sizeof(op));
@@ -744,6 +744,11 @@ int uprobe_log_op_stats_v2(struct pt_regs *ctx) {
     bpf_probe_read_user(&stamp.nsec, sizeof(stamp.nsec),
                         (void *)(recv_stamp_addr + 4));
     op.recv_stamp = to_nsec(&stamp);
+    /*if (op.recv_stamp == 0) { 
+     * TODO around 0.01 percentile of the ops have recv_stamp==0
+      bpf_printk("stamp.sec %lld, stamp.nsec %lld\n", stamp.sec, stamp.nsec);  
+      bpf_printk("recv_stamp_addr %lld\n", recv_stamp_addr);
+    }*/
   } else {
     bpf_printk("uprobe_log_op_stats_v2 got NULL vf at varid %d\n", varid);
     return 0;

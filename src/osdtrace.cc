@@ -191,7 +191,7 @@ std::vector<string> size_ranges = {"(0, 4k)",
                                    "[1M, )"
                                   };
 typedef std::vector<std::vector<__u64>> SizeRangeLatVec;   
-std::map<int, SizeRangeLatVec> osd_srl;
+std::map<int, SizeRangeLatVec> osd_wsrl, osd_rsrl;
 
 int exists(int id) {
   for (int i = 0; i < num_osd; ++i) {
@@ -276,23 +276,25 @@ int lsb (int x) {
 
 int index(int k) {
     int b = lsb(k);
-    if (b <= 1)
+    if (b <= 2)
 	return 0;
     else 
-	return min(10, b - 1); 
+	return min(10, b - 2); 
 }
 
 void handle_single(struct op_v *val, int osd_id) {
-  auto wvecs = osd_srl[osd_id];
+  auto &wvecs = osd_wsrl[osd_id];
   if(wvecs.empty()) {
     wvecs.resize(11);
   }
 
-  auto rvecs = osd_srl[osd_id];
+  auto &rvecs = osd_rsrl[osd_id];
   if(rvecs.empty()) {
     rvecs.resize(11);
   }
-
+  if (val->recv_stamp == 0) {//TODO weird bug, occationaly, 1/10000 of the ops could have recv_stamp==0
+    return ;
+  }
   __u64 op_lat = (val->reply_stamp - (val->recv_stamp - bootstamp)); 
   __u64 wb = val->wb;
   __u64 rb = val->rb;
@@ -309,7 +311,7 @@ void handle_single(struct op_v *val, int osd_id) {
       //TODO operation to access object omap or xattr
       //
   }
-  printf("osd %d op latency %lld\n", osd_id, op_lat);
+  printf("osd %d inb %lld, oub %lld, op latency %lld recv_stamp %lld recv_stamp - boot_stamp %lld reply_stamp %lld\n", osd_id, wb, rb, op_lat, val->recv_stamp, val->recv_stamp - bootstamp, val->reply_stamp);
 }
 
 void print_lat_dist(std::vector<__u64> v, int l) {
@@ -321,24 +323,27 @@ void print_lat_dist(std::vector<__u64> v, int l) {
   }
   __u64 avg = sum / l;
   printf("avg=%lld ", avg);
-  printf("10.00th=%lld ", v[l * 0.1]);
-  printf("50.00th=%lld ", v[l * 0.5]);
-  printf("90.00th=%lld ", v[l * 0.9]);
-  printf("95.00th=%lld ", v[l * 0.95]);
-  printf("99.00th=%lld ", v[l * 0.99]);
-  printf("99.50th=%lld ", v[l * 0.995]);
+  printf("10.00th=%lld ", v[l * 0.1]/1000);
+  printf("50.00th=%lld ", v[l * 0.5]/1000);
+  printf("90.00th=%lld ", v[l * 0.9]/1000);
+  printf("95.00th=%lld ", v[l * 0.95]/1000);
+  printf("99.00th=%lld ", v[l * 0.99]/1000);
+  printf("99.50th=%lld ", v[l * 0.995]/1000);
 }
 
 
 void print_srl(int osd) {
-  auto wvecs = osd_srl[osd];
-  auto rvecs = osd_srl[osd];
+  auto wvecs = osd_wsrl[osd];
+  auto rvecs = osd_rsrl[osd];
   int idx = 0;
+  printf("OSD %d\n", osd);
   printf("@write:\n");
   for (auto wv: wvecs) {
-    sort(wv.begin(), wv.end());
+    if (idx == size_ranges.size())
+      break;
     int l = wv.size();
-    printf("%s , %d", size_ranges[idx].c_str(), l);
+    printf("%s | %d | ", size_ranges[idx].c_str(), l);
+    sort(wv.begin(), wv.end());
     if(l > 0) {
       print_lat_dist(wv, l);	
     }
@@ -349,9 +354,11 @@ void print_srl(int osd) {
   printf("@read:\n");
   idx = 0;
   for (auto rv: rvecs) {
-    sort(rv.begin(), rv.end());
+    if (idx == size_ranges.size())
+      break;
     int l = rv.size();
-    printf("%s , %d", size_ranges[idx].c_str(), l);
+    printf("%s | %d |", size_ranges[idx].c_str(), l);
+    sort(rv.begin(), rv.end());
     if(l > 0) {
       print_lat_dist(rv, l);	
     }
@@ -361,8 +368,9 @@ void print_srl(int osd) {
 }
 
 void print_all_srl() {
-  for (auto item : osd_srl) {
-    print_srl(item.first);
+  for (int id = 0; id < num_osd; ++id) {
+    print_srl(osds[id]);
+    printf("\n\n");
   }
 }
 
@@ -411,6 +419,8 @@ void print_full(struct op_v *val, int osd_id) {
   op_stat[osd_id].w_cnt += (val->wb ? 1 : 0);
   op_stat[osd_id].rbytes += val->rb;
   op_stat[osd_id].wbytes += val->wb;
+
+  printf("recv_stamp %lld, recv_stamp-bootstamp %lld\n", val->recv_stamp, val->recv_stamp - bootstamp);
 
   // printf("Number is %lld Client.%lld tid %lld recv_stamp %lld
   // recv_complete_stamp %lld dispatch_stamp %lld enqueue_stamp %lld
@@ -486,10 +496,6 @@ void print_full(struct op_v *val, int osd_id) {
 
 static int handle_event(void *ctx, void *data, size_t size) {
   struct op_v *val = (struct op_v *)data;
-
-  if (val->wb == 0) {  // TODO handling read
-    return 0;
-  }
 
   int osd_id = osd_pid_to_id(val->pid);
   if (!exists(osd_id)) {
