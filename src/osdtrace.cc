@@ -309,7 +309,7 @@ void handle_single(struct op_v *val, int osd_id) {
       //TODO operation to access object omap or xattr
       //
   }
-  printf("osd %d op latency %lld", osd_id, op_lat);
+  printf("osd %d op latency %lld\n", osd_id, op_lat);
 }
 
 void print_lat_dist(std::vector<__u64> v, int l) {
@@ -514,7 +514,7 @@ static void handle_lost_event(void *ctx, int cpu, __u64 lost_cnt)
 
 int parse_args(int argc, char **argv) {
   char opt;
-  while ((opt = getopt(argc, argv, ":d:m:")) != -1) {
+  while ((opt = getopt(argc, argv, ":d:m:t:x")) != -1) {
     switch (opt) {
       case 'd':
         period = optarg[0] - '0';

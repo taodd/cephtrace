@@ -738,8 +738,12 @@ int uprobe_log_op_stats_v2(struct pt_regs *ctx) {
   if (NULL != vf) {
     __u64 v = 0;
     v = fetch_register(ctx, vf->varloc.reg);
+    struct utime_t stamp;
     __u64 recv_stamp_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&op.recv_stamp, sizeof(op.recv_stamp), (void *)recv_stamp_addr);
+    bpf_probe_read_user(&stamp.sec, sizeof(stamp.sec), (void *)recv_stamp_addr);
+    bpf_probe_read_user(&stamp.nsec, sizeof(stamp.nsec),
+                        (void *)(recv_stamp_addr + 4));
+    op.recv_stamp = to_nsec(&stamp);
   } else {
     bpf_printk("uprobe_log_op_stats_v2 got NULL vf at varid %d\n", varid);
     return 0;
@@ -756,6 +760,8 @@ int uprobe_log_op_stats_v2(struct pt_regs *ctx) {
     bpf_printk("uprobe_log_op_stats_v2 got NULL vf at varid %d\n", varid);
     return 0;
   }
+  bpf_printk(" log_op_stats_v2 client %lld tid %lld recv_stamp %lld ", op.owner, op.tid, op.recv_stamp);
+  bpf_printk(" inb %lld outb %lld op type %lld\n",op.wb, op.rb, op.op_type);
   //submit the op
   struct op_v *e = bpf_ringbuf_reserve(&rb, sizeof(struct op_v), 0);
   if (NULL == e) {
@@ -763,5 +769,5 @@ int uprobe_log_op_stats_v2(struct pt_regs *ctx) {
   }
   *e = op;
   bpf_ringbuf_submit(e, 0);
-
+  return 0;
 }
