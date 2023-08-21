@@ -202,8 +202,6 @@ int print_vf(struct VarField *vf) {
 
 SEC("uprobe")
 int uprobe_enqueue_op(struct pt_regs *ctx) {
-  bpf_printk("Entered into uprobe_enequeue_op\n");
-
   int varid = 0;
   struct op_k key;
   memset(&key, 0, sizeof(key));
@@ -218,8 +216,8 @@ int uprobe_enqueue_op(struct pt_regs *ctx) {
   } else {
     bpf_printk("uprobe_enqueue_op got NULL vf at varid %d\n", varid);
   }
-  if (op_type == MSG_OSD_REPOPREPLY) {
-    bpf_printk("uprobe_enqueue_op got sub osdreply op type %d", op_type);
+  if (op_type != MSG_OSD_OP) {
+    bpf_printk("uprobe_enqueue_op got non osdop type %d", op_type);
     return 0;
   }
 
@@ -346,8 +344,8 @@ int uprobe_dequeue_op(struct pt_regs *ctx) {
   } else {
     bpf_printk("uprobe_dequeue_op got NULL vf at varid %d\n", varid);
   }
-  if (op_type == MSG_OSD_REPOPREPLY) {
-    bpf_printk("uprobe_dequeue_op got sub osdreply op type %d", op_type);
+  if (op_type != MSG_OSD_OP) {
+    bpf_printk("uprobe_dequeue_op got non osdop type %d", op_type);
     return 0;
   }
 
@@ -383,9 +381,7 @@ int uprobe_dequeue_op(struct pt_regs *ctx) {
   if (NULL != vp) {
     vp->dequeue_stamp = bpf_ktime_get_boot_ns();
   } else {
-    bpf_printk(
-        "uprobe_dequeue_op, no previous enqueue_op info, owner %lld, tid "
-        "%lld\n, key.owner, key.tid");
+    bpf_printk("uprobe_dequeue_op, no previous enqueue_op info, owner %lld, tid %lld\n", key.owner, key.tid);
     return 0;
   }
   return 0;
@@ -875,6 +871,8 @@ int uprobe_do_repop_reply(struct pt_regs *ctx)
       vp->pi.recv_stamp1 = bpf_ktime_get_boot_ns();
     else 
       vp->pi.recv_stamp2 = bpf_ktime_get_boot_ns();
+    bpf_printk("uprobe_do_repop_reply client %lld, tid %lld, peer1 %d ", key.owner, key.tid, vp->pi.peer1);
+    bpf_printk(" sent_stamp %lld, repop_reply_stamp %lld\n", vp->pi.sent_stamp, vp->pi.recv_stamp1);
   } else {
     bpf_printk("uprobe_do_repop_reply unable to get op_v for client %lld, tid %lld\n", key.owner, key.tid);  
   }

@@ -123,8 +123,8 @@ DwarfParser::probes_t osd_probes = {
       {"peer", "osd"}}},
     
     {"ReplicatedBackend::do_repop_reply",
-      {{"op", "reqid", "name", "_num"},
-       {"op", "reqid", "tid"}}}
+      {{"op", "px", "reqid", "name", "_num"},
+       {"op", "px", "reqid", "tid"}}}
 
 };
 
