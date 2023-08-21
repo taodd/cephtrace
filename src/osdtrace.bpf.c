@@ -264,7 +264,9 @@ int uprobe_enqueue_op(struct pt_regs *ctx) {
   value.pid = key.pid;
   value.tid = key.tid;
   value.owner = key.owner;
-
+  //initialize peer id to -1
+  value.pi.peer1 = -1;
+  value.pi.peer2 = -1;
   struct utime_t stamp;
 
   // Set recv_stamp
@@ -345,7 +347,7 @@ int uprobe_dequeue_op(struct pt_regs *ctx) {
     bpf_printk("uprobe_dequeue_op got NULL vf at varid %d\n", varid);
   }
   if (op_type == MSG_OSD_REPOPREPLY) {
-    bpf_printk("uprobe_enqueue_op got sub osdreply op type %d", op_type);
+    bpf_printk("uprobe_dequeue_op got sub osdreply op type %d", op_type);
     return 0;
   }
 
@@ -700,7 +702,7 @@ end:
 
 SEC("uprobe")
 int uprobe_log_op_stats_v2(struct pt_regs *ctx) {
-  //bpf_printk("Entered into uprobe_log_op_stats v2\n");
+  bpf_printk("Entered into uprobe_log_op_stats v2\n");
   int varid = 90;
   struct op_v op;
   memset(&op, 0, sizeof(op));
@@ -776,3 +778,106 @@ int uprobe_log_op_stats_v2(struct pt_regs *ctx) {
   bpf_ringbuf_submit(e, 0);
   return 0;
 }
+
+SEC("uprobe")
+int uprobe_generate_subop(struct pt_regs *ctx)
+{
+  bpf_printk("Entered into uprobe_generate_subop\n");
+  int varid = 100;
+  struct op_k key;
+  memset(&key, 0, sizeof(key));
+  // read num
+  struct VarField *vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL != vf) {
+    __u64 v = 0;
+    v = fetch_register(ctx, vf->varloc.reg);
+    __u64 num_addr = fetch_var_member_addr(v, vf);
+    bpf_probe_read_user(&key.owner, sizeof(key.owner), (void *)num_addr);
+  } else {
+    bpf_printk("uprobe_generate_subop got NULL vf at varid %d\n", varid);
+  }
+  // read tid
+  ++varid;
+  vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL != vf) {
+    __u64 v = 0;
+    v = fetch_register(ctx, vf->varloc.reg);
+    __u64 tid_addr = fetch_var_member_addr(v, vf);
+    bpf_probe_read_user(&key.tid, sizeof(key.tid), (void *)tid_addr);
+  } else {
+    bpf_printk("uprobe_generate_subop got NULL vf at varid %d\n", varid);
+    return 0;
+  }
+  key.pid = get_pid();
+
+  struct op_v *vp = bpf_map_lookup_elem(&ops, &key);
+  if (vp == NULL) {
+    bpf_printk("uprobe_generate_subop got NULL vp for client %lld, tid %lld\n", key.owner, key.tid);
+    return 0;
+  }
+
+  //read peer osd id
+  ++varid;
+  vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL != vf) {
+    __u64 v = 0;
+    v = fetch_register(ctx, vf->varloc.reg);
+    __u64 peer_addr = fetch_var_member_addr(v, vf);
+    if (vp->pi.peer1 == -1) {
+      bpf_probe_read_user(&vp->pi.peer1, sizeof(int), (void *)peer_addr);
+    } else {
+      bpf_probe_read_user(&vp->pi.peer2, sizeof(int), (void *)peer_addr);
+    }
+  } else {
+    bpf_printk("uprobe_generate_subop got NULL vf at varid %d\n", varid);
+    return 0;
+  }
+  //set sent stamp, just use the latter one
+  vp->pi.sent_stamp = bpf_ktime_get_boot_ns();
+
+  return 0;
+}
+
+SEC("uprobe")
+int uprobe_do_repop_reply(struct pt_regs *ctx)
+{
+  bpf_printk("Entered into uprobe_do_repop_reply\n");
+  int varid = 110;
+  struct op_k key;
+  memset(&key, 0, sizeof(key));
+  // read num
+  struct VarField *vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL != vf) {
+    __u64 v = 0;
+    v = fetch_register(ctx, vf->varloc.reg);
+    __u64 num_addr = fetch_var_member_addr(v, vf);
+    bpf_probe_read_user(&key.owner, sizeof(key.owner), (void *)num_addr);
+  } else {
+    bpf_printk("uprobe_do_repop_reply got NULL vf at varid %d\n", varid);
+  }
+  // read tid
+  ++varid;
+  vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL != vf) {
+    __u64 v = 0;
+    v = fetch_register(ctx, vf->varloc.reg);
+    __u64 tid_addr = fetch_var_member_addr(v, vf);
+    bpf_probe_read_user(&key.tid, sizeof(key.tid), (void *)tid_addr);
+  } else {
+    bpf_printk("uprobe_do_repop_reply got NULL vf at varid %d\n", varid);
+    return 0;
+  }
+  key.pid = get_pid();
+
+  struct op_v *vp = bpf_map_lookup_elem(&ops, &key);
+  if (NULL != vp) {
+    if (vp->pi.recv_stamp1 == 0)
+      vp->pi.recv_stamp1 = bpf_ktime_get_boot_ns();
+    else 
+      vp->pi.recv_stamp2 = bpf_ktime_get_boot_ns();
+  } else {
+    bpf_printk("uprobe_do_repop_reply unable to get op_v for client %lld, tid %lld\n", key.owner, key.tid);  
+  }
+  return 0;
+}
+

@@ -13,6 +13,14 @@ struct op_k {
   __u64 tid;    // request id from the client
 };
 
+struct peers_info {
+    int peer1;
+    int peer2;
+    __u64 sent_stamp;
+    __u64 recv_stamp1;
+    __u64 recv_stamp2;
+};
+
 struct op_v {
   __u32 pid;
   unsigned long long owner;
@@ -32,6 +40,7 @@ struct op_v {
   unsigned long long data_committed_stamp;
   unsigned long long kv_submit_stamp;
   unsigned long long kv_committed_stamp;
+  struct peers_info pi;
   unsigned long long reply_stamp;
   __u64 wb;
   __u64 rb;

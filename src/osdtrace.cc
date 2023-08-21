@@ -49,7 +49,9 @@ func_id_t func_id = {
     {"BlueStore::_wctx_finish", 60},
     {"BlueStore::_txc_state_proc", 70},
     {"BlueStore::_txc_apply_kv", 80},
-    {"PrimaryLogPG::log_op_stats", 90}
+    {"PrimaryLogPG::log_op_stats", 90},
+    {"ReplicatedBackend::generate_subop", 100},
+    {"ReplicatedBackend::do_repop_reply", 110}
 };
 
 std::map<std::string, int> func_progid = {
@@ -63,7 +65,9 @@ std::map<std::string, int> func_progid = {
     {"BlueStore::_txc_state_proc", 7},
     {"BlueStore::_txc_apply_kv", 8},
     {"PrimaryLogPG::log_op_stats", 9},
-    {"PrimaryLogPG::log_op_stats_v2", 10}
+    {"PrimaryLogPG::log_op_stats_v2", 10},
+    {"ReplicatedBackend::generate_subop", 11},
+    {"ReplicatedBackend::do_repop_reply", 12}
 };
 
 DwarfParser::probes_t osd_probes = {
@@ -111,7 +115,16 @@ DwarfParser::probes_t osd_probes = {
       {"inb"},
       {"outb"},
       {"op", "request", "recv_stamp"},
-      {"op", "request", "header", "type"}}}
+      {"op", "request", "header", "type"}}},
+
+    {"ReplicatedBackend::generate_subop",
+     {{"reqid", "name", "_num"},
+      {"reqid", "tid"},
+      {"peer", "osd"}}},
+    
+    {"ReplicatedBackend::do_repop_reply",
+      {{"op", "reqid", "name", "_num"},
+       {"op", "reqid", "tid"}}}
 
 };
 
@@ -311,7 +324,8 @@ void handle_single(struct op_v *val, int osd_id) {
       //TODO operation to access object omap or xattr
       //
   }
-  printf("osd %d inb %lld, oub %lld, op latency %lld recv_stamp %lld recv_stamp - boot_stamp %lld reply_stamp %lld\n", osd_id, wb, rb, op_lat, val->recv_stamp, val->recv_stamp - bootstamp, val->reply_stamp);
+  //printf("osd %d inb %lld, oub %lld, op latency %lld recv_stamp %lld recv_stamp - boot_stamp %lld reply_stamp %lld\n", osd_id, wb, rb, op_lat, val->recv_stamp, val->recv_stamp - bootstamp, val->reply_stamp);
+
 }
 
 void print_lat_dist(std::vector<__u64> v, int l) {
@@ -664,6 +678,10 @@ int main(int argc, char **argv) {
     attach_uprobe(skel, dwarfparser, path, "OSD::dequeue_op");
 
     attach_uprobe(skel, dwarfparser, path, "PrimaryLogPG::execute_ctx");
+
+    attach_uprobe(skel, dwarfparser, path, "ReplicatedBackend::generate_subop");
+
+    attach_uprobe(skel, dwarfparser, path, "ReplicatedBackend::do_repop_reply");
 
     attach_uprobe(skel, dwarfparser, path, "ReplicatedBackend::submit_transaction");
 
