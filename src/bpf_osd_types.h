@@ -27,6 +27,7 @@ struct op_v {
   unsigned long long tid;
   __u16 op_type;
   unsigned long long recv_stamp;
+  unsigned long long throttle_stamp;
   unsigned long long recv_complete_stamp;
   unsigned long long dispatch_stamp;
   unsigned long long enqueue_stamp;

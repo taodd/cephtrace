@@ -77,6 +77,7 @@ DwarfParser::probes_t osd_probes = {
       {"op", "px", "reqid", "name", "_num"},
       {"op", "px", "reqid", "tid"},
       {"op", "px", "request", "recv_stamp"},
+      {"op", "px", "request", "throttle_stamp"},
       {"op", "px", "request", "recv_complete_stamp"},
       {"op", "px", "request", "dispatch_stamp"}}},
 
@@ -153,6 +154,34 @@ static int libbpf_print_fn(enum libbpf_print_level level, const char *format,
 }
 
 #define DEBUG printf
+
+typedef struct osd_op {
+  __u32 type;
+  __u32 wb;
+  __u32 rb;
+//Messenger level
+  __u64 throttle_lat; //throttle_stamp - recv_stamp
+  __u64 recv_lat;     //recv_complete_stamp - recv_stamp
+  __u64 dispatch_lat; //enqueue_stamp - recv_complete_stamp
+
+//OSD level
+  __u64 queue_lat;
+  __u32 delayed_cnt;
+  std::vector<std::string> delayed_string;
+  __u64 osd_lat;
+  //__u32 onode_decode;
+  //__u32 extent_decode;
+
+//Peer info
+  vector<int> peers;
+  __u64 max_peer_lat; //max(recv_stamp1, recv_stamp2) - sent_stamp;
+
+//Bluestore level
+  __u64 bluestore_lat;  
+
+// op lat
+  __u64 op_lat;
+} osd_op_t;
 
 struct op_stat_s {
   __u64 recv_lat;
@@ -396,6 +425,42 @@ void signal_handler(int signum){
   exit(signum);
 }
 
+osd_op_t generate_op(op_v *val) {
+  osd_op_t op;
+  memset(&op, 0, sizeof(osd_op_t));
+  op.wb = val->wb;
+  op.rb = val->rb;
+  op.throttle_lat = (val->throttle_stamp - val->recv_stamp)/1000; 
+  op.recv_lat = (val->recv_complete_stamp - val->recv_stamp)/1000; 
+  op.dispatch_lat +=
+      (val->enqueue_stamp - (val->recv_complete_stamp - bootstamp))/1000;
+
+  op.queue_lat += (val->dequeue_stamp - val->enqueue_stamp)/1000;
+  if (op.wb > 0)
+    op.osd_lat = (val->submit_transaction_stamp - val->dequeue_stamp)/1000;
+  else if (op.rb > 0)
+    op.osd_lat = 0; // TODO
+  
+  op.peers.push_back(val->pi.peer1); 
+  op.peers.push_back(val->pi.peer2); 
+  op.max_peer_lat = (max(val->pi.recv_stamp1, val->pi.recv_stamp2) - val->pi.sent_stamp)/1000; 
+  
+  op.bluestore_lat = (val->kv_committed_stamp - val->submit_transaction_stamp)/1000;
+
+  op.op_lat = (val->reply_stamp - (val->recv_stamp - bootstamp))/1000;
+
+  return op;
+}
+
+void handle_full(struct op_v *val, int osd_id) {
+    if (val->wb == 0) 
+      return;
+    osd_op_t op = generate_op(val);
+    printf("osd %d size %d throttle_lat %lld recv_lat %lld dispatch_lat %lld queue_lat %lld osd_lat %lld peers %d %d max_peer_lat %lld bluestore_lat %lld op_lat %lld\n", 
+	    osd_id, op.wb, op.throttle_lat, op.recv_lat, op.dispatch_lat, op.queue_lat, op.osd_lat,  op.peers[0], op.peers[1], op.max_peer_lat, op.bluestore_lat, op.op_lat);
+
+}
+
 void print_full(struct op_v *val, int osd_id) {
   op_stat[osd_id].recv_lat += (val->recv_complete_stamp - val->recv_stamp);
   op_stat[osd_id].max_recv_lat =
@@ -520,7 +585,8 @@ static int handle_event(void *ctx, void *data, size_t size) {
   if (probe_mode == SINGLE_PROBE) {
     handle_single(val, osd_id);
   } else {
-    print_full(val, osd_id);
+    handle_full(val, osd_id);
+    //print_full(val, osd_id);
   }
   return 0;
 }
@@ -647,7 +713,7 @@ int main(int argc, char **argv) {
 
   clog << "Start to parse ceph dwarf info" << endl;
 
-  std::string path = "/usr/bin/ceph-osd";
+  std::string path = "/home/taodd/Git/ceph/build/bin/ceph-osd";
   DwarfParser dwarfparser(path, osd_probes, probe_units);
   dwarfparser.parse();
 

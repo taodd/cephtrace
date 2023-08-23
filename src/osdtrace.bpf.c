@@ -284,6 +284,23 @@ int uprobe_enqueue_op(struct pt_regs *ctx) {
   }
   bpf_printk("enqueue_op recv_stamp %lld\n", value.recv_stamp);
 
+  // Set throttle_stamp
+  ++varid;
+  vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL != vf) {
+    __u64 v = 0;
+    v = fetch_register(ctx, vf->varloc.reg);
+    __u64 throttle_stamp_addr = fetch_var_member_addr(v, vf);
+    bpf_probe_read_user(&stamp.sec, sizeof(stamp.sec), (void *)throttle_stamp_addr);
+    bpf_probe_read_user(&stamp.nsec, sizeof(stamp.nsec),
+                        (void *)(throttle_stamp_addr + 4));
+    value.throttle_stamp = to_nsec(&stamp);
+  } else {
+    bpf_printk("uprobe_enqueue_op got NULL vf at varid %d\n", varid);
+    return 0;
+  }
+  bpf_printk("enqueue_op throttle_stamp %lld\n", value.throttle_stamp);
+
   // Set recv_complete_stamp
   ++varid;
   vf = bpf_map_lookup_elem(&hprobes, &varid);
