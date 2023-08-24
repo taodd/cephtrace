@@ -896,3 +896,73 @@ int uprobe_do_repop_reply(struct pt_regs *ctx)
   return 0;
 }
 
+SEC("uprobe")
+int uprobe_mark_flag_point_string(struct pt_regs *ctx)
+{
+  bpf_printk("Entered into mark_flag_point_string\n");
+  int varid = 120;
+  // read flag
+  __u8 flag = PT_REGS_PARM2(ctx);
+  bpf_printk("flag is %d\n", flag);
+  if(!(flag & flag_delayed))
+    return 0;
+  struct op_k key;
+  memset(&key, 0, sizeof(key));
+  // read num
+  ++varid;
+  struct VarField *vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL != vf) {
+    __u64 v = 0;
+    v = fetch_register(ctx, vf->varloc.reg);
+    __u64 num_addr = fetch_var_member_addr(v, vf);
+    bpf_probe_read_user(&key.owner, sizeof(key.owner), (void *)num_addr);
+  } else {
+    bpf_printk("uprobe_mark_flag_point_string got NULL vf at varid %d\n", varid);
+  }
+  // read tid
+  ++varid;
+  vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL != vf) {
+    __u64 v = 0;
+    v = fetch_register(ctx, vf->varloc.reg);
+    __u64 tid_addr = fetch_var_member_addr(v, vf);
+    bpf_probe_read_user(&key.tid, sizeof(key.tid), (void *)tid_addr);
+  } else {
+    bpf_printk("uprobe_mark_flag_point_string got NULL vf at varid %d\n", varid);
+    return 0;
+  }
+  key.pid = get_pid();
+
+  struct op_v *vp = bpf_map_lookup_elem(&ops, &key);
+  if (vp == NULL) 
+    return 0;
+
+  // read string length
+  ++varid;
+  vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL == vf)
+    return 0;
+  __u64 v = 0;
+  v = fetch_register(ctx, vf->varloc.reg);
+  __u64 strlen_addr = fetch_var_member_addr(v, vf);
+  __u32 len = 0;
+  bpf_probe_read_user(&len, sizeof(len), (void *)strlen_addr);
+  
+  __u32 idx = vp->di.cnt;
+
+  // read string buf
+  ++varid;
+  vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL == vf)
+    return 0;
+  v = fetch_register(ctx, vf->varloc.reg);
+  __u64 m_local_buf_addr = fetch_var_member_addr(v, vf);
+  __u64 str_addr;
+  bpf_probe_read_user(&str_addr, sizeof(str_addr), (void *)m_local_buf_addr);
+
+  if (idx >= 5 || len >= 32)
+    return 0;
+  bpf_probe_read_user(vp->di.delays[idx], len, (void *)str_addr);
+  vp->di.cnt++;
+  return 0;
+}

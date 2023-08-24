@@ -37,7 +37,7 @@ using namespace std;
 typedef std::map<std::string, int> func_id_t;
 
 std::vector<std::string> probe_units = {
-    "OSD.cc", "BlueStore.cc", "PrimaryLogPG.cc", "ReplicatedBackend.cc"};
+    "OpRequest.cc", "OSD.cc", "BlueStore.cc", "PrimaryLogPG.cc", "ReplicatedBackend.cc"};
 
 func_id_t func_id = {
     {"OSD::enqueue_op", 0},
@@ -51,7 +51,8 @@ func_id_t func_id = {
     {"BlueStore::_txc_apply_kv", 80},
     {"PrimaryLogPG::log_op_stats", 90},
     {"ReplicatedBackend::generate_subop", 100},
-    {"ReplicatedBackend::do_repop_reply", 110}
+    {"ReplicatedBackend::do_repop_reply", 110},
+    {"OpRequest::mark_flag_point_string", 120}
 };
 
 std::map<std::string, int> func_progid = {
@@ -67,7 +68,8 @@ std::map<std::string, int> func_progid = {
     {"PrimaryLogPG::log_op_stats", 9},
     {"PrimaryLogPG::log_op_stats_v2", 10},
     {"ReplicatedBackend::generate_subop", 11},
-    {"ReplicatedBackend::do_repop_reply", 12}
+    {"ReplicatedBackend::do_repop_reply", 12},
+    {"OpRequest::mark_flag_point_string", 13}
 };
 
 DwarfParser::probes_t osd_probes = {
@@ -125,8 +127,29 @@ DwarfParser::probes_t osd_probes = {
     
     {"ReplicatedBackend::do_repop_reply",
       {{"op", "px", "reqid", "name", "_num"},
-       {"op", "px", "reqid", "tid"}}}
+       {"op", "px", "reqid", "tid"}}},
 
+    {"OpRequest::mark_flag_point_string",
+     {{"flag"},
+      {"this", "reqid", "name", "_num"},
+      {"this", "reqid", "tid"},
+      {"s", "_M_string_length"},
+      {"s", "_M_local_buf"}}}
+
+};
+
+std::map<int, string> delay_len2str = {
+    //{26, "waiting for missing object"},
+    {27, "waiting for degraded object"},
+    //{20, "waiting for readable"},
+    {17, "waiting for scrub"},
+    {25, "waiting_for_map not empty"},
+    {20, "op must wait for map"},
+    //{18, "waiting for peered"},
+    {18, "waiting for active"},
+    //{18, "waiting for ondisk"};
+    {20, "waiting for rw locks"},
+    {26, "waiting for missing object"}
 };
 
 enum mode_e { MODE_AVG = 1, MODE_MAX };
@@ -167,7 +190,7 @@ typedef struct osd_op {
 //OSD level
   __u64 queue_lat;
   __u32 delayed_cnt;
-  std::vector<std::string> delayed_string;
+  std::vector<std::string> delayed_strs;
   __u64 osd_lat;
   //__u32 onode_decode;
   //__u32 extent_decode;
@@ -440,6 +463,10 @@ osd_op_t generate_op(op_v *val) {
     op.osd_lat = (val->submit_transaction_stamp - val->dequeue_stamp)/1000;
   else if (op.rb > 0)
     op.osd_lat = 0; // TODO
+  op.delayed_cnt = val->di.cnt;
+  for(int i = 0; i < val->di.cnt; ++i) {
+    op.delayed_strs.push_back(std::string(val->di.delays[i]));
+  }
   
   op.peers.push_back(val->pi.peer1); 
   op.peers.push_back(val->pi.peer2); 
@@ -457,7 +484,12 @@ void handle_full(struct op_v *val, int osd_id) {
       return;
     osd_op_t op = generate_op(val);
     printf("osd %d size %d throttle_lat %lld recv_lat %lld dispatch_lat %lld queue_lat %lld osd_lat %lld peers %d %d max_peer_lat %lld bluestore_lat %lld op_lat %lld\n", 
-	    osd_id, op.wb, op.throttle_lat, op.recv_lat, op.dispatch_lat, op.queue_lat, op.osd_lat,  op.peers[0], op.peers[1], op.max_peer_lat, op.bluestore_lat, op.op_lat);
+   	    osd_id, op.wb, op.throttle_lat, op.recv_lat, op.dispatch_lat, op.queue_lat, op.osd_lat,  op.peers[0], op.peers[1], op.max_peer_lat, op.bluestore_lat, op.op_lat);
+    for (int i = 0; i < op.delayed_cnt; ++i) {
+      printf("delayed%d %s ", i+1, op.delayed_strs[i].c_str());
+    }
+    if (op.delayed_cnt > 0)
+      printf("\n");
 
 }
 
@@ -742,6 +774,8 @@ int main(int argc, char **argv) {
     attach_uprobe(skel, dwarfparser, path, "PrimaryLogPG::log_op_stats", 2);
   } else if (probe_mode == FULL_PROBE) {
     attach_uprobe(skel, dwarfparser, path, "OSD::dequeue_op");
+    
+    attach_uprobe(skel, dwarfparser, path, "OpRequest::mark_flag_point_string");
 
     attach_uprobe(skel, dwarfparser, path, "PrimaryLogPG::execute_ctx");
 

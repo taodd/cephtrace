@@ -6,6 +6,13 @@
 
 #define MSG_OSD_OP 42
 #define MSG_OSD_OPREPLY 43
+ 
+static const __u8 flag_queued_for_pg=1 << 0;
+static const __u8 flag_reached_pg =  1 << 1;
+static const __u8 flag_delayed =     1 << 2;
+static const __u8 flag_started =     1 << 3;
+static const __u8 flag_sub_op_sent = 1 << 4;
+static const __u8 flag_commit_sent = 1 << 5;
 
 struct op_k {
   __u32 pid;    // process id
@@ -19,6 +26,11 @@ struct peers_info {
     __u64 sent_stamp;
     __u64 recv_stamp1;
     __u64 recv_stamp2;
+};
+
+struct delay_info {
+    int cnt;
+    char delays[5][32];
 };
 
 struct op_v {
@@ -42,6 +54,7 @@ struct op_v {
   unsigned long long kv_submit_stamp;
   unsigned long long kv_committed_stamp;
   struct peers_info pi;
+  struct delay_info di;
   unsigned long long reply_stamp;
   __u64 wb;
   __u64 rb;
