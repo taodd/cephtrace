@@ -396,7 +396,8 @@ int uprobe_dequeue_op(struct pt_regs *ctx) {
 
   struct op_v *vp = bpf_map_lookup_elem(&ops, &key);
   if (NULL != vp) {
-    vp->dequeue_stamp = bpf_ktime_get_boot_ns();
+    if (vp->dequeue_stamp == 0)
+      vp->dequeue_stamp = bpf_ktime_get_boot_ns();
   } else {
     bpf_printk("uprobe_dequeue_op, no previous enqueue_op info, owner %lld, tid %lld\n", key.owner, key.tid);
     return 0;

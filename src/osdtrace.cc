@@ -138,20 +138,6 @@ DwarfParser::probes_t osd_probes = {
 
 };
 
-std::map<int, string> delay_len2str = {
-    //{26, "waiting for missing object"},
-    {27, "waiting for degraded object"},
-    //{20, "waiting for readable"},
-    {17, "waiting for scrub"},
-    {25, "waiting_for_map not empty"},
-    {20, "op must wait for map"},
-    //{18, "waiting for peered"},
-    {18, "waiting for active"},
-    //{18, "waiting for ondisk"};
-    {20, "waiting for rw locks"},
-    {26, "waiting for missing object"}
-};
-
 enum mode_e { MODE_AVG = 1, MODE_MAX };
 
 enum mode_e mode = MODE_AVG;
