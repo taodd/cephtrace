@@ -967,3 +967,36 @@ int uprobe_mark_flag_point_string(struct pt_regs *ctx)
   vp->di.cnt++;
   return 0;
 }
+
+SEC("uprobe")
+int uprobe_log_latency(struct pt_regs *ctx)
+{
+  bpf_printk("Entered into log_latency\n");
+  int varid = 130;
+  struct bluestore_lat_v bsl;
+  // read idx
+  bsl.idx = PT_REGS_PARM3(ctx);
+
+  //read l.__r
+  ++varid;
+  struct VarField *vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL == vf)
+    return 0;
+  __u64 v = fetch_register(ctx, vf->varloc.reg);
+  __u64 r_addr = fetch_var_member_addr(v, vf);
+  bpf_probe_read_user(&bsl.lat, sizeof(__u64), (void *)r_addr);
+
+  //set pid
+  bsl.pid = get_pid(); 
+
+  //submit the bs latency
+  struct bluestore_lat_v *e = bpf_ringbuf_reserve(&rb, sizeof(struct bluestore_lat_v), 0);
+  if (NULL == e) {
+    return 0;
+  }
+  *e = bsl;
+  bpf_ringbuf_submit(e, 0);
+
+  return 0;
+}
+

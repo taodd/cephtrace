@@ -52,7 +52,8 @@ func_id_t func_id = {
     {"PrimaryLogPG::log_op_stats", 90},
     {"ReplicatedBackend::generate_subop", 100},
     {"ReplicatedBackend::do_repop_reply", 110},
-    {"OpRequest::mark_flag_point_string", 120}
+    {"OpRequest::mark_flag_point_string", 120},
+    {"BlueStore::log_latency", 130}
 };
 
 std::map<std::string, int> func_progid = {
@@ -69,7 +70,8 @@ std::map<std::string, int> func_progid = {
     {"PrimaryLogPG::log_op_stats_v2", 10},
     {"ReplicatedBackend::generate_subop", 11},
     {"ReplicatedBackend::do_repop_reply", 12},
-    {"OpRequest::mark_flag_point_string", 13}
+    {"OpRequest::mark_flag_point_string", 13},
+    {"BlueStore::log_latency", 14}
 };
 
 DwarfParser::probes_t osd_probes = {
@@ -134,7 +136,11 @@ DwarfParser::probes_t osd_probes = {
       {"this", "reqid", "name", "_num"},
       {"this", "reqid", "tid"},
       {"s", "_M_string_length"},
-      {"s", "_M_local_buf"}}}
+      {"s", "_M_local_buf"}}},
+    
+    {"BlueStore::log_latency",
+     {{"idx"},
+      {"l", "__r"}}}
 
 };
 
@@ -143,11 +149,12 @@ enum mode_e { MODE_AVG = 1, MODE_MAX };
 enum mode_e mode = MODE_AVG;
 
 enum probe_mode_e {
-    SINGLE_PROBE = 1,
-    FULL_PROBE
+    OP_SINGLE_PROBE = 1,
+    OP_FULL_PROBE = 2,
+    BLUESTORE_PROBE = 3
 };
 
-enum probe_mode_e probe_mode = SINGLE_PROBE;
+enum probe_mode_e probe_mode = OP_SINGLE_PROBE;
 
 static __u64 bootstamp = 0;
 
@@ -591,20 +598,49 @@ void print_full(struct op_v *val, int osd_id) {
   // val->enqueue_stamp, val->dequeue_stamp);
 }
 
+void handle_bluestore(struct bluestore_lat_v *val, int osd_id) {
+    switch(val->idx) {
+      case l_bluestore_kv_flush_lat:
+	  printf("kv_flush_lat %lld ", val->lat/1000);
+	  break;
+      case l_bluestore_kv_commit_lat:
+	  printf("kv_commit_lat %lld ", val->lat/1000);
+	  break;
+      case l_bluestore_kv_sync_lat:
+	  printf("kv_sync_lat is %lld\n", val->lat/1000);
+	  break;
+      default:
+	  //printf("Bluestore lat Not captured yet: %lld\n", val->lat);
+	  break;
+    }
+    //printf("idx is %d, lat is %lld\n", val->idx, val->lat);
+}
+
 static int handle_event(void *ctx, void *data, size_t size) {
-  struct op_v *val = (struct op_v *)data;
 
-  int osd_id = osd_pid_to_id(val->pid);
-  if (!exists(osd_id)) {
-    osds[num_osd] = osd_id;
-    pids[num_osd++] = val->pid;
-  }
-
-  if (probe_mode == SINGLE_PROBE) {
+  int osd_id = -1;
+  int pid = 0;
+  if (probe_mode == OP_SINGLE_PROBE) {
+    struct op_v *val = (struct op_v *)data;
+    pid = val->pid;
+    osd_id = osd_pid_to_id(pid);
     handle_single(val, osd_id);
-  } else {
+  } else if (probe_mode == OP_FULL_PROBE){
+    struct op_v *val = (struct op_v *)data;
+    pid = val->pid;
+    osd_id = osd_pid_to_id(pid);
     handle_full(val, osd_id);
     //print_full(val, osd_id);
+  } else if (probe_mode == BLUESTORE_PROBE) {
+    struct bluestore_lat_v *val = (struct bluestore_lat_v *) data;
+    pid = val->pid;
+    osd_id = osd_pid_to_id(pid);
+    handle_bluestore(val, osd_id);
+  }
+  
+  if (!exists(osd_id)) {
+    osds[num_osd] = osd_id;
+    pids[num_osd++] = pid;
   }
   return 0;
 }
@@ -618,7 +654,7 @@ static void handle_lost_event(void *ctx, int cpu, __u64 lost_cnt)
 
 int parse_args(int argc, char **argv) {
   char opt;
-  while ((opt = getopt(argc, argv, ":d:m:t:x")) != -1) {
+  while ((opt = getopt(argc, argv, ":d:m:t:x:b")) != -1) {
     switch (opt) {
       case 'd':
         period = optarg[0] - '0';
@@ -637,7 +673,10 @@ int parse_args(int argc, char **argv) {
         threshold = stoi(optarg);
         break;
       case 'x':
-        probe_mode = FULL_PROBE;
+        probe_mode = OP_FULL_PROBE;
+	break;
+      case 'b':
+        probe_mode = BLUESTORE_PROBE;
 	break;
       case '?':
         clog << "Unknown option: " << optopt << endl;
@@ -731,7 +770,7 @@ int main(int argc, char **argv) {
 
   clog << "Start to parse ceph dwarf info" << endl;
 
-  std::string path = "/home/taodd/Git/ceph/build/bin/ceph-osd";
+  std::string path = "/usr/bin/ceph-osd";
   DwarfParser dwarfparser(path, osd_probes, probe_units);
   dwarfparser.parse();
 
@@ -756,9 +795,9 @@ int main(int argc, char **argv) {
   clog << "BPF prog loaded" << endl;
 
   //Start to load the probes
-  if (probe_mode == SINGLE_PROBE) {
+  if (probe_mode == OP_SINGLE_PROBE) {
     attach_uprobe(skel, dwarfparser, path, "PrimaryLogPG::log_op_stats", 2);
-  } else if (probe_mode == FULL_PROBE) {
+  } else if (probe_mode == OP_FULL_PROBE) {
     attach_uprobe(skel, dwarfparser, path, "OSD::dequeue_op");
     
     attach_uprobe(skel, dwarfparser, path, "OpRequest::mark_flag_point_string");
@@ -782,6 +821,8 @@ int main(int argc, char **argv) {
     attach_uprobe(skel, dwarfparser, path, "PrimaryLogPG::log_op_stats");
     
     attach_uprobe(skel, dwarfparser, path, "OSD::enqueue_op");
+  } else if (probe_mode == BLUESTORE_PROBE) {
+    attach_uprobe(skel, dwarfparser, path, "BlueStore::log_latency");
   }
 
   bootstamp = get_bootstamp();
