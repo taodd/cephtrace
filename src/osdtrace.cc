@@ -476,6 +476,8 @@ void handle_full(struct op_v *val, int osd_id) {
     if (val->wb == 0) 
       return;
     osd_op_t op = generate_op(val);
+    if (op.op_lat/(1000*1000) < threshold) 
+      return;
     printf("osd %d size %d throttle_lat %lld recv_lat %lld dispatch_lat %lld queue_lat %lld osd_lat %lld peers %d %d max_peer_lat %lld bluestore_lat %lld op_lat %lld\n", 
    	    osd_id, op.wb, op.throttle_lat, op.recv_lat, op.dispatch_lat, op.queue_lat, op.osd_lat,  op.peers[0], op.peers[1], op.max_peer_lat, op.bluestore_lat, op.op_lat);
     for (int i = 0; i < op.delayed_cnt; ++i) {
