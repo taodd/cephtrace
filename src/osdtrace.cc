@@ -136,11 +136,11 @@ DwarfParser::probes_t osd_probes = {
       {"this", "reqid", "name", "_num"},
       {"this", "reqid", "tid"},
       {"s", "_M_string_length"},
-      {"s", "_M_local_buf"}}},
+      {"s", "_M_local_buf"}}}
     
-    {"BlueStore::log_latency",
+    /*{"BlueStore::log_latency",
      {{"idx"},
-      {"l", "__r"}}}
+      {"l", "__r"}}}*/
 
 };
 
@@ -654,7 +654,7 @@ static void handle_lost_event(void *ctx, int cpu, __u64 lost_cnt)
 
 int parse_args(int argc, char **argv) {
   char opt;
-  while ((opt = getopt(argc, argv, ":d:m:t:x:b")) != -1) {
+  while ((opt = getopt(argc, argv, ":d:m:t:xb")) != -1) {
     switch (opt) {
       case 'd':
         period = optarg[0] - '0';
@@ -770,6 +770,7 @@ int main(int argc, char **argv) {
 
   clog << "Start to parse ceph dwarf info" << endl;
 
+  //std::string path = "/home/taodd/Git/ceph/build/bin/ceph-osd";
   std::string path = "/usr/bin/ceph-osd";
   DwarfParser dwarfparser(path, osd_probes, probe_units);
   dwarfparser.parse();
