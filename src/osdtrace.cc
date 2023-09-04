@@ -144,9 +144,9 @@ DwarfParser::probes_t osd_probes = {
 
 };
 
-enum mode_e { MODE_AVG = 1, MODE_MAX };
+enum mode_e { MODE_AVG = 1, MODE_MAX, MODE_ALL };
 
-enum mode_e mode = MODE_AVG;
+enum mode_e mode = MODE_ALL;
 
 enum probe_mode_e {
     OP_SINGLE_PROBE = 1,
@@ -478,17 +478,17 @@ void handle_full(struct op_v *val, int osd_id) {
     osd_op_t op = generate_op(val);
     if (op.op_lat/(1000*1000) < threshold) 
       return;
-    printf("osd %d size %d throttle_lat %lld recv_lat %lld dispatch_lat %lld queue_lat %lld osd_lat %lld peers %d %d max_peer_lat %lld bluestore_lat %lld op_lat %lld\n", 
+    printf("osd %d size %d throttle_lat %lld recv_lat %lld dispatch_lat %lld queue_lat %lld osd_lat %lld peers [%d, %d] max_peer_lat %lld bluestore_lat %lld op_lat %lld\n", 
    	    osd_id, op.wb, op.throttle_lat, op.recv_lat, op.dispatch_lat, op.queue_lat, op.osd_lat,  op.peers[0], op.peers[1], op.max_peer_lat, op.bluestore_lat, op.op_lat);
     for (int i = 0; i < op.delayed_cnt; ++i) {
-      printf("delayed%d %s ", i+1, op.delayed_strs[i].c_str());
+      printf("[delayed%d %s ]", i+1, op.delayed_strs[i].c_str());
     }
     if (op.delayed_cnt > 0)
       printf("\n");
 
 }
 
-void print_full(struct op_v *val, int osd_id) {
+void handle_avg(struct op_v *val, int osd_id) {
   op_stat[osd_id].recv_lat += (val->recv_complete_stamp - val->recv_stamp);
   op_stat[osd_id].max_recv_lat =
       MAX(op_stat[osd_id].max_recv_lat,
@@ -525,8 +525,6 @@ void print_full(struct op_v *val, int osd_id) {
   op_stat[osd_id].w_cnt += (val->wb ? 1 : 0);
   op_stat[osd_id].rbytes += val->rb;
   op_stat[osd_id].wbytes += val->wb;
-
-  printf("recv_stamp %lld, recv_stamp-bootstamp %lld\n", val->recv_stamp, val->recv_stamp - bootstamp);
 
   // printf("Number is %lld Client.%lld tid %lld recv_stamp %lld
   // recv_complete_stamp %lld dispatch_stamp %lld enqueue_stamp %lld
@@ -619,7 +617,6 @@ void handle_bluestore(struct bluestore_lat_v *val, int osd_id) {
 }
 
 static int handle_event(void *ctx, void *data, size_t size) {
-
   int osd_id = -1;
   int pid = 0;
   if (probe_mode == OP_SINGLE_PROBE) {
@@ -631,7 +628,11 @@ static int handle_event(void *ctx, void *data, size_t size) {
     struct op_v *val = (struct op_v *)data;
     pid = val->pid;
     osd_id = osd_pid_to_id(pid);
-    handle_full(val, osd_id);
+    if (mode == MODE_AVG) {
+      handle_avg(val, osd_id);
+    } else if (mode == MODE_ALL){
+      handle_full(val, osd_id);
+    }
     //print_full(val, osd_id);
   } else if (probe_mode == BLUESTORE_PROBE) {
     struct bluestore_lat_v *val = (struct bluestore_lat_v *) data;
