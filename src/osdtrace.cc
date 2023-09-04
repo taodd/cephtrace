@@ -159,7 +159,7 @@ enum probe_mode_e probe_mode = OP_SINGLE_PROBE;
 static __u64 bootstamp = 0;
 
 int threshold = 0;
-
+int probe_osdid = -1;
 
 
 static __u64 cnt = 0;
@@ -623,22 +623,27 @@ static int handle_event(void *ctx, void *data, size_t size) {
     struct op_v *val = (struct op_v *)data;
     pid = val->pid;
     osd_id = osd_pid_to_id(pid);
-    handle_single(val, osd_id);
+    if (probe_osdid == -1 || probe_osdid == osd_id)
+      handle_single(val, osd_id);
   } else if (probe_mode == OP_FULL_PROBE){
     struct op_v *val = (struct op_v *)data;
     pid = val->pid;
     osd_id = osd_pid_to_id(pid);
-    if (mode == MODE_AVG) {
-      handle_avg(val, osd_id);
-    } else if (mode == MODE_ALL){
-      handle_full(val, osd_id);
+    if (probe_osdid == -1 || probe_osdid == osd_id)
+    {
+      if (mode == MODE_AVG) {
+        handle_avg(val, osd_id);
+      } else if (mode == MODE_ALL){
+        handle_full(val, osd_id);
+      }
     }
     //print_full(val, osd_id);
   } else if (probe_mode == BLUESTORE_PROBE) {
     struct bluestore_lat_v *val = (struct bluestore_lat_v *) data;
     pid = val->pid;
     osd_id = osd_pid_to_id(pid);
-    handle_bluestore(val, osd_id);
+    if (probe_osdid == -1 || probe_osdid == osd_id)
+      handle_bluestore(val, osd_id);
   }
   
   if (!exists(osd_id)) {
@@ -657,7 +662,7 @@ static void handle_lost_event(void *ctx, int cpu, __u64 lost_cnt)
 
 int parse_args(int argc, char **argv) {
   char opt;
-  while ((opt = getopt(argc, argv, ":d:m:t:xb")) != -1) {
+  while ((opt = getopt(argc, argv, ":d:m:t:o:xb")) != -1) {
     switch (opt) {
       case 'd':
         period = optarg[0] - '0';
@@ -680,6 +685,9 @@ int parse_args(int argc, char **argv) {
 	break;
       case 'b':
         probe_mode = BLUESTORE_PROBE;
+	break;
+      case 'o':
+	probe_osdid = stoi(optarg);
 	break;
       case '?':
         clog << "Unknown option: " << optopt << endl;
