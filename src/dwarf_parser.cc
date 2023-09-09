@@ -413,6 +413,12 @@ static int handle_function(Dwarf_Die *die, void *data) {
   if (dp->probes.find(fullname) == dp->probes.end()) {
     return 0;
   }
+
+  //TODO Need to find all the instances of the inlined function, now we just filter those inline function
+  if (dwarf_func_inline(die) != 0) {
+     return 0;
+  } 
+
   // TODO need to check if the class name matches
   Dwarf_Addr pc = dp->find_prologue(die);
   dp->func2pc[fullname] = pc;
@@ -424,8 +430,8 @@ static int handle_function(Dwarf_Die *die, void *data) {
     string varname = arr[i][0];
     Dwarf_Die vardie, typedie;
     VarLocation varloc = dp->translate_param_location(die, varname, pc, vardie);
-    // debug: printf("var location : register %d, offset %d, stack %d\n",
-    // varloc.reg, varloc.offset, varloc.stack);
+    //printf("var %s location : register %d, offset %d, stack %d\n",
+     //varname.c_str(), varloc.reg, varloc.offset, varloc.stack);
     vf[i].varloc = varloc;
 
     // translate fileds
@@ -433,8 +439,8 @@ static int handle_function(Dwarf_Die *die, void *data) {
     vf[i].fields.resize(arr[i].size());
     dp->translate_fields(&vardie, &typedie, pc, arr[i], vf[i].fields);
     for (int j = 1; j < (int)vf[i].fields.size(); ++j) {
-      // printf("Field %s is at offset %d, defref %d\n", arr[i][j].c_str(),
-      // vf[i].fields[j].offset, vf[i].fields[j].pointer);
+       //printf("Field %s is at offset %d, defref %d\n", arr[i][j].c_str(),
+       //vf[i].fields[j].offset, vf[i].fields[j].pointer);
     }
   }
   return 0;

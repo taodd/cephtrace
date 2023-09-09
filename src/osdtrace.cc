@@ -136,11 +136,12 @@ DwarfParser::probes_t osd_probes = {
       {"this", "reqid", "name", "_num"},
       {"this", "reqid", "tid"},
       {"s", "_M_string_length"},
-      {"s", "_M_local_buf"}}}
+      {"s", "_M_dataplus", "_M_p"}}}, //refer to https://blog.csdn.net/qq_41540355/article/details/122182423
+      //{"s", "_M_local_buf"}}}, // when size < 15
     
-    /*{"BlueStore::log_latency",
+    {"BlueStore::log_latency",
      {{"idx"},
-      {"l", "__r"}}}*/
+      {"l", "__r"}}}
 
 };
 
