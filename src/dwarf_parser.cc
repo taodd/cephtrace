@@ -388,6 +388,12 @@ bool DwarfParser::filter_cu(string unitname) {
   return false;
 }
 
+std::string special_inlined_function_scope(const char *funcname){
+  if (strcmp(funcname, "log_latency") == 0) 
+    return "BlueStore";
+  return "";
+}
+
 static int handle_function(Dwarf_Die *die, void *data) {
   assert(data != NULL);
   DwarfParser *dp = (DwarfParser *)data;
@@ -402,11 +408,13 @@ static int handle_function(Dwarf_Die *die, void *data) {
   }
   Dwarf_Die *scopes;
   int nscopes = dwarf_getscopes_die(&func_spec, &scopes);
-
+  
   string fullname = funcname;
+
   if (nscopes > 1) {
     fullname = "::" + fullname;
-    fullname = dwarf_diename(&scopes[1]) + fullname;
+    string scopename = special_inlined_function_scope(funcname);
+    fullname = scopename.empty() ? dwarf_diename(&scopes[1]) + fullname : scopename + fullname;
   }
 
   // debug: printf("function fullname is %s\n", fullname.c_str());

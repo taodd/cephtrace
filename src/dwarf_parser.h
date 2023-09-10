@@ -66,6 +66,7 @@ class DwarfParser {
   bool filter_cu(std::string);
   void translate_expr(Dwarf_Attribute *, Dwarf_Op *, Dwarf_Addr, VarLocation &);
   Dwfl *create_dwfl(int, const char *);
+  std::string special_inlined_function_scope(const char *);
 };
 
 #endif
