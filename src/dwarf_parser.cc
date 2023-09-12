@@ -424,6 +424,8 @@ static int handle_function(Dwarf_Die *die, void *data) {
 
   //TODO Need to find all the instances of the inlined function, now we just filter those inline function
   if (dwarf_func_inline(die) != 0) {
+     // Refer to elfutils/tests: we can iterate all inlined instances via below function
+     // dwarf_func_inline_instances(die, &handle_instance, NULL);
      return 0;
   } 
 
