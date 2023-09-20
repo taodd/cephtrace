@@ -456,15 +456,16 @@ osd_op_t generate_op(op_v *val) {
   memset(&op, 0, sizeof(osd_op_t));
   op.wb = val->wb;
   op.rb = val->rb;
+  __u64 recv_stamp = val->recv_stamp;
   if (val->throttle_stamp < val->recv_stamp) { 
       //Due to recv_stamp bug https://tracker.ceph.com/issues/52739
       //Releases older than 16.2.7, the recv_stamp is not accurate at all
       //Hence we'll use the throttle_stamp as the recv_stamp, which will only lose 1-3 microseconds
-      val->recv_stamp = val->throttle_stamp;
+      recv_stamp = val->throttle_stamp;
 
   }
-  op.throttle_lat = (val->throttle_stamp - val->recv_stamp)/1000; 
-  op.recv_lat = (val->recv_complete_stamp - val->recv_stamp)/1000; 
+  op.throttle_lat = (val->throttle_stamp - recv_stamp)/1000; 
+  op.recv_lat = (val->recv_complete_stamp - recv_stamp)/1000; 
   op.dispatch_lat +=
       (val->enqueue_stamp - (val->recv_complete_stamp - bootstamp))/1000;
 
