@@ -461,7 +461,7 @@ osd_op_t generate_op(op_v *val) {
 
   op.queue_lat += (val->dequeue_stamp - val->enqueue_stamp)/1000;
   if (op.wb > 0)
-    op.osd_lat = (val->submit_transaction_stamp - val->dequeue_stamp)/1000;
+    op.osd_lat = (val->queue_transaction_stamp - val->dequeue_stamp)/1000;
   else if (op.rb > 0)
     op.osd_lat = 0; // TODO
   op.delayed_cnt = val->di.cnt;
@@ -473,7 +473,7 @@ osd_op_t generate_op(op_v *val) {
   op.peers.push_back(val->pi.peer2); 
   op.max_peer_lat = (max(val->pi.recv_stamp1, val->pi.recv_stamp2) - val->pi.sent_stamp)/1000; 
   
-  op.bluestore_lat = (val->kv_committed_stamp - val->submit_transaction_stamp)/1000;
+  op.bluestore_lat = (val->kv_committed_stamp - val->queue_transaction_stamp)/1000;
 
   op.op_lat = (val->reply_stamp - (val->recv_stamp - bootstamp))/1000;
 
@@ -497,6 +497,14 @@ void handle_full(struct op_v *val, int osd_id) {
 }
 
 void handle_avg(struct op_v *val, int osd_id) {
+
+  if (val->throttle_stamp < val->recv_stamp) { 
+      //Due to recv_stamp bug https://tracker.ceph.com/issues/52739
+      //Releases older than 16.2.7, the recv_stamp is not accurate at all
+      //Hence we'll use the throttle_stamp as the recv_stamp, which will only lose 1-3 microseconds
+      val->recv_stamp = val->throttle_stamp;
+  }
+
   op_stat[osd_id].recv_lat += (val->recv_complete_stamp - val->recv_stamp);
   op_stat[osd_id].max_recv_lat =
       MAX(op_stat[osd_id].max_recv_lat,
@@ -510,10 +518,10 @@ void handle_avg(struct op_v *val, int osd_id) {
   op_stat[osd_id].max_queue_lat = MAX(
       op_stat[osd_id].max_queue_lat, (val->dequeue_stamp - val->enqueue_stamp));
   op_stat[osd_id].osd_lat +=
-      (val->submit_transaction_stamp - val->dequeue_stamp);
+      (val->queue_transaction_stamp - val->dequeue_stamp);
   op_stat[osd_id].max_osd_lat =
       MAX(op_stat[osd_id].max_osd_lat,
-          (val->submit_transaction_stamp - val->dequeue_stamp));
+          (val->queue_transaction_stamp - val->dequeue_stamp));
   op_stat[osd_id].bluestore_alloc_lat +=
       (val->data_submit_stamp - val->do_write_stamp);
   op_stat[osd_id].bluestore_data_lat +=
@@ -521,10 +529,10 @@ void handle_avg(struct op_v *val, int osd_id) {
   op_stat[osd_id].bluestore_kv_lat +=
       (val->kv_committed_stamp - val->kv_submit_stamp);
   op_stat[osd_id].bluestore_lat +=
-      (val->reply_stamp - val->submit_transaction_stamp);
+      (val->kv_committed_stamp - val->queue_transaction_stamp);
   op_stat[osd_id].max_bluestore_lat =
       MAX(op_stat[osd_id].max_bluestore_lat,
-          (val->reply_stamp - val->submit_transaction_stamp));
+          (val->kv_committed_stamp - val->queue_transaction_stamp));
   op_stat[osd_id].op_lat += (val->reply_stamp - (val->recv_stamp - bootstamp));
   op_stat[osd_id].max_op_lat =
       MAX(op_stat[osd_id].max_op_lat,
@@ -829,6 +837,8 @@ int main(int argc, char **argv) {
     attach_uprobe(skel, dwarfparser, path, "ReplicatedBackend::do_repop_reply");
 
     attach_uprobe(skel, dwarfparser, path, "ReplicatedBackend::submit_transaction");
+
+    attach_uprobe(skel, dwarfparser, path, "BlueStore::queue_transactions");
 
     attach_uprobe(skel, dwarfparser, path, "BlueStore::_do_write");
 

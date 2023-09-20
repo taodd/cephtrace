@@ -216,8 +216,8 @@ int uprobe_enqueue_op(struct pt_regs *ctx) {
   } else {
     bpf_printk("uprobe_enqueue_op got NULL vf at varid %d\n", varid);
   }
-  if (op_type != MSG_OSD_OP) {
-    bpf_printk("uprobe_enqueue_op got non osdop type %d", op_type);
+  if (op_type != MSG_OSD_OP && op_type != MSG_OSD_REPOP) {
+    bpf_printk("uprobe_enqueue_op got a non osdop/osdrepop %d, ignore\n", op_type);
     return 0;
   }
 
@@ -361,8 +361,8 @@ int uprobe_dequeue_op(struct pt_regs *ctx) {
   } else {
     bpf_printk("uprobe_dequeue_op got NULL vf at varid %d\n", varid);
   }
-  if (op_type != MSG_OSD_OP) {
-    bpf_printk("uprobe_dequeue_op got non osdop type %d", op_type);
+  if (op_type != MSG_OSD_OP && op_type != MSG_OSD_REPOP) {
+    bpf_printk("uprobe_dequeue_op got non osd op or repop type %d, ignore\n", op_type);
     return 0;
   }
 
