@@ -216,7 +216,7 @@ int uprobe_enqueue_op(struct pt_regs *ctx) {
   } else {
     bpf_printk("uprobe_enqueue_op got NULL vf at varid %d\n", varid);
   }
-  if (op_type != MSG_OSD_OP && op_type != MSG_OSD_REPOP) {
+  if (op_type != MSG_OSD_OP) {
     bpf_printk("uprobe_enqueue_op got a non osdop/osdrepop %d, ignore\n", op_type);
     return 0;
   }
@@ -361,7 +361,7 @@ int uprobe_dequeue_op(struct pt_regs *ctx) {
   } else {
     bpf_printk("uprobe_dequeue_op got NULL vf at varid %d\n", varid);
   }
-  if (op_type != MSG_OSD_OP && op_type != MSG_OSD_REPOP) {
+  if (op_type != MSG_OSD_OP) {
     bpf_printk("uprobe_dequeue_op got non osd op or repop type %d, ignore\n", op_type);
     return 0;
   }
@@ -999,4 +999,39 @@ int uprobe_log_latency(struct pt_regs *ctx)
 
   return 0;
 }
+/*
+SEC("uprobe")
+int uprobe_log_subop_stats(struct pt_regs *ctx)
+{
+  bpf_printk("Entered into log_subop_stats\n");
+  int varid = 140;
+  struct op_v op;
+  memset(&op, 0, sizeof(op));
+  // read num
+  struct VarField *vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL != vf) {
+    __u64 v = 0;
+    v = fetch_register(ctx, vf->varloc.reg);
+    __u64 num_addr = fetch_var_member_addr(v, vf);
+    bpf_probe_read_user(&op.owner, sizeof(op.owner), (void *)num_addr);
+  } else {
+    bpf_printk("uprobe_log_op_stats_v2 got NULL vf at varid %d\n", varid);
+  }
+  // read tid
+  ++varid;
+  vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL != vf) {
+    __u64 v = 0;
+    v = fetch_register(ctx, vf->varloc.reg);
+    __u64 tid_addr = fetch_var_member_addr(v, vf);
+    bpf_probe_read_user(&op.tid, sizeof(op.tid), (void *)tid_addr);
+  } else {
+    bpf_printk("uprobe_log_op_stats_v2 got NULL vf at varid %d\n", varid);
+    return 0;
+  }
+  op.pid = get_pid();
+  op.reply_stamp = bpf_ktime_get_boot_ns();
+  //read recv_stamp
+  ++varid;
 
+}*/

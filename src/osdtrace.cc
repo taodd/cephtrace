@@ -53,7 +53,8 @@ func_id_t func_id = {
     {"ReplicatedBackend::generate_subop", 100},
     {"ReplicatedBackend::do_repop_reply", 110},
     {"OpRequest::mark_flag_point_string", 120},
-    {"BlueStore::log_latency", 130}
+    {"BlueStore::log_latency", 130},
+    {"log_subop_stats", 140}
 };
 
 std::map<std::string, int> func_progid = {
@@ -71,7 +72,8 @@ std::map<std::string, int> func_progid = {
     {"ReplicatedBackend::generate_subop", 11},
     {"ReplicatedBackend::do_repop_reply", 12},
     {"OpRequest::mark_flag_point_string", 13},
-    {"BlueStore::log_latency", 14}
+    {"BlueStore::log_latency", 14},
+    {"log_subop_stats", 15}
 };
 
 DwarfParser::probes_t osd_probes = {
@@ -120,6 +122,7 @@ DwarfParser::probes_t osd_probes = {
       {"inb"},
       {"outb"},
       {"op", "request", "recv_stamp"},
+      //{"op", "request", "throttle_stamp"},
       {"op", "request", "header", "type"}}},
 
     {"ReplicatedBackend::generate_subop",
@@ -141,7 +144,13 @@ DwarfParser::probes_t osd_probes = {
     
     {"BlueStore::log_latency",
      {{"idx"},
-      {"l", "__r"}}}
+      {"l", "__r"}}},
+
+    {"log_subop_stats", 
+     {{"op", "px", "reqid", "name", "_num"},
+      {"op", "px", "reqid", "tid"},
+      {"op", "px", "request", "recv_stamp"},
+      {"op", "px", "request", "throttle_stamp"}}}
 
 };
 
