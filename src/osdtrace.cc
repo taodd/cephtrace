@@ -37,7 +37,7 @@ using namespace std;
 typedef std::map<std::string, int> func_id_t;
 
 std::vector<std::string> probe_units = {
-    "OpRequest.cc", "OSD.cc", "BlueStore.cc", "PrimaryLogPG.cc", "ReplicatedBackend.cc"};
+    "OpRequest.cc", "OSD.cc", "BlueStore.cc", "PrimaryLogPG.cc", "ReplicatedBackend.cc", "ECBackend.cc"};
 
 func_id_t func_id = {
     {"OSD::enqueue_op", 0},
@@ -54,7 +54,8 @@ func_id_t func_id = {
     {"ReplicatedBackend::do_repop_reply", 110},
     {"OpRequest::mark_flag_point_string", 120},
     {"BlueStore::log_latency", 130},
-    {"log_subop_stats", 140}
+    {"log_subop_stats", 140},
+    {"ECBackend::submit_transaction", 150}
 };
 
 std::map<std::string, int> func_progid = {
@@ -73,7 +74,8 @@ std::map<std::string, int> func_progid = {
     {"ReplicatedBackend::do_repop_reply", 12},
     {"OpRequest::mark_flag_point_string", 13},
     {"BlueStore::log_latency", 14},
-    {"log_subop_stats", 15}
+    {"log_subop_stats", 15},
+    {"ECBackend::submit_transaction", 16}
 };
 
 DwarfParser::probes_t osd_probes = {
@@ -150,8 +152,10 @@ DwarfParser::probes_t osd_probes = {
      {{"op", "px", "reqid", "name", "_num"},
       {"op", "px", "reqid", "tid"},
       {"op", "px", "request", "recv_stamp"},
-      {"op", "px", "request", "throttle_stamp"}}}
-
+      {"op", "px", "request", "throttle_stamp"}}},
+    
+    {"ECBackend::submit_transaction",
+     {{"reqid", "name", "_num"}, {"reqid", "tid"}}}
 };
 
 enum mode_e { MODE_AVG = 1, MODE_MAX, MODE_ALL };
@@ -847,6 +851,8 @@ int main(int argc, char **argv) {
     attach_uprobe(skel, dwarfparser, path, "ReplicatedBackend::do_repop_reply");
 
     attach_uprobe(skel, dwarfparser, path, "ReplicatedBackend::submit_transaction");
+
+    attach_uprobe(skel, dwarfparser, path, "ECBackend::submit_transaction");
 
     attach_uprobe(skel, dwarfparser, path, "BlueStore::queue_transactions");
 
