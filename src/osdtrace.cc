@@ -74,8 +74,8 @@ std::map<std::string, int> func_progid = {
     {"ReplicatedBackend::do_repop_reply", 12},
     {"OpRequest::mark_flag_point_string", 13},
     {"BlueStore::log_latency", 14},
-    {"log_subop_stats", 15},
-    {"ECBackend::submit_transaction", 16}
+    //{"log_subop_stats", 15},
+    {"ECBackend::submit_transaction", 15}
 };
 
 DwarfParser::probes_t osd_probes = {

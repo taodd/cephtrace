@@ -6,6 +6,11 @@
 
 #define MSG_OSD_OP 42
 #define MSG_OSD_OPREPLY 43
+
+#define MSG_OSD_EC_WRITE 108
+#define MSG_OSD_EC_WRITE_REPLY 109
+#define MSG_OSD_EC_READ 110
+#define MSG_OSD_EC_READ_REPLY 111
  
 static const __u8 flag_queued_for_pg=1 << 0;
 static const __u8 flag_reached_pg =  1 << 1;
