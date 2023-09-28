@@ -286,7 +286,12 @@ int osd_pid_to_id(__u32 pid) {
   snprintf(path_cmdline, sizeof(path_cmdline), "/proc/%d/cmdline", pid);
   int fd = open(path_cmdline, O_RDONLY);
   if (read(fd, pname, 200) >= 0) {
-    id = pname[41] - '0';
+    int start = 41;
+    while (pname[start] != '-' && start < 200) {
+      id *= 10;
+      id += pname[41] - '0';
+      ++start;
+    }
   }
   close(fd);
   return id;
