@@ -287,7 +287,7 @@ int osd_pid_to_id(__u32 pid) {
   int fd = open(path_cmdline, O_RDONLY);
   if (read(fd, pname, 200) >= 0) {
     int start = 41;
-    while (pname[start] != '-' && start < 200) {
+    while (pname[start] != 0 && start < 200) {
       id *= 10;
       id += pname[start] - '0';
       ++start;
