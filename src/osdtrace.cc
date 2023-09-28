@@ -289,7 +289,7 @@ int osd_pid_to_id(__u32 pid) {
     int start = 41;
     while (pname[start] != '-' && start < 200) {
       id *= 10;
-      id += pname[41] - '0';
+      id += pname[start] - '0';
       ++start;
     }
   }
