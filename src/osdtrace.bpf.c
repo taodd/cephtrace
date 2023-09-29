@@ -883,14 +883,26 @@ int uprobe_do_repop_reply(struct pt_regs *ctx)
   }
   key.pid = get_pid();
 
+  // read source osdid
+  int osdid = -1;
+  ++varid;
+  vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL != vf) {
+    __u64 v = 0;
+    v = fetch_register(ctx, vf->varloc.reg);
+    __u64 osdid_addr = fetch_var_member_addr(v, vf);
+    bpf_probe_read_user(&osdid, sizeof(osdid), (void *)osdid_addr);
+  } else {
+    bpf_printk("uprobe_do_repop_reply got NULL vf at varid %d\n", varid);
+    return 0;
+  }
+
   struct op_v *vp = bpf_map_lookup_elem(&ops, &key);
   if (NULL != vp) {
-    if (vp->pi.recv_stamp1 == 0)
+    if (osdid == vp->pi.peer1)
       vp->pi.recv_stamp1 = bpf_ktime_get_boot_ns();
-    else 
+    else if (osdid == vp->pi.peer2)
       vp->pi.recv_stamp2 = bpf_ktime_get_boot_ns();
-    bpf_printk("uprobe_do_repop_reply client %lld, tid %lld, peer1 %d ", key.owner, key.tid, vp->pi.peer1);
-    bpf_printk(" sent_stamp %lld, repop_reply_stamp %lld\n", vp->pi.sent_stamp, vp->pi.recv_stamp1);
   } else {
     bpf_printk("uprobe_do_repop_reply unable to get op_v for client %lld, tid %lld\n", key.owner, key.tid);  
   }

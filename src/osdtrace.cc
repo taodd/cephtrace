@@ -134,7 +134,8 @@ DwarfParser::probes_t osd_probes = {
     
     {"ReplicatedBackend::do_repop_reply",
       {{"op", "px", "reqid", "name", "_num"},
-       {"op", "px", "reqid", "tid"}}},
+       {"op", "px", "reqid", "tid"},
+       {"op", "px", "request", "header", "src", "num"}}},
 
     {"OpRequest::mark_flag_point_string",
      {{"flag"},
@@ -185,6 +186,12 @@ static int libbpf_print_fn(enum libbpf_print_level level, const char *format,
 
 #define DEBUG printf
 
+typedef struct peer_lat_t {
+    int peer;
+    __u64 latency;
+    peer_lat_t(int a, __u64 b): peer(a), latency(b) {}
+} peer_lat;
+
 typedef struct osd_op {
   __u32 type;
   __u32 wb;
@@ -203,8 +210,7 @@ typedef struct osd_op {
   //__u32 extent_decode;
 
 //Peer info
-  vector<int> peers;
-  __u64 max_peer_lat; //max(recv_stamp1, recv_stamp2) - sent_stamp;
+  vector<peer_lat> peers;
 
 //Bluestore level
   __u64 bluestore_lat;  
@@ -488,13 +494,12 @@ osd_op_t generate_op(op_v *val) {
     op.delayed_strs.push_back(std::string(val->di.delays[i]));
   }
   
-  op.peers.push_back(val->pi.peer1); 
-  op.peers.push_back(val->pi.peer2); 
-  op.max_peer_lat = (max(val->pi.recv_stamp1, val->pi.recv_stamp2) - val->pi.sent_stamp)/1000; 
+  op.peers.push_back(peer_lat(val->pi.peer1, (val->pi.recv_stamp1 - val->pi.sent_stamp)/1000)); 
+  op.peers.push_back(peer_lat(val->pi.peer2, (val->pi.recv_stamp2 - val->pi.sent_stamp)/1000)); 
   
   op.bluestore_lat = (val->kv_committed_stamp - val->queue_transaction_stamp)/1000;
 
-  op.op_lat = (val->reply_stamp - (val->recv_stamp - bootstamp))/1000;
+  op.op_lat = (val->reply_stamp - (recv_stamp - bootstamp))/1000;
 
   return op;
 }
@@ -505,8 +510,8 @@ void handle_full(struct op_v *val, int osd_id) {
     osd_op_t op = generate_op(val);
     if (op.op_lat/(1000) < threshold) 
       return;
-    printf("osd %d size %d throttle_lat %lld recv_lat %lld dispatch_lat %lld queue_lat %lld osd_lat %lld peers [%d, %d] max_peer_lat %lld bluestore_lat %lld op_lat %lld\n", 
-   	    osd_id, op.wb, op.throttle_lat, op.recv_lat, op.dispatch_lat, op.queue_lat, op.osd_lat,  op.peers[0], op.peers[1], op.max_peer_lat, op.bluestore_lat, op.op_lat);
+    printf("osd %d size %d throttle_lat %lld recv_lat %lld dispatch_lat %lld queue_lat %lld osd_lat %lld peers [(%d, %lld), (%d, %lld)] bluestore_lat %lld op_lat %lld\n", 
+   	    osd_id, op.wb, op.throttle_lat, op.recv_lat, op.dispatch_lat, op.queue_lat, op.osd_lat,  op.peers[0].peer, op.peers[0].latency, op.peers[1].peer, op.peers[1].latency, op.bluestore_lat, op.op_lat);
     for (int i = 0; i < op.delayed_cnt; ++i) {
       printf("[delayed%d %s ]", i+1, op.delayed_strs[i].c_str());
     }
@@ -517,17 +522,18 @@ void handle_full(struct op_v *val, int osd_id) {
 
 void handle_avg(struct op_v *val, int osd_id) {
 
+  __u64 recv_stamp = val->recv_stamp;
   if (val->throttle_stamp < val->recv_stamp) { 
       //Due to recv_stamp bug https://tracker.ceph.com/issues/52739
       //Releases older than 16.2.7, the recv_stamp is not accurate at all
       //Hence we'll use the throttle_stamp as the recv_stamp, which will only lose 1-3 microseconds
-      val->recv_stamp = val->throttle_stamp;
+      recv_stamp = val->throttle_stamp;
   }
 
-  op_stat[osd_id].recv_lat += (val->recv_complete_stamp - val->recv_stamp);
+  op_stat[osd_id].recv_lat += (val->recv_complete_stamp - recv_stamp);
   op_stat[osd_id].max_recv_lat =
       MAX(op_stat[osd_id].max_recv_lat,
-          (val->recv_complete_stamp - val->recv_stamp));
+          (val->recv_complete_stamp - recv_stamp));
   op_stat[osd_id].dispatch_lat +=
       (val->enqueue_stamp - (val->recv_complete_stamp - bootstamp));
   op_stat[osd_id].max_dispatch_lat =
@@ -552,10 +558,10 @@ void handle_avg(struct op_v *val, int osd_id) {
   op_stat[osd_id].max_bluestore_lat =
       MAX(op_stat[osd_id].max_bluestore_lat,
           (val->kv_committed_stamp - val->queue_transaction_stamp));
-  op_stat[osd_id].op_lat += (val->reply_stamp - (val->recv_stamp - bootstamp));
+  op_stat[osd_id].op_lat += (val->reply_stamp - (recv_stamp - bootstamp));
   op_stat[osd_id].max_op_lat =
       MAX(op_stat[osd_id].max_op_lat,
-          (val->reply_stamp - (val->recv_stamp - bootstamp)));
+          (val->reply_stamp - (recv_stamp - bootstamp)));
   op_stat[osd_id].r_cnt += (val->rb ? 1 : 0);
   op_stat[osd_id].w_cnt += (val->wb ? 1 : 0);
   op_stat[osd_id].rbytes += val->rb;
@@ -816,8 +822,8 @@ int main(int argc, char **argv) {
 
   clog << "Start to parse ceph dwarf info" << endl;
 
-  //std::string path = "/home/taodd/Git/ceph/build/bin/ceph-osd";
-  std::string path = "/usr/bin/ceph-osd";
+  std::string path = "/home/taodd/Git/ceph/build/bin/ceph-osd";
+  //std::string path = "/usr/bin/ceph-osd";
   DwarfParser dwarfparser(path, osd_probes, probe_units);
   dwarfparser.parse();
 
