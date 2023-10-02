@@ -67,15 +67,14 @@ std::map<std::string, int> func_progid = {
     {"BlueStore::_do_write", 5},
     {"BlueStore::_wctx_finish", 6},
     {"BlueStore::_txc_state_proc", 7},
-    {"BlueStore::_txc_apply_kv", 8},
-    {"PrimaryLogPG::log_op_stats", 9},
-    {"PrimaryLogPG::log_op_stats_v2", 10},
-    {"ReplicatedBackend::generate_subop", 11},
-    {"ReplicatedBackend::do_repop_reply", 12},
-    {"OpRequest::mark_flag_point_string", 13},
-    {"BlueStore::log_latency", 14},
+    {"PrimaryLogPG::log_op_stats", 8},
+    {"PrimaryLogPG::log_op_stats_v2", 9},
+    {"ReplicatedBackend::generate_subop", 10},
+    {"ReplicatedBackend::do_repop_reply", 11},
+    {"OpRequest::mark_flag_point_string", 12},
+    {"BlueStore::log_latency", 13},
     //{"log_subop_stats", 15},
-    {"ECBackend::submit_transaction", 15}
+    {"ECBackend::submit_transaction", 14}
 };
 
 DwarfParser::probes_t osd_probes = {
@@ -111,10 +110,14 @@ DwarfParser::probes_t osd_probes = {
 
     {"BlueStore::_wctx_finish",
      {
-         //{"txc"}
+        {"txc", "osr", "px", "sequencer_id"},
+        {"txc", "start", "__d", "__r"}
      }},
 
-    {"BlueStore::_txc_state_proc", {{"txc", "state"}}},
+    {"BlueStore::_txc_state_proc", 
+     {{"txc", "osr", "px", "sequencer_id"},
+      {"txc", "start", "__d", "__r"},
+      {"txc", "state"}}},
 
     {"BlueStore::_txc_apply_kv", {{"txc", "state"}}},
 
@@ -213,7 +216,11 @@ typedef struct osd_op {
   vector<peer_lat> peers;
 
 //Bluestore level
-  __u64 bluestore_lat;  
+  __u64 bs_prepare_lat; //including space allocation, 4k aligning..
+  __u64 bs_aio_wait_lat;
+  __u64 bs_pg_seq_lat;  //The time to wait for previous ops's aio to the same PG to finish
+  __u64 bs_kv_commit_lat;
+  __u64 bs_lat;  
 
 // op lat
   __u64 op_lat;
@@ -497,7 +504,12 @@ osd_op_t generate_op(op_v *val) {
   op.peers.push_back(peer_lat(val->pi.peer1, (val->pi.recv_stamp1 - val->pi.sent_stamp)/1000)); 
   op.peers.push_back(peer_lat(val->pi.peer2, (val->pi.recv_stamp2 - val->pi.sent_stamp)/1000)); 
   
-  op.bluestore_lat = (val->kv_committed_stamp - val->queue_transaction_stamp)/1000;
+  //bluestore level
+  op.bs_prepare_lat = (val->aio_submit_stamp - val->queue_transaction_stamp)/1000;
+  op.bs_aio_wait_lat = (val->aio_done_stamp - val->aio_submit_stamp)/1000;
+  op.bs_pg_seq_lat = (val->kv_submit_stamp - val->aio_done_stamp)/1000;
+  op.bs_kv_commit_lat = (val->kv_committed_stamp - val->kv_submit_stamp)/1000; 
+  op.bs_lat = (val->kv_committed_stamp - val->queue_transaction_stamp)/1000;
 
   op.op_lat = (val->reply_stamp - (recv_stamp - bootstamp))/1000;
 
@@ -510,8 +522,16 @@ void handle_full(struct op_v *val, int osd_id) {
     osd_op_t op = generate_op(val);
     if (op.op_lat/(1000) < threshold) 
       return;
-    printf("osd %d size %d throttle_lat %lld recv_lat %lld dispatch_lat %lld queue_lat %lld osd_lat %lld peers [(%d, %lld), (%d, %lld)] bluestore_lat %lld op_lat %lld\n", 
-   	    osd_id, op.wb, op.throttle_lat, op.recv_lat, op.dispatch_lat, op.queue_lat, op.osd_lat,  op.peers[0].peer, op.peers[0].latency, op.peers[1].peer, op.peers[1].latency, op.bluestore_lat, op.op_lat);
+    printf("osd %d size %d\
+		    throttle_lat %lld recv_lat %lld dispatch_lat %lld\
+		    queue_lat %lld osd_lat %lld peers [(%d, %lld), (%d, %lld)]\
+		    bluestore_lat %lld (prepare %lld aio_wait %lld seq_wait %lld kv_commit %lld)\
+		    op_lat %lld \n",
+   	    osd_id, op.wb, 
+	    op.throttle_lat, op.recv_lat, op.dispatch_lat, 
+	    op.queue_lat, op.osd_lat,  op.peers[0].peer, op.peers[0].latency, op.peers[1].peer, op.peers[1].latency, 
+	    op.bs_lat, op.bs_prepare_lat, op.bs_aio_wait_lat, op.bs_pg_seq_lat, op.bs_kv_commit_lat, 
+	    op.op_lat);
     for (int i = 0; i < op.delayed_cnt; ++i) {
       printf("[delayed%d %s ]", i+1, op.delayed_strs[i].c_str());
     }
@@ -548,9 +568,9 @@ void handle_avg(struct op_v *val, int osd_id) {
       MAX(op_stat[osd_id].max_osd_lat,
           (val->queue_transaction_stamp - val->dequeue_stamp));
   op_stat[osd_id].bluestore_alloc_lat +=
-      (val->data_submit_stamp - val->do_write_stamp);
+      (val->aio_done_stamp - val->do_write_stamp);
   op_stat[osd_id].bluestore_data_lat +=
-      (val->data_committed_stamp - val->data_submit_stamp);
+      (val->aio_done_stamp - val->aio_submit_stamp);
   op_stat[osd_id].bluestore_kv_lat +=
       (val->kv_committed_stamp - val->kv_submit_stamp);
   op_stat[osd_id].bluestore_lat +=
@@ -673,7 +693,8 @@ static int handle_event(void *ctx, void *data, size_t size) {
     if (probe_osdid == -1 || probe_osdid == osd_id)
     {
       if (mode == MODE_AVG) {
-        handle_avg(val, osd_id);
+	clog << "avg mode needs to be refined" << endl;
+        //handle_avg(val, osd_id);
       } else if (mode == MODE_ALL){
         handle_full(val, osd_id);
       }
@@ -867,13 +888,13 @@ int main(int argc, char **argv) {
 
     attach_uprobe(skel, dwarfparser, path, "BlueStore::queue_transactions");
 
-    attach_uprobe(skel, dwarfparser, path, "BlueStore::_do_write");
+    //attach_uprobe(skel, dwarfparser, path, "BlueStore::_do_write");
 
     attach_uprobe(skel, dwarfparser, path, "BlueStore::_wctx_finish");
 
     attach_uprobe(skel, dwarfparser, path, "BlueStore::_txc_state_proc");
 
-    attach_uprobe(skel, dwarfparser, path, "BlueStore::_txc_apply_kv");
+    //attach_uprobe(skel, dwarfparser, path, "BlueStore::_txc_apply_kv");
     
     attach_uprobe(skel, dwarfparser, path, "PrimaryLogPG::log_op_stats");
     

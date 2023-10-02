@@ -25,6 +25,12 @@ struct op_k {
   __u64 tid;    // request id from the client
 };
 
+struct ctx_k {
+  __u32 pid;
+  __u32 seqid;
+  __u64 start_stamp;
+};
+
 struct peers_info {
     int peer1;
     int peer2;
@@ -60,10 +66,11 @@ struct op_v {
   unsigned long long queue_transaction_stamp;
   unsigned long long do_write_stamp;
   unsigned long long wctx_finish_stamp;
-  unsigned long long data_submit_stamp;
-  unsigned long long data_committed_stamp;
+  unsigned long long aio_submit_stamp;
+  unsigned long long aio_done_stamp;
   unsigned long long kv_submit_stamp;
   unsigned long long kv_committed_stamp;
+  __u32 aio_size;
   struct peers_info pi;
   struct delay_info di;
   unsigned long long reply_stamp;
