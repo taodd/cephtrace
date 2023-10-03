@@ -522,11 +522,11 @@ void handle_full(struct op_v *val, int osd_id) {
     osd_op_t op = generate_op(val);
     if (op.op_lat/(1000) < threshold) 
       return;
-    printf("osd %d size %d\
-		    throttle_lat %lld recv_lat %lld dispatch_lat %lld\
-		    queue_lat %lld osd_lat %lld peers [(%d, %lld), (%d, %lld)]\
-		    bluestore_lat %lld (prepare %lld aio_wait %lld seq_wait %lld kv_commit %lld)\
-		    op_lat %lld \n",
+    printf("osd %d size %d "
+	    "throttle_lat %lld recv_lat %lld dispatch_lat %lld "
+	    "queue_lat %lld osd_lat %lld peers [(%d, %lld), (%d, %lld)] "
+	    "bluestore_lat %lld (prepare %lld aio_wait %lld seq_wait %lld kv_commit %lld) "
+	    "op_lat %lld \n",
    	    osd_id, op.wb, 
 	    op.throttle_lat, op.recv_lat, op.dispatch_lat, 
 	    op.queue_lat, op.osd_lat,  op.peers[0].peer, op.peers[0].latency, op.peers[1].peer, op.peers[1].latency, 
