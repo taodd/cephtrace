@@ -117,7 +117,8 @@ DwarfParser::probes_t osd_probes = {
     {"BlueStore::_txc_state_proc", 
      {{"txc", "osr", "px", "sequencer_id"},
       {"txc", "start", "__d", "__r"},
-      {"txc", "state"}}},
+      {"txc", "state"},
+      {"txc", "ioc", "num_pending"}}},
 
     {"BlueStore::_txc_apply_kv", {{"txc", "state"}}},
 
@@ -221,6 +222,7 @@ typedef struct osd_op {
   __u64 bs_pg_seq_lat;  //The time to wait for previous ops's aio to the same PG to finish
   __u64 bs_kv_commit_lat;
   __u64 bs_lat;  
+  int aio_size;
 
 // op lat
   __u64 op_lat;
@@ -246,6 +248,7 @@ struct op_stat_s {
   __u64 max_osd_lat;
   __u64 max_bluestore_lat;
   __u64 max_op_lat;
+  int aio_size;
 };
 int num_osd = 0;
 int osds[MAX_OSD] = {0};
@@ -505,6 +508,7 @@ osd_op_t generate_op(op_v *val) {
   op.peers.push_back(peer_lat(val->pi.peer2, (val->pi.recv_stamp2 - val->pi.sent_stamp)/1000)); 
   
   //bluestore level
+  op.aio_size = val->aio_size;
   op.bs_prepare_lat = (val->aio_submit_stamp - val->queue_transaction_stamp)/1000;
   op.bs_aio_wait_lat = (val->aio_done_stamp - val->aio_submit_stamp)/1000;
   op.bs_pg_seq_lat = (val->kv_submit_stamp - val->aio_done_stamp)/1000;
@@ -525,12 +529,12 @@ void handle_full(struct op_v *val, int osd_id) {
     printf("osd %d size %d "
 	    "throttle_lat %lld recv_lat %lld dispatch_lat %lld "
 	    "queue_lat %lld osd_lat %lld peers [(%d, %lld), (%d, %lld)] "
-	    "bluestore_lat %lld (prepare %lld aio_wait %lld seq_wait %lld kv_commit %lld) "
+	    "bluestore_lat %lld (prepare %lld aio_wait %lld (aio_size %d) seq_wait %lld kv_commit %lld) "
 	    "op_lat %lld \n",
    	    osd_id, op.wb, 
 	    op.throttle_lat, op.recv_lat, op.dispatch_lat, 
 	    op.queue_lat, op.osd_lat,  op.peers[0].peer, op.peers[0].latency, op.peers[1].peer, op.peers[1].latency, 
-	    op.bs_lat, op.bs_prepare_lat, op.bs_aio_wait_lat, op.bs_pg_seq_lat, op.bs_kv_commit_lat, 
+	    op.bs_lat, op.bs_prepare_lat, op.bs_aio_wait_lat, op.aio_size, op.bs_pg_seq_lat, op.bs_kv_commit_lat, 
 	    op.op_lat);
     for (int i = 0; i < op.delayed_cnt; ++i) {
       printf("[delayed%d %s ]", i+1, op.delayed_strs[i].c_str());

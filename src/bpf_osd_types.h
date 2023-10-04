@@ -70,7 +70,7 @@ struct op_v {
   unsigned long long aio_done_stamp;
   unsigned long long kv_submit_stamp;
   unsigned long long kv_committed_stamp;
-  __u32 aio_size;
+  int aio_size;
   struct peers_info pi;
   struct delay_info di;
   unsigned long long reply_stamp;

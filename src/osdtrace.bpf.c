@@ -637,37 +637,37 @@ int uprobe_txc_state_proc(struct pt_regs *ctx) {
   // read ctx->state
   ++varid;
   vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 state_addr = fetch_var_member_addr(v, vf);
-    __u32 state = 0;
-    bpf_probe_read_user(&state, sizeof(state), (void *)state_addr);
-    struct op_v *vp = bpf_map_lookup_elem(&ops, key);
-    if (NULL != vp) {
-      if (state == 0) {  // STATE_PREPARE
-        vp->aio_submit_stamp = bpf_ktime_get_boot_ns();
-	bpf_printk("uprobe_txc_state_proc owner %lld tid %lld aio_submit_stamp = %lld", key->owner, key->tid, vp->aio_submit_stamp);
-      } else if (state == 1) {  // STATE_AIO_WAIT
-        // until flushed can it be considered committed, not here.
-        vp->aio_done_stamp = bpf_ktime_get_boot_ns();
-	bpf_printk("uprobe_txc_state_proc owner %lld tid %lld aio_done_stamp = %lld", key->owner, key->tid, vp->aio_done_stamp);
-      } else if (state == 2) {  // STATE_IO_DONE sending to kv queue
-        vp->kv_submit_stamp = bpf_ktime_get_boot_ns();
-	bpf_printk("uprobe_txc_state_proc owner %lld tid %lld kv_submit_stamp = %lld", key->owner, key->tid, vp->kv_submit_stamp);
-      } else if (state == 4) {  // STATE_KV_SUBMITTED
-        vp->kv_committed_stamp = bpf_ktime_get_boot_ns();
-	bpf_printk("uprobe_txc_state_proc owner %lld tid %lld kv_committed_stamp = %lld", key->owner, key->tid, vp->kv_committed_stamp);
-        // last stage of the ctx, delete it from the map
-        bpf_map_delete_elem(&ctx_opk, &ck);
-      }
-    } else {
-      bpf_printk(
-          "uprobe_txc_state_proc, no previous key matched owner %lld, tid "
-          "%lld\n",
-          key->owner, key->tid);
-    }
-  } else {
-    bpf_printk("uprobe_txc_state_proc got NULL vf at varid %d\n", varid);
+  if (NULL == vf) return 0;
+  v = fetch_register(ctx, vf->varloc.reg);
+  __u64 state_addr = fetch_var_member_addr(v, vf);
+  __u32 state = 0;
+  bpf_probe_read_user(&state, sizeof(state), (void *)state_addr);
+  struct op_v *vp = bpf_map_lookup_elem(&ops, key);
+  if (NULL == vp) return 0;
+  //read ctx->ioc->num_pending
+  ++varid;
+  vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL == vf) return 0;
+  v = fetch_register(ctx, vf->varloc.reg);
+  if (state == 0) {  // STATE_PREPARE
+    vp->aio_submit_stamp = bpf_ktime_get_boot_ns();
+    __u64 pending_addr = fetch_var_member_addr(v, vf);
+    int pending_num = 0;
+    bpf_probe_read_user(&pending_num, sizeof(pending_num), (void *)pending_addr);
+    vp->aio_size = pending_num;
+    bpf_printk("uprobe_txc_state_proc owner %lld tid %lld aio_submit_stamp = %lld", key->owner, key->tid, vp->aio_submit_stamp);
+  } else if (state == 1) {  // STATE_AIO_WAIT
+    // until flushed can it be considered committed, not here.
+    vp->aio_done_stamp = bpf_ktime_get_boot_ns();
+    bpf_printk("uprobe_txc_state_proc owner %lld tid %lld aio_done_stamp = %lld", key->owner, key->tid, vp->aio_done_stamp);
+  } else if (state == 2) {  // STATE_IO_DONE sending to kv queue
+    vp->kv_submit_stamp = bpf_ktime_get_boot_ns();
+    bpf_printk("uprobe_txc_state_proc owner %lld tid %lld kv_submit_stamp = %lld", key->owner, key->tid, vp->kv_submit_stamp);
+  } else if (state == 4) {  // STATE_KV_SUBMITTED
+    vp->kv_committed_stamp = bpf_ktime_get_boot_ns();
+    bpf_printk("uprobe_txc_state_proc owner %lld tid %lld kv_committed_stamp = %lld", key->owner, key->tid, vp->kv_committed_stamp);
+    // last stage of the ctx, delete it from the map
+    bpf_map_delete_elem(&ctx_opk, &ck);
   }
 
   return 0;
