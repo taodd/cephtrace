@@ -557,7 +557,7 @@ int uprobe_queue_transactions(struct pt_regs *ctx) {
           key->owner, key->tid);
     }
   } else {
-    bpf_printk("uprobe_queue_transaction, no previous tid matched %d\n", tid);
+    bpf_printk("uprobe_queue_transaction, no previous ptid matched %d\n", ptid);
   }
   return 0;
 }
@@ -580,7 +580,7 @@ int uprobe_do_write(struct pt_regs *ctx) {
           key->owner, key->tid);
     }
   } else {
-    bpf_printk("uprobe_do_write, no previous tid matched %d\n", tid);
+    bpf_printk("uprobe_do_write, no previous tid matched %d\n", ptid);
   }
   return 0;
 }
@@ -630,7 +630,7 @@ int uprobe_wctx_finish(struct pt_regs *ctx) {
           key->owner, key->tid);
     }
   } else {
-    bpf_printk("uprobe_wctx_finish, no previous tid matched %d\n", tid);
+    bpf_printk("uprobe_wctx_finish, no previous tid matched %d\n", ptid);
   }
   return 0;
 }
