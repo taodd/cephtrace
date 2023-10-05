@@ -216,7 +216,7 @@ int uprobe_enqueue_op(struct pt_regs *ctx) {
   } else {
     bpf_printk("uprobe_enqueue_op got NULL vf at varid %d\n", varid);
   }
-  if (op_type != MSG_OSD_OP) {
+  if (op_type != MSG_OSD_OP && op_type != MSG_OSD_REPOP) {
     bpf_printk("uprobe_enqueue_op got a non osdop/osdrepop %d, ignore\n", op_type);
     return 0;
   }
@@ -391,8 +391,8 @@ int uprobe_dequeue_op(struct pt_regs *ctx) {
   } else {
     bpf_printk("uprobe_dequeue_op got NULL vf at varid %d\n", varid);
   }
-  if (op_type != MSG_OSD_OP) {
-    bpf_printk("uprobe_dequeue_op got non osd op or repop type %d, ignore\n", op_type);
+  if (op_type != MSG_OSD_OP && op_type != MSG_OSD_REPOP) {
+    bpf_printk("uprobe_dequeue_op got non osdop or repop type %d, ignore\n", op_type);
     return 0;
   }
 
@@ -585,8 +585,8 @@ int uprobe_do_write(struct pt_regs *ctx) {
   return 0;
 }
 
+// Not attach
 // BlueStore::_wctx_finish
-// TODO attach to uprobe later
 SEC("uprobe")
 int uprobe_wctx_finish(struct pt_regs *ctx) {
   bpf_printk("Entered into uprobe_wctx_finish\n");
@@ -1060,23 +1060,24 @@ int uprobe_log_latency(struct pt_regs *ctx)
 
   return 0;
 }
+
 /*
 SEC("uprobe")
 int uprobe_log_subop_stats(struct pt_regs *ctx)
 {
   bpf_printk("Entered into log_subop_stats\n");
   int varid = 140;
-  struct op_v op;
-  memset(&op, 0, sizeof(op));
+  struct op_k key;
+  memset(&key, 0, sizeof(key));
   // read num
   struct VarField *vf = bpf_map_lookup_elem(&hprobes, &varid);
   if (NULL != vf) {
     __u64 v = 0;
     v = fetch_register(ctx, vf->varloc.reg);
     __u64 num_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&op.owner, sizeof(op.owner), (void *)num_addr);
+    bpf_probe_read_user(&key.owner, sizeof(key.owner), (void *)num_addr);
   } else {
-    bpf_printk("uprobe_log_op_stats_v2 got NULL vf at varid %d\n", varid);
+    bpf_printk("uprobe_log_subop_stats got NULL vf at varid %d\n", varid);
   }
   // read tid
   ++varid;
@@ -1085,18 +1086,19 @@ int uprobe_log_subop_stats(struct pt_regs *ctx)
     __u64 v = 0;
     v = fetch_register(ctx, vf->varloc.reg);
     __u64 tid_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&op.tid, sizeof(op.tid), (void *)tid_addr);
+    bpf_probe_read_user(&key.tid, sizeof(key.tid), (void *)tid_addr);
   } else {
-    bpf_printk("uprobe_log_op_stats_v2 got NULL vf at varid %d\n", varid);
+    bpf_printk("uprobe_log_subop_stat got NULL vf at varid %d\n", varid);
     return 0;
   }
-  op.pid = get_pid();
+  key.pid = get_pid();
+
+
+
   op.reply_stamp = bpf_ktime_get_boot_ns();
-  //read recv_stamp
-  ++varid;
 
-}*/
-
+}
+*/
 SEC("uprobe")
 int uprobe_ec_submit_transaction(struct pt_regs *ctx) {
   bpf_printk("Entered into uprobe_ec_submit_transaction\n");
@@ -1137,4 +1139,57 @@ int uprobe_ec_submit_transaction(struct pt_regs *ctx) {
     bpf_map_delete_elem(&ops, &key);
   }
   return 0;
+
 }
+
+SEC("uprobe")
+int uprobe_txc_calc_cost(struct pt_regs *ctx)
+{
+  bpf_printk("Entered into _tcx_calc_cost\n");
+  __u64 ptid = bpf_get_current_pid_tgid();
+  struct op_k *key = bpf_map_lookup_elem(&ptid_opk, &ptid);
+  if (NULL != key) {
+    struct op_v *vp = bpf_map_lookup_elem(&ops, key);
+    if (NULL != vp) {
+      // delete the item in ptid_opk and create a new item to ctx_opk
+      bpf_map_delete_elem(&ptid_opk, &ptid); // this will need to be delayed to submit_batch
+      // read ctx->osr->px->sequencer_id
+      int varid = 160;
+      struct VarField *vf = bpf_map_lookup_elem(&hprobes, &varid);
+      if (vf == NULL) return 0;
+      __u64 v = 0;
+      v = fetch_register(ctx, vf->varloc.reg);
+      __u64 seqid_addr = fetch_var_member_addr(v, vf);
+      __u32 seqid = 0;
+      bpf_probe_read_user(&seqid, sizeof(seqid), (void *)seqid_addr);
+
+      //read ctx->start
+      ++varid;
+      vf = bpf_map_lookup_elem(&hprobes, &varid);
+      if (vf == NULL) return 0;
+      v = fetch_register(ctx, vf->varloc.reg);
+      __u64 start_addr = fetch_var_member_addr(v, vf);
+      __u64 start = 0;
+      bpf_probe_read_user(&start, sizeof(start), (void *)start_addr);
+
+      struct ctx_k ck;
+      ck.seqid = seqid;
+      ck.start_stamp = start; 
+      ck.pid = get_pid(); 
+
+      bpf_map_update_elem(&ctx_opk, &ck, key, 0);
+      // TODO offset and length
+    } else {
+      bpf_printk(
+          "txc_calc_cost, no previous key matched owner %lld, tid %lld\n",
+          key->owner, key->tid);
+    }
+  } else {
+    bpf_printk("txc_calc_cost, no previous tid matched %d\n", ptid);
+  }
+
+  return 0;
+}
+
+
+

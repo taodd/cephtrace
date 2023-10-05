@@ -55,7 +55,8 @@ func_id_t func_id = {
     {"OpRequest::mark_flag_point_string", 120},
     {"BlueStore::log_latency", 130},
     {"log_subop_stats", 140},
-    {"ECBackend::submit_transaction", 150}
+    {"ECBackend::submit_transaction", 150},
+    {"BlueStore::_txc_calc_cost", 160}
 };
 
 std::map<std::string, int> func_progid = {
@@ -74,7 +75,8 @@ std::map<std::string, int> func_progid = {
     {"OpRequest::mark_flag_point_string", 12},
     {"BlueStore::log_latency", 13},
     //{"log_subop_stats", 15},
-    {"ECBackend::submit_transaction", 14}
+    {"ECBackend::submit_transaction", 14},
+    {"BlueStore::_txc_calc_cost", 15}
 };
 
 DwarfParser::probes_t osd_probes = {
@@ -111,6 +113,12 @@ DwarfParser::probes_t osd_probes = {
      }},
 
     {"BlueStore::_wctx_finish",
+     {
+        {"txc", "osr", "px", "sequencer_id"},
+        {"txc", "start", "__d", "__r"}
+     }},
+
+    {"BlueStore::_txc_calc_cost",
      {
         {"txc", "osr", "px", "sequencer_id"},
         {"txc", "start", "__d", "__r"}
@@ -910,7 +918,7 @@ int main(int argc, char **argv) {
 
     attach_uprobe(skel, dwarfparser, path, "BlueStore::queue_transactions");
 
-    attach_uprobe(skel, dwarfparser, path, "BlueStore::_wctx_finish");
+    attach_uprobe(skel, dwarfparser, path, "BlueStore::_txc_calc_cost");
 
     attach_uprobe(skel, dwarfparser, path, "BlueStore::_txc_state_proc");
 
