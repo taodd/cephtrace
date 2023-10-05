@@ -76,6 +76,8 @@ struct op_v {
   unsigned long long reply_stamp;
   __u64 wb;
   __u64 rb;
+  __u64 m_pool;
+  __u32 m_seed;
 };
 
 typedef struct VarLocation {

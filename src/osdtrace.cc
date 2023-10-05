@@ -86,7 +86,9 @@ DwarfParser::probes_t osd_probes = {
       {"op", "px", "request", "recv_stamp"},
       {"op", "px", "request", "throttle_stamp"},
       {"op", "px", "request", "recv_complete_stamp"},
-      {"op", "px", "request", "dispatch_stamp"}}},
+      {"op", "px", "request", "dispatch_stamp"},
+      {"pg", "pgid", "m_pool"},
+      {"pg", "pgid", "m_seed"}}},
 
     {"OSD::dequeue_op",
      {{"op", "px", "request", "header", "type"},
@@ -140,7 +142,7 @@ DwarfParser::probes_t osd_probes = {
       {{"op", "px", "reqid", "name", "_num"},
        {"op", "px", "reqid", "tid"},
        {"op", "px", "request", "header", "src", "num"}}},
-
+    
     {"OpRequest::mark_flag_point_string",
      {{"flag"},
       {"this", "reqid", "name", "_num"},
@@ -196,10 +198,20 @@ typedef struct peer_lat_t {
     peer_lat_t(int a, __u64 b): peer(a), latency(b) {}
 } peer_lat;
 
+struct pgid_t {
+  __u64 m_pool;
+  __u32 m_seed;
+};
+
 typedef struct osd_op {
-  __u32 type;
+  __u16 type;
   __u32 wb;
   __u32 rb;
+
+  __u64 client_id;
+  __u64 req_id;
+  struct pgid_t pg;
+
 //Messenger level
   __u64 throttle_lat; //throttle_stamp - recv_stamp
   __u64 recv_lat;     //recv_complete_stamp - recv_stamp
@@ -481,6 +493,13 @@ osd_op_t generate_op(op_v *val) {
   memset(&op, 0, sizeof(osd_op_t));
   op.wb = val->wb;
   op.rb = val->rb;
+  
+  op.client_id = val->owner;
+  op.req_id = val->tid;
+
+  op.pg.m_pool = val->m_pool;
+  op.pg.m_seed = val->m_seed;
+
   __u64 recv_stamp = val->recv_stamp;
   if (val->throttle_stamp < val->recv_stamp) { 
       //Due to recv_stamp bug https://tracker.ceph.com/issues/52739
@@ -526,12 +545,17 @@ void handle_full(struct op_v *val, int osd_id) {
     osd_op_t op = generate_op(val);
     if (op.op_lat/(1000) < threshold) 
       return;
-    printf("osd %d size %d "
+    std::stringstream ss;
+    ss << std::hex << op.pg.m_seed;
+    std::string pgid(ss.str());
+    printf("osd %d pg %lld.%s " 
+	    "size %d client %lld tid %lld "
 	    "throttle_lat %lld recv_lat %lld dispatch_lat %lld "
 	    "queue_lat %lld osd_lat %lld peers [(%d, %lld), (%d, %lld)] "
 	    "bluestore_lat %lld (prepare %lld aio_wait %lld (aio_size %d) seq_wait %lld kv_commit %lld) "
 	    "op_lat %lld \n",
-   	    osd_id, op.wb, 
+   	    osd_id, op.pg.m_pool, pgid.c_str(), 
+	    op.wb, op.client_id, op.req_id,
 	    op.throttle_lat, op.recv_lat, op.dispatch_lat, 
 	    op.queue_lat, op.osd_lat,  op.peers[0].peer, op.peers[0].latency, op.peers[1].peer, op.peers[1].latency, 
 	    op.bs_lat, op.bs_prepare_lat, op.bs_aio_wait_lat, op.aio_size, op.bs_pg_seq_lat, op.bs_kv_commit_lat, 
@@ -880,26 +904,16 @@ int main(int argc, char **argv) {
     
     attach_uprobe(skel, dwarfparser, path, "OpRequest::mark_flag_point_string");
 
-    attach_uprobe(skel, dwarfparser, path, "PrimaryLogPG::execute_ctx");
-
     attach_uprobe(skel, dwarfparser, path, "ReplicatedBackend::generate_subop");
 
     attach_uprobe(skel, dwarfparser, path, "ReplicatedBackend::do_repop_reply");
 
-    attach_uprobe(skel, dwarfparser, path, "ReplicatedBackend::submit_transaction");
-
-    attach_uprobe(skel, dwarfparser, path, "ECBackend::submit_transaction");
-
     attach_uprobe(skel, dwarfparser, path, "BlueStore::queue_transactions");
-
-    //attach_uprobe(skel, dwarfparser, path, "BlueStore::_do_write");
 
     attach_uprobe(skel, dwarfparser, path, "BlueStore::_wctx_finish");
 
     attach_uprobe(skel, dwarfparser, path, "BlueStore::_txc_state_proc");
 
-    //attach_uprobe(skel, dwarfparser, path, "BlueStore::_txc_apply_kv");
-    
     attach_uprobe(skel, dwarfparser, path, "PrimaryLogPG::log_op_stats");
     
     attach_uprobe(skel, dwarfparser, path, "OSD::enqueue_op");

@@ -23,10 +23,10 @@ struct {
 
 struct {
   __uint(type, BPF_MAP_TYPE_HASH);
-  __type(key, __u32);
+  __type(key, __u64);
   __type(value, struct op_k);
   __uint(max_entries, 128);
-} tid_opk SEC(".maps");
+} ptid_opk SEC(".maps");
 
 struct {
   __uint(type, BPF_MAP_TYPE_HASH);
@@ -74,7 +74,7 @@ __u32 get_tid() {
 }
 
 // currently only work for x86_64 arch
-inline __u64 fetch_register(const struct pt_regs *const ctx, int reg) {
+__u64 fetch_register(const struct pt_regs *const ctx, int reg) {
   __u64 v = 0;
   if (reg == 4)
     v = ctx->rsi;
@@ -262,6 +262,7 @@ int uprobe_enqueue_op(struct pt_regs *ctx) {
   value.pid = key.pid;
   value.tid = key.tid;
   value.owner = key.owner;
+  value.op_type = op_type;
   //initialize peer id to -1
   value.pi.peer1 = -1;
   value.pi.peer2 = -1;
@@ -338,6 +339,35 @@ int uprobe_enqueue_op(struct pt_regs *ctx) {
   }
   bpf_printk("enqueue_op dispatch_stamp %lld\n", value.dispatch_stamp);
 
+  // Set m_pool
+  ++varid;
+  vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL != vf) {
+    __u64 v = 0;
+    v = fetch_register(ctx, vf->varloc.reg);
+    __u64 m_pool_addr = fetch_var_member_addr(v, vf);
+    __u64 m_pool;
+    bpf_probe_read_user(&m_pool, sizeof(m_pool),(void *)m_pool_addr);
+    value.m_pool = m_pool;
+  } else {
+    bpf_printk("uprobe_enqueue_op got NULL vf at varid %d\n", varid);
+    return 0;
+  }
+  //Set m_seed
+  ++varid;
+  vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL != vf) {
+    __u64 v = 0;
+    v = fetch_register(ctx, vf->varloc.reg);
+    __u64 m_seed_addr = fetch_var_member_addr(v, vf);
+    __u32 m_seed;
+    bpf_probe_read_user(&m_seed, sizeof(m_seed),(void *)m_seed_addr);
+    value.m_seed = m_seed;
+  } else {
+    bpf_printk("uprobe_enqueue_op got NULL vf at varid %d\n", varid);
+    return 0;
+  }
+
   bpf_map_update_elem(&ops, &key, &value, 0);
   return 0;
 }
@@ -398,13 +428,16 @@ int uprobe_dequeue_op(struct pt_regs *ctx) {
   if (NULL != vp) {
     if (vp->dequeue_stamp == 0)
       vp->dequeue_stamp = bpf_ktime_get_boot_ns();
+
+    __u64 ptid = bpf_get_current_pid_tgid();
+    bpf_map_update_elem(&ptid_opk, &ptid, &key, 0);
   } else {
     bpf_printk("uprobe_dequeue_op, no previous enqueue_op info, owner %lld, tid %lld\n", key.owner, key.tid);
     return 0;
   }
   return 0;
 }
-
+//Not attached
 SEC("uprobe")
 int uprobe_execute_ctx(struct pt_regs *ctx) {
   bpf_printk("Entered into uprobe_execute_ctx\n");
@@ -452,6 +485,7 @@ int uprobe_execute_ctx(struct pt_regs *ctx) {
   return 0;
 }
 
+//Not Attached
 SEC("uprobe")
 int uprobe_submit_transaction(struct pt_regs *ctx) {
   bpf_printk("Entered into uprobe_submit_transaction\n");
@@ -494,8 +528,8 @@ int uprobe_submit_transaction(struct pt_regs *ctx) {
       key.owner, key.tid, vp);
   if (NULL != vp) {
     vp->submit_transaction_stamp = bpf_ktime_get_boot_ns();
-    __u64 thid = get_tid();
-    bpf_map_update_elem(&tid_opk, &thid, &key, 0);
+    __u64 ptid = bpf_get_current_pid_tgid();
+    bpf_map_update_elem(&ptid_opk, &ptid, &key, 0);
   } else {
     bpf_printk(
         "uprobe_submit_transaction, no previous op info, owner %lld, tid "
@@ -506,12 +540,11 @@ int uprobe_submit_transaction(struct pt_regs *ctx) {
 }
 
 // BlueStore::queue_transactions
-// TODO attach to uprobe
 SEC("uprobe")
 int uprobe_queue_transactions(struct pt_regs *ctx) {
   bpf_printk("Entered into uprobe_queue_transactions\n");
-  __u32 tid = get_tid();
-  struct op_k *key = bpf_map_lookup_elem(&tid_opk, &tid);
+  __u64 ptid = bpf_get_current_pid_tgid();
+  struct op_k *key = bpf_map_lookup_elem(&ptid_opk, &ptid);
 
   if (NULL != key) {
     struct op_v *vp = bpf_map_lookup_elem(&ops, key);
@@ -534,8 +567,8 @@ int uprobe_queue_transactions(struct pt_regs *ctx) {
 SEC("uprobe")
 int uprobe_do_write(struct pt_regs *ctx) {
   bpf_printk("Entered into uprobe_do_write\n");
-  __u32 tid = get_tid();
-  struct op_k *key = bpf_map_lookup_elem(&tid_opk, &tid);
+  __u64 ptid = bpf_get_current_pid_tgid();
+  struct op_k *key = bpf_map_lookup_elem(&ptid_opk, &ptid);
   if (NULL != key) {
     struct op_v *vp = bpf_map_lookup_elem(&ops, key);
     if (NULL != vp) {
@@ -557,14 +590,14 @@ int uprobe_do_write(struct pt_regs *ctx) {
 SEC("uprobe")
 int uprobe_wctx_finish(struct pt_regs *ctx) {
   bpf_printk("Entered into uprobe_wctx_finish\n");
-  __u32 tid = get_tid();
-  struct op_k *key = bpf_map_lookup_elem(&tid_opk, &tid);
+  __u64 ptid = bpf_get_current_pid_tgid();
+  struct op_k *key = bpf_map_lookup_elem(&ptid_opk, &ptid);
   if (NULL != key) {
     struct op_v *vp = bpf_map_lookup_elem(&ops, key);
     if (NULL != vp) {
       vp->wctx_finish_stamp = bpf_ktime_get_boot_ns();
-      // delete the item in tid_opk and create a new item to ctx_opk
-      bpf_map_delete_elem(&tid_opk, &tid); // this will need to be delayed to submit_batch
+      // delete the item in ptid_opk and create a new item to ctx_opk
+      bpf_map_delete_elem(&ptid_opk, &ptid); // this will need to be delayed to submit_batch
       // read ctx->osr->px->sequencer_id
       int varid = 60;
       struct VarField *vf = bpf_map_lookup_elem(&hprobes, &varid);
@@ -1105,12 +1138,3 @@ int uprobe_ec_submit_transaction(struct pt_regs *ctx) {
   }
   return 0;
 }
-
-//aio_queue_t::submit_batch
-/*SEC("uprobe")
-int uprobe_submit_batch(struct pt_regs *ctx) {
-  // read num
-  // read 
-}*/
-
-
