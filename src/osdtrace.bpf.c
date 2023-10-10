@@ -1061,7 +1061,7 @@ int uprobe_log_latency(struct pt_regs *ctx)
   return 0;
 }
 
-/*
+
 SEC("uprobe")
 int uprobe_log_subop_stats(struct pt_regs *ctx)
 {
@@ -1093,12 +1093,37 @@ int uprobe_log_subop_stats(struct pt_regs *ctx)
   }
   key.pid = get_pid();
 
+  struct op_v *vp = bpf_map_lookup_elem(&ops, &key);
+  if (NULL == vp) return 0; 
 
+  //read data len
+  ++varid;
+  __u64 len;
+  vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL != vf) {
+    __u64 v = 0;
+    v = fetch_register(ctx, vf->varloc.reg);
+    __u64 len_addr = fetch_var_member_addr(v, vf);
+    bpf_probe_read_user(&len, sizeof(len), (void *)len_addr);
+  } else {
+    bpf_printk("uprobe_log_subop_stat got NULL vf at varid %d\n", varid);
+    return 0;
+  }
 
-  op.reply_stamp = bpf_ktime_get_boot_ns();
+  vp->wb = len;
+  vp->reply_stamp = bpf_ktime_get_boot_ns();
 
+  struct op_v *e = bpf_ringbuf_reserve(&rb, sizeof(struct op_v), 0);
+  if (NULL == e) {
+    return 0;
+  }
+  *e = *vp;
+  bpf_ringbuf_submit(e, 0);
+
+  bpf_map_delete_elem(&ops, &key);
+  return 0;
 }
-*/
+
 SEC("uprobe")
 int uprobe_ec_submit_transaction(struct pt_regs *ctx) {
   bpf_printk("Entered into uprobe_ec_submit_transaction\n");

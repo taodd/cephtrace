@@ -74,9 +74,9 @@ std::map<std::string, int> func_progid = {
     {"ReplicatedBackend::do_repop_reply", 11},
     {"OpRequest::mark_flag_point_string", 12},
     {"BlueStore::log_latency", 13},
-    //{"log_subop_stats", 15},
-    {"ECBackend::submit_transaction", 14},
-    {"BlueStore::_txc_calc_cost", 15}
+    {"log_subop_stats", 14},
+    {"ECBackend::submit_transaction", 15},
+    {"BlueStore::_txc_calc_cost", 16}
 };
 
 DwarfParser::probes_t osd_probes = {
@@ -166,8 +166,7 @@ DwarfParser::probes_t osd_probes = {
     {"log_subop_stats", 
      {{"op", "px", "reqid", "name", "_num"},
       {"op", "px", "reqid", "tid"},
-      {"op", "px", "request", "recv_stamp"},
-      {"op", "px", "request", "throttle_stamp"}}},
+      {"op", "px", "request", "data", "_len"}}},
     
     {"ECBackend::submit_transaction",
      {{"reqid", "name", "_num"}, {"reqid", "tid"}}}
@@ -488,6 +487,79 @@ void print_all_srl() {
   }
 }
 
+void print_op_r(osd_op_t &op, int osd_id) {
+  std::stringstream ss;
+  ss << std::hex << op.pg.m_seed;
+  std::string pgid(ss.str());
+
+  printf("osd %d pg %lld.%s op_r " 
+         "size %d client %lld tid %lld "
+	 "throttle_lat %lld recv_lat %lld dispatch_lat %lld "
+	 "queue_lat %lld osd_lat %lld "
+	 "bluestore_lat %lld "
+	 "op_lat %lld \n",
+   	  osd_id, op.pg.m_pool, pgid.c_str(), 
+	  op.wb, op.client_id, op.req_id,
+	  op.throttle_lat, op.recv_lat, op.dispatch_lat, 
+	  op.queue_lat, op.osd_lat,
+	  op.bs_lat, 
+	  op.op_lat);
+  for (int i = 0; i < op.delayed_cnt; ++i) {
+    printf("[delayed%d %s ]", i+1, op.delayed_strs[i].c_str());
+  }
+  if (op.delayed_cnt > 0)
+    printf("\n");
+}
+
+void print_subop_w(osd_op_t &op, int osd_id) {
+  std::stringstream ss;
+  ss << std::hex << op.pg.m_seed;
+  std::string pgid(ss.str());
+
+  printf("osd %d pg %lld.%s subop_w " 
+         "size %d client %lld tid %lld "
+	 "throttle_lat %lld recv_lat %lld dispatch_lat %lld "
+	 "queue_lat %lld osd_lat %lld "
+	 "bluestore_lat %lld (prepare %lld aio_wait %lld (aio_size %d) seq_wait %lld kv_commit %lld) "
+	 "op_lat %lld \n",
+   	  osd_id, op.pg.m_pool, pgid.c_str(), 
+	  op.wb, op.client_id, op.req_id,
+	  op.throttle_lat, op.recv_lat, op.dispatch_lat, 
+	  op.queue_lat, op.osd_lat,
+	  op.bs_lat, op.bs_prepare_lat, op.bs_aio_wait_lat, op.aio_size, op.bs_pg_seq_lat, op.bs_kv_commit_lat, 
+	  op.op_lat);
+  for (int i = 0; i < op.delayed_cnt; ++i) {
+    printf("[delayed%d %s ]", i+1, op.delayed_strs[i].c_str());
+  }
+  if (op.delayed_cnt > 0)
+    printf("\n");
+}
+
+void print_op_w(osd_op_t &op, int osd_id) {
+
+  std::stringstream ss;
+  ss << std::hex << op.pg.m_seed;
+  std::string pgid(ss.str());
+
+  printf("osd %d pg %lld.%s op_w " 
+         "size %d client %lld tid %lld "
+	 "throttle_lat %lld recv_lat %lld dispatch_lat %lld "
+	 "queue_lat %lld osd_lat %lld peers [(%d, %lld), (%d, %lld)] "
+	 "bluestore_lat %lld (prepare %lld aio_wait %lld (aio_size %d) seq_wait %lld kv_commit %lld) "
+	 "op_lat %lld \n",
+   	  osd_id, op.pg.m_pool, pgid.c_str(), 
+	  op.wb, op.client_id, op.req_id,
+	  op.throttle_lat, op.recv_lat, op.dispatch_lat, 
+	  op.queue_lat, op.osd_lat,  op.peers[0].peer, op.peers[0].latency, op.peers[1].peer, op.peers[1].latency, 
+	  op.bs_lat, op.bs_prepare_lat, op.bs_aio_wait_lat, op.aio_size, op.bs_pg_seq_lat, op.bs_kv_commit_lat, 
+	  op.op_lat);
+  for (int i = 0; i < op.delayed_cnt; ++i) {
+    printf("[delayed%d %s ]", i+1, op.delayed_strs[i].c_str());
+  }
+  if (op.delayed_cnt > 0)
+    printf("\n");
+}
+
 void signal_handler(int signum){
   clog << "Caught signal " << signum << endl;
   if (signum == SIGINT) {
@@ -499,6 +571,9 @@ void signal_handler(int signum){
 osd_op_t generate_op(op_v *val) {
   osd_op_t op;
   memset(&op, 0, sizeof(osd_op_t));
+
+  op.type = val->op_type;
+
   op.wb = val->wb;
   op.rb = val->rb;
   
@@ -530,10 +605,10 @@ osd_op_t generate_op(op_v *val) {
   for(int i = 0; i < val->di.cnt; ++i) {
     op.delayed_strs.push_back(std::string(val->di.delays[i]));
   }
-  
-  op.peers.push_back(peer_lat(val->pi.peer1, (val->pi.recv_stamp1 - val->pi.sent_stamp)/1000)); 
-  op.peers.push_back(peer_lat(val->pi.peer2, (val->pi.recv_stamp2 - val->pi.sent_stamp)/1000)); 
-  
+  if (op.type == MSG_OSD_OP) {
+    op.peers.push_back(peer_lat(val->pi.peer1, (val->pi.recv_stamp1 - val->pi.sent_stamp)/1000)); 
+    op.peers.push_back(peer_lat(val->pi.peer2, (val->pi.recv_stamp2 - val->pi.sent_stamp)/1000)); 
+  }
   //bluestore level
   op.aio_size = val->aio_size;
   op.bs_prepare_lat = (val->aio_submit_stamp - val->queue_transaction_stamp)/1000;
@@ -548,32 +623,20 @@ osd_op_t generate_op(op_v *val) {
 }
 
 void handle_full(struct op_v *val, int osd_id) {
-    if (val->wb == 0) 
-      return;
+    //if (val->wb == 0) 
+      //return;
     osd_op_t op = generate_op(val);
     if (op.op_lat/(1000) < threshold) 
       return;
-    std::stringstream ss;
-    ss << std::hex << op.pg.m_seed;
-    std::string pgid(ss.str());
-    printf("osd %d pg %lld.%s " 
-	    "size %d client %lld tid %lld "
-	    "throttle_lat %lld recv_lat %lld dispatch_lat %lld "
-	    "queue_lat %lld osd_lat %lld peers [(%d, %lld), (%d, %lld)] "
-	    "bluestore_lat %lld (prepare %lld aio_wait %lld (aio_size %d) seq_wait %lld kv_commit %lld) "
-	    "op_lat %lld \n",
-   	    osd_id, op.pg.m_pool, pgid.c_str(), 
-	    op.wb, op.client_id, op.req_id,
-	    op.throttle_lat, op.recv_lat, op.dispatch_lat, 
-	    op.queue_lat, op.osd_lat,  op.peers[0].peer, op.peers[0].latency, op.peers[1].peer, op.peers[1].latency, 
-	    op.bs_lat, op.bs_prepare_lat, op.bs_aio_wait_lat, op.aio_size, op.bs_pg_seq_lat, op.bs_kv_commit_lat, 
-	    op.op_lat);
-    for (int i = 0; i < op.delayed_cnt; ++i) {
-      printf("[delayed%d %s ]", i+1, op.delayed_strs[i].c_str());
+    if (op.wb == 0) {
+      //print_op_r(op);
+    } else if (op.type == MSG_OSD_OP) {
+      print_op_w(op, osd_id);
+    } else if (op.type == MSG_OSD_REPOP) {
+      print_subop_w(op, osd_id);
+    } else {
+      printf("unsupported op type %d\n", op.type);
     }
-    if (op.delayed_cnt > 0)
-      printf("\n");
-
 }
 
 void handle_avg(struct op_v *val, int osd_id) {
@@ -923,6 +986,8 @@ int main(int argc, char **argv) {
     attach_uprobe(skel, dwarfparser, path, "BlueStore::_txc_state_proc");
 
     attach_uprobe(skel, dwarfparser, path, "PrimaryLogPG::log_op_stats");
+
+    attach_uprobe(skel, dwarfparser, path, "log_subop_stats");
     
     attach_uprobe(skel, dwarfparser, path, "OSD::enqueue_op");
   } else if (probe_mode == BLUESTORE_PROBE) {

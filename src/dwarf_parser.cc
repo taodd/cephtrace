@@ -412,9 +412,14 @@ static int handle_function(Dwarf_Die *die, void *data) {
   string fullname = funcname;
 
   if (nscopes > 1) {
-    fullname = "::" + fullname;
     string scopename = special_inlined_function_scope(funcname);
-    fullname = scopename.empty() ? dwarf_diename(&scopes[1]) + fullname : scopename + fullname;
+    if (dwarf_tag(&scopes[1]) == DW_TAG_class_type) {
+      scopename = dwarf_diename(&scopes[1]);
+    }
+    if (!scopename.empty()) {
+      fullname = scopename + "::" + fullname;
+    
+    }
   }
 
   // debug: printf("function fullname is %s\n", fullname.c_str());
