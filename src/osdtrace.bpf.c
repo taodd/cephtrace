@@ -1061,7 +1061,7 @@ int uprobe_log_latency(struct pt_regs *ctx)
   return 0;
 }
 
-
+//Not attach: it get inlined with production ceph-osd by gcc 
 SEC("uprobe")
 int uprobe_log_subop_stats(struct pt_regs *ctx)
 {
@@ -1216,5 +1216,67 @@ int uprobe_txc_calc_cost(struct pt_regs *ctx)
   return 0;
 }
 
+
+SEC("uprobe")
+int uprobe_repop_commit(struct pt_regs *ctx)
+{
+  bpf_printk("Entered into repop_commit\n");
+  int varid = 170;
+  struct op_k key;
+  memset(&key, 0, sizeof(key));
+  // read num
+  struct VarField *vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL != vf) {
+    __u64 v = 0;
+    v = fetch_register(ctx, vf->varloc.reg);
+    __u64 num_addr = fetch_var_member_addr(v, vf);
+    bpf_probe_read_user(&key.owner, sizeof(key.owner), (void *)num_addr);
+  } else {
+    bpf_printk("repop_commit got NULL vf at varid %d\n", varid);
+  }
+  // read tid
+  ++varid;
+  vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL != vf) {
+    __u64 v = 0;
+    v = fetch_register(ctx, vf->varloc.reg);
+    __u64 tid_addr = fetch_var_member_addr(v, vf);
+    bpf_probe_read_user(&key.tid, sizeof(key.tid), (void *)tid_addr);
+  } else {
+    bpf_printk("repop_commit got NULL vf at varid %d\n", varid);
+    return 0;
+  }
+  key.pid = get_pid();
+
+  struct op_v *vp = bpf_map_lookup_elem(&ops, &key);
+  if (NULL == vp) return 0; 
+
+  //read data len
+  ++varid;
+  __u64 len;
+  vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL != vf) {
+    __u64 v = 0;
+    v = fetch_register(ctx, vf->varloc.reg);
+    __u64 len_addr = fetch_var_member_addr(v, vf);
+    bpf_probe_read_user(&len, sizeof(len), (void *)len_addr);
+  } else {
+    bpf_printk("repop_commit got NULL vf at varid %d\n", varid);
+    return 0;
+  }
+
+  vp->wb = len;
+  vp->reply_stamp = bpf_ktime_get_boot_ns();
+
+  struct op_v *e = bpf_ringbuf_reserve(&rb, sizeof(struct op_v), 0);
+  if (NULL == e) {
+    return 0;
+  }
+  *e = *vp;
+  bpf_ringbuf_submit(e, 0);
+
+  bpf_map_delete_elem(&ops, &key);
+  return 0;
+}
 
 

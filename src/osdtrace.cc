@@ -56,7 +56,8 @@ func_id_t func_id = {
     {"BlueStore::log_latency", 130},
     {"log_subop_stats", 140},
     {"ECBackend::submit_transaction", 150},
-    {"BlueStore::_txc_calc_cost", 160}
+    {"BlueStore::_txc_calc_cost", 160},
+    {"ReplicatedBackend::repop_commit", 170}
 };
 
 std::map<std::string, int> func_progid = {
@@ -76,7 +77,8 @@ std::map<std::string, int> func_progid = {
     {"BlueStore::log_latency", 13},
     {"log_subop_stats", 14},
     {"ECBackend::submit_transaction", 15},
-    {"BlueStore::_txc_calc_cost", 16}
+    {"BlueStore::_txc_calc_cost", 16},
+    {"ReplicatedBackend::repop_commit", 17}
 };
 
 DwarfParser::probes_t osd_probes = {
@@ -169,7 +171,12 @@ DwarfParser::probes_t osd_probes = {
       {"op", "px", "request", "data", "_len"}}},
     
     {"ECBackend::submit_transaction",
-     {{"reqid", "name", "_num"}, {"reqid", "tid"}}}
+     {{"reqid", "name", "_num"}, {"reqid", "tid"}}},
+
+    {"ReplicatedBackend::repop_commit", 
+     {{"rm", "_M_ptr", "op", "px", "reqid", "name", "_num"},
+      {"rm", "_M_ptr", "op", "px", "reqid", "tid"},
+      {"rm", "_M_ptr", "op", "px", "request", "data", "_len"}}}
 };
 
 enum mode_e { MODE_AVG = 1, MODE_MAX, MODE_ALL };
@@ -996,7 +1003,7 @@ int main(int argc, char **argv) {
 
     attach_uprobe(skel, dwarfparser, path, "PrimaryLogPG::log_op_stats");
 
-    attach_uprobe(skel, dwarfparser, path, "log_subop_stats");
+    attach_uprobe(skel, dwarfparser, path, "ReplicatedBackend::repop_commit");
     
     attach_uprobe(skel, dwarfparser, path, "OSD::enqueue_op");
   } else if (probe_mode == BLUESTORE_PROBE) {
