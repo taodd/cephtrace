@@ -499,7 +499,7 @@ void print_op_r(osd_op_t &op, int osd_id) {
 	 "bluestore_lat %lld "
 	 "op_lat %lld \n",
    	  osd_id, op.pg.m_pool, pgid.c_str(), 
-	  op.wb, op.client_id, op.req_id,
+	  op.rb, op.client_id, op.req_id,
 	  op.throttle_lat, op.recv_lat, op.dispatch_lat, 
 	  op.queue_lat, op.osd_lat,
 	  op.bs_lat, 
@@ -597,10 +597,12 @@ osd_op_t generate_op(op_v *val) {
       (val->enqueue_stamp - (val->recv_complete_stamp - bootstamp))/1000;
 
   op.queue_lat += (val->dequeue_stamp - val->enqueue_stamp)/1000;
+
   if (op.wb > 0)
     op.osd_lat = (val->queue_transaction_stamp - val->dequeue_stamp)/1000;
   else if (op.rb > 0)
-    op.osd_lat = 0; // TODO
+    op.osd_lat = (val->execute_ctx_stamp - val->dequeue_stamp) /1000;
+
   op.delayed_cnt = val->di.cnt;
   for(int i = 0; i < val->di.cnt; ++i) {
     op.delayed_strs.push_back(std::string(val->di.delays[i]));
@@ -615,7 +617,10 @@ osd_op_t generate_op(op_v *val) {
   op.bs_aio_wait_lat = (val->aio_done_stamp - val->aio_submit_stamp)/1000;
   op.bs_pg_seq_lat = (val->kv_submit_stamp - val->aio_done_stamp)/1000;
   op.bs_kv_commit_lat = (val->kv_committed_stamp - val->kv_submit_stamp)/1000; 
-  op.bs_lat = (val->kv_committed_stamp - val->queue_transaction_stamp)/1000;
+  if (op.wb > 0)
+    op.bs_lat = (val->kv_committed_stamp - val->queue_transaction_stamp)/1000;
+  else if (op.rb > 0)
+    op.bs_lat = (val->reply_stamp - val->execute_ctx_stamp)/1000;
 
   op.op_lat = (val->reply_stamp - (recv_stamp - bootstamp))/1000;
 
@@ -629,7 +634,7 @@ void handle_full(struct op_v *val, int osd_id) {
     if (op.op_lat/(1000) < threshold) 
       return;
     if (op.wb == 0) {
-      //print_op_r(op);
+      print_op_r(op, osd_id);
     } else if (op.type == MSG_OSD_OP) {
       print_op_w(op, osd_id);
     } else if (op.type == MSG_OSD_REPOP) {
@@ -942,8 +947,8 @@ int main(int argc, char **argv) {
 
   clog << "Start to parse ceph dwarf info" << endl;
 
-  std::string path = "/home/taodd/Git/ceph/build/bin/ceph-osd";
-  //std::string path = "/usr/bin/ceph-osd";
+  //std::string path = "/home/taodd/Git/ceph/build/bin/ceph-osd";
+  std::string path = "/usr/bin/ceph-osd";
   DwarfParser dwarfparser(path, osd_probes, probe_units);
   dwarfparser.parse();
 
@@ -972,6 +977,8 @@ int main(int argc, char **argv) {
     attach_uprobe(skel, dwarfparser, path, "PrimaryLogPG::log_op_stats", 2);
   } else if (probe_mode == OP_FULL_PROBE) {
     attach_uprobe(skel, dwarfparser, path, "OSD::dequeue_op");
+
+    attach_uprobe(skel, dwarfparser, path, "PrimaryLogPG::execute_ctx");
     
     attach_uprobe(skel, dwarfparser, path, "OpRequest::mark_flag_point_string");
 

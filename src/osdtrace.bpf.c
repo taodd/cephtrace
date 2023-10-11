@@ -437,7 +437,7 @@ int uprobe_dequeue_op(struct pt_regs *ctx) {
   }
   return 0;
 }
-//Not attached
+
 SEC("uprobe")
 int uprobe_execute_ctx(struct pt_regs *ctx) {
   bpf_printk("Entered into uprobe_execute_ctx\n");
