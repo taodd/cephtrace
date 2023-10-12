@@ -175,6 +175,13 @@ __u64 fetch_var_member_addr(__u64 cur_addr, struct VarField *vf) {
     cur_addr += vf->fields[5].offset;
   }
 
+  if (6 >= vf->size) return cur_addr;
+  if (vf->fields[6].pointer) {
+    bpf_probe_read_user(&tmpaddr, sizeof(tmpaddr), (void *)cur_addr);
+    cur_addr = tmpaddr + vf->fields[6].offset;
+  } else {
+    cur_addr += vf->fields[6].offset;
+  }
   return cur_addr;
 }
 
@@ -1249,8 +1256,11 @@ int uprobe_repop_commit(struct pt_regs *ctx)
   key.pid = get_pid();
 
   struct op_v *vp = bpf_map_lookup_elem(&ops, &key);
-  if (NULL == vp) return 0; 
-
+  
+  if (NULL == vp) { 
+    bpf_printk("repop_commit got NULL val at key client %lld tid %lld\n", key.owner, key.tid);
+    return 0; 
+  }
   //read data len
   ++varid;
   __u64 len;

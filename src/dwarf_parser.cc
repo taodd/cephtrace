@@ -13,6 +13,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <queue>
 
 #include "osdtrace.skel.h"
 extern "C" {
@@ -260,34 +261,71 @@ void DwarfParser::dwarf_die_type(Dwarf_Die *die, Dwarf_Die *typedie_mem) {
   }
 }
 
+Dwarf_Die * DwarfParser::dwarf_attr_die(Dwarf_Die *die, unsigned int attr_flag, Dwarf_Die *result)
+{
+  Dwarf_Attribute attr_mem, *attr;
+  attr = dwarf_attr_integrate(die, attr_flag, &attr_mem);
+  if (dwarf_formref_die (attr, result) != NULL)
+    {
+      /* Get the actual DIE type*/
+      if (attr_flag == DW_AT_type)
+	{
+	  Dwarf_Attribute sigm;
+	  Dwarf_Attribute *sig = dwarf_attr (result, DW_AT_signature, &sigm);
+	  if (sig != NULL)
+	    result = dwarf_formref_die (sig, result);
+
+	  /* A DW_AT_signature might point to a type_unit, then
+	     the actual type DIE we want is the first child.  */
+	  if (result != NULL && dwarf_tag (result) == DW_TAG_type_unit)
+	    dwarf_child (result, result);
+	}
+      return result;
+    }
+  return NULL;
+}
+
 void DwarfParser::find_class_member(Dwarf_Die *vardie, Dwarf_Die *typedie,
                                     string member, Dwarf_Attribute *attr) {
   // TODO deal with inheritance later
-  Dwarf_Die die;
-  int r = dwarf_child(typedie, &die);
-  if (r != 0) {
-    cerr << "the class " << dwarf_diename(typedie)
-         << " has no children, unexpected and exit" << endl;
-    return;
-  }
-  do {
-    int tag = dwarf_tag(&die);
-    if (tag != DW_TAG_member && tag != DW_TAG_inheritance &&
-        tag != DW_TAG_enumeration_type)
-      continue;
 
-    const char *name = dwarf_diename(&die);
-    if (tag == DW_TAG_inheritance) {
-      // TODO
-    } else if (tag == DW_TAG_enumeration_type) {
-      // TODO
-    } else if (name == NULL) {
-      // TODO
-    } else if (name == member) {
-      *vardie = die;
+  std::queue<Dwarf_Die> die_queue;
+  die_queue.push(*typedie);
+  while (!die_queue.empty()) {
+    bool found = false;
+    Dwarf_Die die;
+    int r = dwarf_child(&die_queue.front(), &die);
+    if (r != 0) {
+      cerr << "the class " << dwarf_diename(typedie)
+           << " has no children, unexpected and exit" << endl;
+      return;
     }
+    do {
+      int tag = dwarf_tag(&die);
+      if (tag != DW_TAG_member && tag != DW_TAG_inheritance &&
+          tag != DW_TAG_enumeration_type)
+        continue;
 
-  } while (dwarf_siblingof(&die, &die) == 0);
+      const char *name = dwarf_diename(&die);
+      if (tag == DW_TAG_inheritance) {
+        Dwarf_Die inheritee;
+        if (dwarf_attr_die (&die, DW_AT_type, &inheritee))
+          die_queue.push(inheritee);
+      } else if (tag == DW_TAG_enumeration_type) {
+        // TODO
+      } else if (name == NULL) {
+        // TODO
+      } else if (name == member) {
+        *vardie = die;
+	found = true;
+	break;
+      }
+
+    } while (dwarf_siblingof(&die, &die) == 0);
+    die_queue.pop();
+    if (found) 
+	break;
+  }
 
   if (dwarf_hasattr_integrate(vardie, DW_AT_data_member_location)) {
     dwarf_attr_integrate(vardie, DW_AT_data_member_location, attr);

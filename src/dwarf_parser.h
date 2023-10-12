@@ -67,6 +67,7 @@ class DwarfParser {
   void translate_expr(Dwarf_Attribute *, Dwarf_Op *, Dwarf_Addr, VarLocation &);
   Dwfl *create_dwfl(int, const char *);
   std::string special_inlined_function_scope(const char *);
+  Dwarf_Die * dwarf_attr_die(Dwarf_Die*, unsigned int, Dwarf_Die*);
 };
 
 #endif
