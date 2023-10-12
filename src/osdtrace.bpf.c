@@ -254,7 +254,6 @@ int uprobe_enqueue_op(struct pt_regs *ctx) {
     bpf_printk("uprobe_enqueue_op got NULL vf at varid %d\n", varid);
     return 0;
   }
-  bpf_printk("enqueue_op client %lld tid %lld\n", key.owner, key.tid);
 
   key.pid = get_pid();
   struct op_v value;
@@ -290,7 +289,6 @@ int uprobe_enqueue_op(struct pt_regs *ctx) {
     bpf_printk("uprobe_enqueue_op got NULL vf at varid %d\n", varid);
     return 0;
   }
-  bpf_printk("enqueue_op recv_stamp %lld\n", value.recv_stamp);
 
   // Set throttle_stamp
   ++varid;
@@ -307,7 +305,6 @@ int uprobe_enqueue_op(struct pt_regs *ctx) {
     bpf_printk("uprobe_enqueue_op got NULL vf at varid %d\n", varid);
     return 0;
   }
-  bpf_printk("enqueue_op throttle_stamp %lld\n", value.throttle_stamp);
 
   // Set recv_complete_stamp
   ++varid;
@@ -325,8 +322,6 @@ int uprobe_enqueue_op(struct pt_regs *ctx) {
     bpf_printk("uprobe_enqueue_op got NULL vf at varid %d\n", varid);
     return 0;
   }
-  bpf_printk("enqueue_op recv_complete_stamp %lld\n",
-             value.recv_complete_stamp);
 
   // Set dispatch_stamp
   ++varid;
@@ -340,36 +335,6 @@ int uprobe_enqueue_op(struct pt_regs *ctx) {
     bpf_probe_read_user(&stamp.nsec, sizeof(stamp.nsec),
                         (void *)(dispatch_stamp_addr + 4));
     value.dispatch_stamp = to_nsec(&stamp);
-  } else {
-    bpf_printk("uprobe_enqueue_op got NULL vf at varid %d\n", varid);
-    return 0;
-  }
-  bpf_printk("enqueue_op dispatch_stamp %lld\n", value.dispatch_stamp);
-
-  // Set m_pool
-  ++varid;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 m_pool_addr = fetch_var_member_addr(v, vf);
-    __u64 m_pool;
-    bpf_probe_read_user(&m_pool, sizeof(m_pool),(void *)m_pool_addr);
-    value.m_pool = m_pool;
-  } else {
-    bpf_printk("uprobe_enqueue_op got NULL vf at varid %d\n", varid);
-    return 0;
-  }
-  //Set m_seed
-  ++varid;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 m_seed_addr = fetch_var_member_addr(v, vf);
-    __u32 m_seed;
-    bpf_probe_read_user(&m_seed, sizeof(m_seed),(void *)m_seed_addr);
-    value.m_seed = m_seed;
   } else {
     bpf_printk("uprobe_enqueue_op got NULL vf at varid %d\n", varid);
     return 0;
@@ -432,16 +397,47 @@ int uprobe_dequeue_op(struct pt_regs *ctx) {
              key.owner, key.tid);
 
   struct op_v *vp = bpf_map_lookup_elem(&ops, &key);
-  if (NULL != vp) {
-    if (vp->dequeue_stamp == 0)
-      vp->dequeue_stamp = bpf_ktime_get_boot_ns();
-
-    __u64 ptid = bpf_get_current_pid_tgid();
-    bpf_map_update_elem(&ptid_opk, &ptid, &key, 0);
-  } else {
+  if (NULL == vp) {
     bpf_printk("uprobe_dequeue_op, no previous enqueue_op info, owner %lld, tid %lld\n", key.owner, key.tid);
     return 0;
   }
+
+  if (vp->dequeue_stamp == 0)
+    vp->dequeue_stamp = bpf_ktime_get_boot_ns();
+
+  // Set m_pool
+  ++varid;
+  vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL != vf) {
+    __u64 v = 0;
+    v = fetch_register(ctx, vf->varloc.reg);
+    __u64 m_pool_addr = fetch_var_member_addr(v, vf);
+    __u64 m_pool;
+    bpf_probe_read_user(&m_pool, sizeof(m_pool),(void *)m_pool_addr);
+    vp->m_pool = m_pool;
+  } else {
+    bpf_printk("uprobe_dequeue_op got NULL vf at varid %d\n", varid);
+    return 0;
+  }
+
+  // Set m_seed
+  ++varid;
+  vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL != vf) {
+    __u64 v = 0;
+    v = fetch_register(ctx, vf->varloc.reg);
+    __u64 m_seed_addr = fetch_var_member_addr(v, vf);
+    __u32 m_seed;
+    bpf_probe_read_user(&m_seed, sizeof(m_seed),(void *)m_seed_addr);
+    vp->m_seed = m_seed;
+  } else {
+    bpf_printk("uprobe_dequeue_op got NULL vf at varid %d\n", varid);
+    return 0;
+  }
+
+  __u64 ptid = bpf_get_current_pid_tgid();
+  bpf_map_update_elem(&ptid_opk, &ptid, &key, 0);
+
   return 0;
 }
 

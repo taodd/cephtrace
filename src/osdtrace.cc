@@ -90,14 +90,14 @@ DwarfParser::probes_t osd_probes = {
       {"op", "px", "request", "recv_stamp"},
       {"op", "px", "request", "throttle_stamp"},
       {"op", "px", "request", "recv_complete_stamp"},
-      {"op", "px", "request", "dispatch_stamp"},
-      {"pg", "pgid", "m_pool"},
-      {"pg", "pgid", "m_seed"}}},
+      {"op", "px", "request", "dispatch_stamp"}}},
 
     {"OSD::dequeue_op",
      {{"op", "px", "request", "header", "type"},
       {"op", "px", "reqid", "name", "_num"},
-      {"op", "px", "reqid", "tid"}}},
+      {"op", "px", "reqid", "tid"},
+      {"pg", "px", "pg_id", "pgid", "m_pool"},
+      {"pg", "px", "pg_id", "pgid", "m_seed"}}},
 
     {"PrimaryLogPG::execute_ctx",
      {{"ctx", "reqid", "name", "_num"}, {"ctx", "reqid", "tid"}}},
