@@ -528,7 +528,7 @@ void print_subop_w(osd_op_t &op, int osd_id) {
 	 "throttle_lat %lld recv_lat %lld dispatch_lat %lld "
 	 "queue_lat %lld osd_lat %lld "
 	 "bluestore_lat %lld (prepare %lld aio_wait %lld (aio_size %d) seq_wait %lld kv_commit %lld) "
-	 "op_lat %lld \n",
+	 "subop_lat %lld \n",
    	  osd_id, op.pg.m_pool, pgid.c_str(), 
 	  op.wb, op.client_id, op.req_id,
 	  op.throttle_lat, op.recv_lat, op.dispatch_lat, 
