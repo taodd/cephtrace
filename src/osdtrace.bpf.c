@@ -691,6 +691,8 @@ int uprobe_txc_state_proc(struct pt_regs *ctx) {
     int pending_num = 0;
     bpf_probe_read_user(&pending_num, sizeof(pending_num), (void *)pending_addr);
     vp->aio_size = pending_num;
+    if (pending_num == 0)
+      vp->aio_done_stamp = vp->aio_submit_stamp;
     bpf_printk("uprobe_txc_state_proc owner %lld tid %lld aio_submit_stamp = %lld", key->owner, key->tid, vp->aio_submit_stamp);
   } else if (state == 1) {  // STATE_AIO_WAIT
     // until flushed can it be considered committed, not here.
