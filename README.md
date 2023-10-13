@@ -11,9 +11,9 @@ Build:
 1. cd cephtrace
 2. make
 
-Start to trace your osd op's latency:
-./osdtrace 
+Start to trace your OSD op's latency:
+./osdtrace -x
 
 Note:
-Can running fine on Ubuntu Jammy 22.04, other platform hasn't been tested.
-Also not tested for container based ceph-osd process yet. 
+Can run fine on Ubuntu Jammy 22.04 and 20.04 with 5.15 kernel, other platform hasn't been tested.
+Not been tested for container-based ceph-osd process yet. 
