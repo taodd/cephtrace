@@ -12,6 +12,8 @@ BPFTOOL_SRC = $(abspath ./bpftool/src)
 
 OSDTRACE_OBJS = $(OUTPUT)/dwarf_parser.o $(OUTPUT)/osdtrace.o
 
+RADOSTRACE_OBJS = $(OUTPUT)/dwarf_parser.o $(OUTPUT)/radostrace.o
+
 LIBBPF_TOP = $(abspath ./libbpf)
 LIBBPF_SRC = $(LIBBPF_TOP)/src
 
@@ -38,12 +40,12 @@ endif
 
 all: build
 
-build: osdtrace 
+build: osdtrace radostrace 
 
 .PHONY: clean
 clean:
 	$(call msg,CLEAN)
-	rm -rf $(OUTPUT) osdtrace
+	rm -rf $(OUTPUT) osdtrace radostrace
 $(OUTPUT) $(OUTPUT)/libbpf $(BPFTOOL_OUTPUT):
 	$(call msg,MKDIR,$@)
 	mkdir -p $@
@@ -75,6 +77,10 @@ $(OUTPUT)/%.skel.h: $(OUTPUT)/%.bpf.o | $(OUTPUT) $(BPFTOOL)
 $(OUTPUT)/osdtrace.o: $(OSDTRACE_SRC)/osdtrace.cc $(OSDTRACE_SRC)/*.h $(OUTPUT)/osdtrace.skel.h | $(OUTPUT) $(LIBBPF_OBJ)
 	$(CXX) -g $(INCLUDES) -c -o $@ $<
 
+$(OUTPUT)/radostrace.o: $(OSDTRACE_SRC)/radostrace.cc $(OSDTRACE_SRC)/*.h $(OUTPUT)/radostrace.skel.h | $(OUTPUT) $(LIBBPF_OBJ)
+	$(CXX) -g $(INCLUDES) -c -o $@ $<
+
+
 $(OUTPUT)/dwarf_parser.o: $(OSDTRACE_SRC)/dwarf_parser.cc $(OSDTRACE_SRC)/*.h $(OUTPUT)/osdtrace.skel.h | $(OUTPUT) $(LIBBPF_OBJ)
 	$(CXX) -g $(INCLUDES) -c -o $@ $<
 
@@ -85,5 +91,7 @@ $(OUTPUT)/dwarf_parser.o: $(OSDTRACE_SRC)/dwarf_parser.cc $(OSDTRACE_SRC)/*.h $(
 osdtrace: $(OUTPUT)/osdtrace.o $(OUTPUT)/dwarf_parser.o $(OUTPUT)/osdtrace.skel.h $(LIBBPF_OBJ) | $(OUTPUT)
 	$(CXX)  -g -O2 -D__TARGET_ARCH_$(ARCH) $(INCLUDES) $(CLANG_BPF_SYS_INCLUDES) -o $@ $(OSDTRACE_OBJS) $(LIBBPF_OBJ) -lelf -ldw -lz
 
+radostrace: $(OUTPUT)/radostrace.o $(OUTPUT)/dwarf_parser.o $(OUTPUT)/radostrace.skel.h $(LIBBPF_OBJ) | $(OUTPUT)
+	$(CXX)  -g -O2 -D__TARGET_ARCH_$(ARCH) $(INCLUDES) $(CLANG_BPF_SYS_INCLUDES) -o $@ $(RADOSTRACE_OBJS) $(LIBBPF_OBJ) -lelf -ldw -lz
 
 

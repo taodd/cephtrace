@@ -627,6 +627,27 @@ Dwfl *DwarfParser::create_dwfl(int fd, const char *fname) {
   return dwfl;
 }
 
+
+/*static int handle_module_types(Dwfl_Module *dwflmod, void **userdata,
+                         const char *name, Dwarf_Addr base, void *arg) {
+
+  DwarfParser *dp = (DwarfParser *)arg;
+  assert(dwflmod != NULL && dp != NULL);
+
+  dp->cur_mod = dwflmod;
+  Dwarf_Addr modbias;
+  Dwarf *dwarf = dwfl_module_getdwarf(dwflmod, &modbias);
+
+  if (!dwarf) {
+    cerr << "handle_module dwarf get error" << endl;
+    return EXIT_FAILURE;
+  }
+
+  dp->traverse_module(dwflmod, dwarf, true);
+  return 0;
+}*/
+
+
 static int handle_module(Dwfl_Module *dwflmod, void **userdata,
                          const char *name, Dwarf_Addr base, void *arg) {
   DwarfParser *dp = (DwarfParser *)arg;
@@ -658,6 +679,7 @@ static int handle_module(Dwfl_Module *dwflmod, void **userdata,
       assert(dp->cfi_debug == NULL || dp->cfi_debug_bias == 0);
 
       string cu_name = dwarf_diename(&cu_die) ?: "<unknown>";
+      cout << "cu name " << cu_name << endl;
       if (dp->filter_cu(cu_name)) {
         cout << "cu name " << cu_name << endl;
         dp->cur_cu = &cu_die;

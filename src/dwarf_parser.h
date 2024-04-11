@@ -19,6 +19,7 @@ class DwarfParser {
 
   typedef std::unordered_map<std::string, Dwarf_Die> cu_type_cache_t;
   typedef std::unordered_map<void *, cu_type_cache_t> mod_cu_type_cache_t;
+  //typedef std::unordered_map<void *, mod_cu_type_cache_t> global_mod_cu_type_cache_t; 
 
  public:
   typedef std::map<std::string, std::vector<std::vector<std::string>>> probes_t;
