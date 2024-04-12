@@ -954,9 +954,9 @@ int main(int argc, char **argv) {
 
   clog << "Start to parse ceph dwarf info" << endl;
 
-  //std::string path = "/home/taodd/Git/ceph/build/bin/ceph-osd";
-  std::string path = "/usr/bin/ceph-osd";
-  DwarfParser dwarfparser(path, osd_probes, probe_units);
+  std::string osd_path = "/home/taodd/Git/ceph/build/bin/ceph-osd";
+  DwarfParser dwarfparser(osd_probes, probe_units);
+  dwarfparser.add_module(osd_path);
   dwarfparser.parse();
 
   libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
@@ -981,33 +981,33 @@ int main(int argc, char **argv) {
 
   //Start to load the probes
   if (probe_mode == OP_SINGLE_PROBE) {
-    attach_uprobe(skel, dwarfparser, path, "PrimaryLogPG::log_op_stats", 2);
+    attach_uprobe(skel, dwarfparser, osd_path, "PrimaryLogPG::log_op_stats", 2);
   } else if (probe_mode == OP_FULL_PROBE) {
-    attach_uprobe(skel, dwarfparser, path, "OSD::dequeue_op");
+    attach_uprobe(skel, dwarfparser, osd_path, "OSD::dequeue_op");
 
-    attach_uprobe(skel, dwarfparser, path, "PrimaryLogPG::execute_ctx");
+    attach_uprobe(skel, dwarfparser, osd_path, "PrimaryLogPG::execute_ctx");
     
-    attach_uprobe(skel, dwarfparser, path, "ECBackend::submit_transaction");
+    attach_uprobe(skel, dwarfparser, osd_path, "ECBackend::submit_transaction");
 
-    attach_uprobe(skel, dwarfparser, path, "OpRequest::mark_flag_point_string");
+    attach_uprobe(skel, dwarfparser, osd_path, "OpRequest::mark_flag_point_string");
 
-    attach_uprobe(skel, dwarfparser, path, "ReplicatedBackend::generate_subop");
+    attach_uprobe(skel, dwarfparser, osd_path, "ReplicatedBackend::generate_subop");
 
-    attach_uprobe(skel, dwarfparser, path, "ReplicatedBackend::do_repop_reply");
+    attach_uprobe(skel, dwarfparser, osd_path, "ReplicatedBackend::do_repop_reply");
 
-    attach_uprobe(skel, dwarfparser, path, "BlueStore::queue_transactions");
+    attach_uprobe(skel, dwarfparser, osd_path, "BlueStore::queue_transactions");
 
-    attach_uprobe(skel, dwarfparser, path, "BlueStore::_txc_calc_cost");
+    attach_uprobe(skel, dwarfparser, osd_path, "BlueStore::_txc_calc_cost");
 
-    attach_uprobe(skel, dwarfparser, path, "BlueStore::_txc_state_proc");
+    attach_uprobe(skel, dwarfparser, osd_path, "BlueStore::_txc_state_proc");
 
-    attach_uprobe(skel, dwarfparser, path, "PrimaryLogPG::log_op_stats");
+    attach_uprobe(skel, dwarfparser, osd_path, "PrimaryLogPG::log_op_stats");
 
-    attach_uprobe(skel, dwarfparser, path, "ReplicatedBackend::repop_commit");
+    attach_uprobe(skel, dwarfparser, osd_path, "ReplicatedBackend::repop_commit");
     
-    attach_uprobe(skel, dwarfparser, path, "OSD::enqueue_op");
+    attach_uprobe(skel, dwarfparser, osd_path, "OSD::enqueue_op");
   } else if (probe_mode == BLUESTORE_PROBE) {
-    attach_uprobe(skel, dwarfparser, path, "BlueStore::log_latency");
+    attach_uprobe(skel, dwarfparser, osd_path, "BlueStore::log_latency");
   }
 
   bootstamp = get_bootstamp();

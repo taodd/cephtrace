@@ -53,10 +53,12 @@ std::map<std::string, int> func_progid = {
 DwarfParser::probes_t rados_probes = {
       {"Objecter::_send_op",
        {{"op", "tid"},
+	{"this", "monc", "global_id"},
         {"op", "target", "osd"}}},
 
       {"Objecter::_finish_op", 
        {{"op", "tid"},
+	{"this", "monc", "global_id"},
 	{"op", "target", "osd"}}}
 };
 
@@ -153,9 +155,12 @@ int main(int argc, char **argv) {
   struct ring_buffer *rb;
 
   clog << "Start to parse dwarf info" << endl;
+  std::string librados_path = "/home/taodd/Git/ceph/build/lib/librados.so";
+  std::string libceph_common_path = "/home/taodd/Git/ceph/build/lib/libceph-common.so";
 
-  std::string path = "/home/taodd/Git/ceph/build/lib/libceph-common.so";
-  DwarfParser dwarfparser(path, rados_probes, probe_units);
+  DwarfParser dwarfparser(rados_probes, probe_units);
+  dwarfparser.add_module(librados_path);
+  dwarfparser.add_module(libceph_common_path);
   dwarfparser.parse();
 
   libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
@@ -178,8 +183,8 @@ int main(int argc, char **argv) {
 
   clog << "BPF prog loaded" << endl;
 
-  attach_uprobe(skel, dwarfparser, path, "Objecter::_send_op");
-  attach_uprobe(skel, dwarfparser, path, "Objecter::_finish_op");
+  attach_uprobe(skel, dwarfparser, librados_path, "Objecter::_send_op");
+  attach_uprobe(skel, dwarfparser, librados_path, "Objecter::_finish_op");
   sleep(60);
   return 0;
   /*

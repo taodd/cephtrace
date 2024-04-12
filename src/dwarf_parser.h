@@ -5,10 +5,13 @@
 #include <elf.h>
 #include <elfutils/libdw.h>
 #include <elfutils/libdwfl.h>
+#include <vector>
 
 class DwarfParser;
 static int handle_function(Dwarf_Die *, void *);
 static int handle_module(Dwfl_Module *, void **, const char *, Dwarf_Addr,
+                         void *);
+static int preprocess_module(Dwfl_Module *, void **, const char *, Dwarf_Addr,
                          void *);
 
 class DwarfParser {
@@ -16,21 +19,23 @@ class DwarfParser {
   friend int handle_module(Dwfl_Module *, void **, const char *, Dwarf_Addr,
                            void *);
   friend int handle_function(Dwarf_Die *, void *);
+  friend int preprocess_module(Dwfl_Module *, void **, const char *, Dwarf_Addr,
+                           void *);
 
   typedef std::unordered_map<std::string, Dwarf_Die> cu_type_cache_t;
   typedef std::unordered_map<void *, cu_type_cache_t> mod_cu_type_cache_t;
-  //typedef std::unordered_map<void *, mod_cu_type_cache_t> global_mod_cu_type_cache_t; 
+  typedef std::unordered_map<void *, mod_cu_type_cache_t> global_mod_cu_type_cache_t; 
 
  public:
   typedef std::map<std::string, std::vector<std::vector<std::string>>> probes_t;
   std::map<std::string, std::vector<VarField>> func2vf;
   std::map<std::string, Dwarf_Addr> func2pc;
-  mod_cu_type_cache_t global_type_cache;
+  global_mod_cu_type_cache_t global_type_cache;
   std::vector<std::string> probe_units;
   probes_t probes;
 
  private:
-  Dwfl *dwfl;
+  std::vector<Dwfl *> dwfls;
   Dwfl_Module *cur_mod;
   Dwarf_Die *cur_cu;
   Dwarf_CFI *cfi_debug;
@@ -41,16 +46,16 @@ class DwarfParser {
  public:
   int parse();
 
-  DwarfParser(std::string, probes_t probes,
-              std::vector<std::string> probe_units);
+  DwarfParser(probes_t probes, std::vector<std::string> probe_units);
 
   ~DwarfParser();
+  void add_module(std::string);
   void print_die(Dwarf_Die *);
   bool die_has_loclist(Dwarf_Die *);
   bool has_loclist();
   Dwarf_Die *resolve_typedecl(Dwarf_Die *);
   const char *cache_type_prefix(Dwarf_Die *);
-  int iterate_types_in_cu(Dwarf_Die *);
+  int iterate_types_in_cu(mod_cu_type_cache_t &, Dwarf_Die *);
   void traverse_module(Dwfl_Module *, Dwarf *, bool);
   Dwarf_Die find_param(Dwarf_Die *, std::string);
   Dwarf_Attribute *find_func_frame_base(Dwarf_Die *, Dwarf_Attribute *);

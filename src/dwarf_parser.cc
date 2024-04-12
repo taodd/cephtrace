@@ -81,10 +81,15 @@ Dwarf_Die *DwarfParser::resolve_typedecl(Dwarf_Die *type) {
 
   string type_name = cache_type_prefix(type) + string(name);
 
-  for (auto i = global_type_cache.begin(); i != global_type_cache.end(); ++i) {
-    cu_type_cache_t v = (*i).second;
-    if (v.find(type_name) != v.end()) return &(v[type_name]);
+  for (auto &p : global_type_cache) {
+    auto cus = p.second;
+    for (auto i = cus.begin(); i != cus.end(); ++i) {
+      auto v = (*i).second;
+      if (v.find(type_name) != v.end()) return &(v[type_name]);
+    }
   }
+
+  cerr << "Couldn't resolve type " << type_name << endl; 
 
   return NULL;
 }
@@ -103,7 +108,7 @@ const char *DwarfParser::cache_type_prefix(Dwarf_Die *type) {
   return "";
 }
 
-int DwarfParser::iterate_types_in_cu(Dwarf_Die *cu_die) {
+int DwarfParser::iterate_types_in_cu(mod_cu_type_cache_t & mcu, Dwarf_Die *cu_die) {
   assert(cu_die);
   assert(dwarf_tag(cu_die) == DW_TAG_compile_unit ||
          dwarf_tag(cu_die) == DW_TAG_type_unit ||
@@ -111,7 +116,7 @@ int DwarfParser::iterate_types_in_cu(Dwarf_Die *cu_die) {
 
   if (dwarf_tag(cu_die) == DW_TAG_partial_unit) return DWARF_CB_OK;
 
-  cu_type_cache_t &v = global_type_cache[cu_die->addr];
+  cu_type_cache_t &v = mcu[cu_die->addr];
   // TODO inner types process
   // bool has_inner_types = dwarf_srclang(cu_die) == DW_LANG_C_plus_plus;
 
@@ -158,12 +163,17 @@ void DwarfParser::traverse_module(Dwfl_Module *mod, Dwarf *dw, bool want_type) {
   size_t cuhl;
   Dwarf_Off noff;
 
+  mod_cu_type_cache_t &mcu = global_type_cache[mod];
   while (dwarf_nextcu(dw, off, &noff, &cuhl, NULL, NULL, NULL) == 0) {
     Dwarf_Die die_mem;
     Dwarf_Die *die;
     die = dwarf_offdie(dw, off + cuhl, &die_mem);
+    string cu_name = dwarf_diename(die) ?: "<unknown>";
+    cout << "preprocess_module cu name " << cu_name << endl;
     /* Skip partial units. */
-    if (dwarf_tag(die) == DW_TAG_compile_unit) iterate_types_in_cu(die);
+    if (dwarf_tag(die) == DW_TAG_compile_unit) {
+       	iterate_types_in_cu(mcu, die);
+    }
     off = noff;
   }
 
@@ -178,7 +188,7 @@ void DwarfParser::traverse_module(Dwfl_Module *mod, Dwarf *dw, bool want_type) {
       Dwarf_Die die_mem;
       Dwarf_Die *die;
       die = dwarf_offdie_types(dw, off + cuhl, &die_mem);
-      if (dwarf_tag(die) == DW_TAG_type_unit) iterate_types_in_cu(die);
+      if (dwarf_tag(die) == DW_TAG_type_unit) iterate_types_in_cu(mcu, die);
       off = noff;
     }
   }
@@ -628,7 +638,7 @@ Dwfl *DwarfParser::create_dwfl(int fd, const char *fname) {
 }
 
 
-/*static int handle_module_types(Dwfl_Module *dwflmod, void **userdata,
+static int preprocess_module(Dwfl_Module *dwflmod, void **userdata,
                          const char *name, Dwarf_Addr base, void *arg) {
 
   DwarfParser *dp = (DwarfParser *)arg;
@@ -639,13 +649,14 @@ Dwfl *DwarfParser::create_dwfl(int fd, const char *fname) {
   Dwarf *dwarf = dwfl_module_getdwarf(dwflmod, &modbias);
 
   if (!dwarf) {
-    cerr << "handle_module dwarf get error" << endl;
+    cerr << "preprocess_module dwarf get error" << endl;
     return EXIT_FAILURE;
   }
 
+
   dp->traverse_module(dwflmod, dwarf, true);
   return 0;
-}*/
+}
 
 
 static int handle_module(Dwfl_Module *dwflmod, void **userdata,
@@ -663,8 +674,6 @@ static int handle_module(Dwfl_Module *dwflmod, void **userdata,
   }
 
   int start_time = clock();
-  dp->traverse_module(dwflmod, dwarf, true);
-  int end_process_types_time = clock();
 
   Dwarf_Off offset = 0;
   Dwarf_Off next_offset;
@@ -679,7 +688,7 @@ static int handle_module(Dwfl_Module *dwflmod, void **userdata,
       assert(dp->cfi_debug == NULL || dp->cfi_debug_bias == 0);
 
       string cu_name = dwarf_diename(&cu_die) ?: "<unknown>";
-      cout << "cu name " << cu_name << endl;
+      cout << "handle_module cu name " << cu_name << endl;
       if (dp->filter_cu(cu_name)) {
         cout << "cu name " << cu_name << endl;
         dp->cur_cu = &cu_die;
@@ -691,9 +700,6 @@ static int handle_module(Dwfl_Module *dwflmod, void **userdata,
   }
   int end_process_funcs_time = clock();
 
-  clog << "process types take "
-       << (end_process_types_time - start_time) / double(CLOCKS_PER_SEC) * 1000
-       << endl;
   clog << "process functions take "
        << (end_process_funcs_time - start_time) / double(CLOCKS_PER_SEC) * 1000
        << endl;
@@ -701,8 +707,24 @@ static int handle_module(Dwfl_Module *dwflmod, void **userdata,
 }
 
 int DwarfParser::parse() {
-  dwfl_getmodules(dwfl, handle_module, this, 0);
+  for (auto dwfl: dwfls) {
+    dwfl_getmodules(dwfl, preprocess_module, this, 0);
+  }
+  for (auto dwfl: dwfls) {
+    dwfl_getmodules(dwfl, handle_module, this, 0);
+  }
   return 0;
+}
+
+void DwarfParser::add_module(string path) {
+  const char *fname = path.c_str();
+  int fd = open(fname, O_RDONLY);
+  if (fd == -1) {
+    cerr << "cannot open input file " << fname;
+  }
+  
+  Dwfl *dwfl = create_dwfl(fd, fname);
+  dwfls.push_back(dwfl);
 }
 
 void DwarfParser::print_die(Dwarf_Die *die) {
@@ -731,20 +753,13 @@ void DwarfParser::print_die(Dwarf_Die *die) {
   }*/
 }
 
-DwarfParser::DwarfParser(string path, probes_t ps, vector<string> pus)
+DwarfParser::DwarfParser(probes_t ps, vector<string> pus)
     : cur_mod(NULL),
       cur_cu(NULL),
       cfi_debug(NULL),
       cfi_eh(NULL),
       probes(ps),
       probe_units(pus) {
-  const char *fname = path.c_str();
-  int fd = open(fname, O_RDONLY);
-  if (fd == -1) {
-    cerr << "cannot open input file " << fname;
-  }
-
-  dwfl = create_dwfl(fd, fname);
 }
 
 DwarfParser::~DwarfParser() {}

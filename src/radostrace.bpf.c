@@ -69,12 +69,24 @@ int uprobe_send_op(struct pt_regs *ctx) {
   }
 
   // read client id
-  // 
+  ++varid;
+  vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL != vf) {
+    __u64 v = 0;
+    v = fetch_register(ctx, vf->varloc.reg);
+    __u64 cid_addr = fetch_var_member_addr(v, vf);
+    bpf_probe_read_user(&key.cid, sizeof(key.cid), (void *)cid_addr);
+    bpf_printk("uprobe_send_op got client id %lld\n", key.cid);
+  } else {
+    bpf_printk("uprobe_send_op got NULL vf at varid %d\n", varid);
+  }
+
+   
   //
   struct client_op_v val;
   val.sent_stamp = bpf_ktime_get_boot_ns();
   val.tid = key.tid;
-
+  return 0;
 }
 
 SEC("uprobe")
@@ -93,5 +105,19 @@ int uprobe_finish_op(struct pt_regs *ctx) {
   } else {
     bpf_printk("uprobe_finish_op got NULL vf at varid %d\n", varid);
   }
+
+  // read client id
+  ++varid;
+  vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL != vf) {
+    __u64 v = 0;
+    v = fetch_register(ctx, vf->varloc.reg);
+    __u64 cid_addr = fetch_var_member_addr(v, vf);
+    bpf_probe_read_user(&key.cid, sizeof(key.cid), (void *)cid_addr);
+    bpf_printk("uprobe_finish_op got client id %lld\n", key.cid);
+  } else {
+    bpf_printk("uprobe_finish_op got NULL vf at varid %d\n", varid);
+  }
+  return 0;
 }
 
