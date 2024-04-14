@@ -23,7 +23,7 @@ extern "C" {
 #include <unistd.h>
 }
 
-#include "bpf_osd_types.h"
+#include "bpf_ceph_types.h"
 #include "dwarf_parser.h"
 
 #define MAX_CNT 100000ll
@@ -873,8 +873,9 @@ int parse_args(int argc, char **argv) {
   return 0;
 }
 
-void fill_map_hprobes(DwarfParser &dwarfparser, struct bpf_map *hprobes) {
-  for (auto x : dwarfparser.func2vf) {
+void fill_map_hprobes(std::string mod_path, DwarfParser &dwarfparser, struct bpf_map *hprobes) {
+  auto &func2vf = dwarfparser.mod_func2vf[mod_path];
+  for (auto x : func2vf) {
     std::string funcname = x.first;
     int key_idx = func_id[funcname];
     for (auto vf : x.second) {
@@ -900,7 +901,9 @@ int attach_uprobe(struct osdtrace_bpf *skel,
 	           std::string path,
 		   std::string funcname,
 		   int v = 0) {
-  size_t func_addr = dp.func2pc[funcname];
+
+  auto &func2pc = dp.mod_func2pc[path];
+  size_t func_addr = func2pc[funcname];
   if (v > 0)
       funcname = funcname + "_v" + std::to_string(v); 
   int pid = func_progid[funcname];
@@ -916,7 +919,6 @@ int attach_uprobe(struct osdtrace_bpf *skel,
 
   clog << "uprobe " << funcname <<  " attached" << endl;
   return 0;
-
 }
 
 int attach_retuprobe(struct osdtrace_bpf *skel,
@@ -924,7 +926,8 @@ int attach_retuprobe(struct osdtrace_bpf *skel,
 	           std::string path,
 		   std::string funcname,
 		   int v = 0) {
-  size_t func_addr = dp.func2pc[funcname];
+  auto &func2pc = dp.mod_func2pc[path];
+  size_t func_addr = func2pc[funcname];
   if (v > 0)
       funcname = funcname + "_v" + std::to_string(v); 
   int pid = func_progid[funcname];
@@ -975,7 +978,7 @@ int main(int argc, char **argv) {
 
   // map_fd = bpf_object__find_map_fd_by_name(skel->obj, "hprobes");
 
-  fill_map_hprobes(dwarfparser, skel->maps.hprobes);
+  fill_map_hprobes(osd_path, dwarfparser, skel->maps.hprobes);
 
   clog << "BPF prog loaded" << endl;
 

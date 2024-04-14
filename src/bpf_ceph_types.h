@@ -19,6 +19,28 @@ static const __u8 flag_started =     1 << 3;
 static const __u8 flag_sub_op_sent = 1 << 4;
 static const __u8 flag_commit_sent = 1 << 5;
 
+struct client_op_k {
+  __u64 cid;
+  __u64 tid;
+};
+
+struct client_op_v {
+  __u64 cid;
+  __u64 tid;
+  __u16 op_type;
+  __u64 sent_stamp;
+  __u64 finish_stamp;
+  __u32 target_osd;
+  __u32 pid; //process id
+  //TODO peer OSDs
+  //__u64 m_pool;
+  //__u64 m_seed;
+  //__u64 wb;
+  //__u64 rb;
+  //__u64 offset;
+  //TODO object id;
+};
+
 struct op_k {
   __u32 pid;    // process id
   __u64 owner;  // client id

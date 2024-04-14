@@ -25,11 +25,17 @@ class DwarfParser {
   typedef std::unordered_map<std::string, Dwarf_Die> cu_type_cache_t;
   typedef std::unordered_map<void *, cu_type_cache_t> mod_cu_type_cache_t;
   typedef std::unordered_map<void *, mod_cu_type_cache_t> global_mod_cu_type_cache_t; 
+  
+
+  typedef std::map<std::string, std::vector<VarField>> func2vf_t;
+  typedef std::map<std::string, Dwarf_Addr> func2pc_t;
+  typedef std::map<std::string, func2vf_t> mod_func2vf_t;
+  typedef std::map<std::string, func2pc_t> mod_func2pc_t;
 
  public:
   typedef std::map<std::string, std::vector<std::vector<std::string>>> probes_t;
-  std::map<std::string, std::vector<VarField>> func2vf;
-  std::map<std::string, Dwarf_Addr> func2pc;
+  mod_func2vf_t mod_func2vf;
+  mod_func2pc_t mod_func2pc;
   global_mod_cu_type_cache_t global_type_cache;
   std::vector<std::string> probe_units;
   probes_t probes;
@@ -37,6 +43,7 @@ class DwarfParser {
  private:
   std::vector<Dwfl *> dwfls;
   Dwfl_Module *cur_mod;
+  std::string cur_mod_name;
   Dwarf_Die *cur_cu;
   Dwarf_CFI *cfi_debug;
   Dwarf_CFI *cfi_eh;

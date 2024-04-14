@@ -26,7 +26,7 @@ extern "C" {
 #include <unistd.h>
 }
 
-#include "bpf_osd_types.h"
+#include "bpf_ceph_types.h"
 #include "dwarf_parser.h"
 
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
@@ -62,8 +62,9 @@ DwarfParser::probes_t rados_probes = {
 	{"op", "target", "osd"}}}
 };
 
-void fill_map_hprobes(DwarfParser &dwarfparser, struct bpf_map *hprobes) {
-  for (auto x : dwarfparser.func2vf) {
+void fill_map_hprobes(std::string mod_path, DwarfParser &dwarfparser, struct bpf_map *hprobes) {
+  auto &func2vf = dwarfparser.mod_func2vf[mod_path];
+  for (auto x : func2vf) {
     std::string funcname = x.first;
     int key_idx = func_id[funcname];
     for (auto vf : x.second) {
@@ -103,7 +104,9 @@ int attach_uprobe(struct radostrace_bpf *skel,
 	           std::string path,
 		   std::string funcname,
 		   int v = 0) {
-  size_t func_addr = dp.func2pc[funcname];
+
+  auto &func2pc = dp.mod_func2pc[path];
+  size_t func_addr = func2pc[funcname];
   if (v > 0)
       funcname = funcname + "_v" + std::to_string(v); 
   int pid = func_progid[funcname];
@@ -126,7 +129,8 @@ int attach_retuprobe(struct radostrace_bpf *skel,
 	           std::string path,
 		   std::string funcname,
 		   int v = 0) {
-  size_t func_addr = dp.func2pc[funcname];
+  auto &func2pc = dp.mod_func2pc[path];
+  size_t func_addr = func2pc[funcname];
   if (v > 0)
       funcname = funcname + "_v" + std::to_string(v); 
   int pid = func_progid[funcname];
@@ -142,6 +146,16 @@ int attach_retuprobe(struct radostrace_bpf *skel,
 
   clog << "uretprobe " << funcname <<  " attached" << endl;
   return 0;
+}
+
+
+static int handle_event(void *ctx, void *data, size_t size) {
+
+    struct client_op_v * op_v = (struct client_op_v *)data;
+    printf("pid %d client %lld tid %lld osd %d latency %lld\n", 
+	    op_v->pid, op_v->cid, op_v->tid, op_v->target_osd, 
+	    (op_v->finish_stamp - op_v->sent_stamp) / 1000);
+    return 0;
 }
 
 int main(int argc, char **argv) {
@@ -179,15 +193,13 @@ int main(int argc, char **argv) {
 
   // map_fd = bpf_object__find_map_fd_by_name(skel->obj, "hprobes");
 
-  fill_map_hprobes(dwarfparser, skel->maps.hprobes);
+  fill_map_hprobes(librados_path, dwarfparser, skel->maps.hprobes);
 
   clog << "BPF prog loaded" << endl;
 
   attach_uprobe(skel, dwarfparser, librados_path, "Objecter::_send_op");
   attach_uprobe(skel, dwarfparser, librados_path, "Objecter::_finish_op");
-  sleep(60);
-  return 0;
-  /*
+
   clog << "New a ring buffer" << endl;
 
   rb = ring_buffer__new(bpf_map__fd(skel->maps.rb), handle_event, NULL, NULL);
@@ -198,25 +210,14 @@ int main(int argc, char **argv) {
 
   clog << "Started to poll from ring buffer" << endl;
 
-  clock_gettime(CLOCK_BOOTTIME, &lasttime);
-  memset(op_stat, 0, MAX_OSD * sizeof(op_stat[0]));
-
   while ((ret = ring_buffer__poll(rb, 1000)) >= 0) {
-  }*/
+  }
 
-  /* we can also attach uprobe/uretprobe to any existing or future
-   * processes that use the same binary executable; to do that we need
-   * to specify -1 as PID, as we do here
-   */
-  /* Let libbpf perform auto-attach for uprobe_sub/uretprobe_sub
-   * NOTICE: we provide path and symbol info in SEC for BPF programs
-   */
-  /*clog << "Unexpected line hit" << endl;
+  clog << "Unexpected line hit" << endl;
 cleanup:
   clog << "Clean up the eBPF program" << endl;
   ring_buffer__free(rb);
-  osdtrace_bpf__destroy(skel);
+  radostrace_bpf__destroy(skel);
   return -errno;
-  */
 }
 

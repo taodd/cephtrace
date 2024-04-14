@@ -7,7 +7,7 @@
 #include <stdbool.h>
 #include <string.h>
 
-#include "bpf_osd_types.h"
+#include "bpf_ceph_types.h"
 #include "bpf_utils.h"
 // Reminding:  Use "swtich" statement in the bpf program might cause issues
 

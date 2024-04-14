@@ -24,7 +24,7 @@ extern "C" {
 #include <fcntl.h>
 #include <unistd.h>
 }
-#include "bpf_osd_types.h"
+#include "bpf_ceph_types.h"
 #include "dwarf_parser.h"
 
 using namespace std;
@@ -484,8 +484,11 @@ static int handle_function(Dwarf_Die *die, void *data) {
 
   // TODO need to check if the class name matches
   Dwarf_Addr pc = dp->find_prologue(die);
-  dp->func2pc[fullname] = pc;
-  vector<VarField> &vf = dp->func2vf[fullname];
+  auto &func2pc = dp->mod_func2pc[dp->cur_mod_name];
+  func2pc[fullname] = pc;
+
+  auto &func2vf = dp->mod_func2vf[dp->cur_mod_name];
+  auto &vf = func2vf[fullname];
   auto arr = dp->probes[fullname];
   vf.resize(arr.size());
 
@@ -645,6 +648,7 @@ static int preprocess_module(Dwfl_Module *dwflmod, void **userdata,
   assert(dwflmod != NULL && dp != NULL);
 
   dp->cur_mod = dwflmod;
+  dp->cur_mod_name = dwfl_module_info(dwflmod, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
   Dwarf_Addr modbias;
   Dwarf *dwarf = dwfl_module_getdwarf(dwflmod, &modbias);
 
@@ -665,6 +669,7 @@ static int handle_module(Dwfl_Module *dwflmod, void **userdata,
   assert(dwflmod != NULL && dp != NULL);
 
   dp->cur_mod = dwflmod;
+  dp->cur_mod_name = dwfl_module_info(dwflmod, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
   Dwarf_Addr modbias;
   Dwarf *dwarf = dwfl_module_getdwarf(dwflmod, &modbias);
 
