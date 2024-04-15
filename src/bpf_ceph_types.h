@@ -11,6 +11,9 @@
 #define MSG_OSD_EC_WRITE_REPLY 109
 #define MSG_OSD_EC_READ 110
 #define MSG_OSD_EC_READ_REPLY 111
+
+#define CEPH_OSD_FLAG_READ 0x0010
+#define CEPH_OSD_FLAG_WRITE 0x0020
  
 static const __u8 flag_queued_for_pg=1 << 0;
 static const __u8 flag_reached_pg =  1 << 1;
@@ -27,7 +30,7 @@ struct client_op_k {
 struct client_op_v {
   __u64 cid;
   __u64 tid;
-  __u16 op_type;
+  __u16 rw;
   __u64 sent_stamp;
   __u64 finish_stamp;
   __u32 target_osd;
@@ -38,7 +41,7 @@ struct client_op_v {
   //__u64 wb;
   //__u64 rb;
   //__u64 offset;
-  //TODO object id;
+  char object_name[64];
 };
 
 struct op_k {
@@ -285,5 +288,7 @@ enum {
   //****************************************
   l_bluestore_last
 };
+
+
 
 #endif

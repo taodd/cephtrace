@@ -54,7 +54,10 @@ DwarfParser::probes_t rados_probes = {
       {"Objecter::_send_op",
        {{"op", "tid"},
 	{"this", "monc", "global_id"},
-        {"op", "target", "osd"}}},
+        {"op", "target", "osd"},
+        {"op", "target", "base_oid", "name", "_M_string_length"},
+        {"op", "target", "base_oid", "name", "_M_dataplus", "_M_p"},
+        {"op", "target", "flags"}}},
 
       {"Objecter::_finish_op", 
        {{"op", "tid"},
@@ -152,9 +155,10 @@ int attach_retuprobe(struct radostrace_bpf *skel,
 static int handle_event(void *ctx, void *data, size_t size) {
 
     struct client_op_v * op_v = (struct client_op_v *)data;
-    printf("pid %d client %lld tid %lld osd %d latency %lld\n", 
-	    op_v->pid, op_v->cid, op_v->tid, op_v->target_osd, 
-	    (op_v->finish_stamp - op_v->sent_stamp) / 1000);
+    printf("pid:%d client.%lld tid %lld object:%s %s osd.%d lat %lld\n", 
+	    op_v->pid, op_v->cid, op_v->tid, op_v->object_name, 
+	    op_v->rw & CEPH_OSD_FLAG_WRITE ? "W" : "R",
+	    op_v->target_osd, (op_v->finish_stamp - op_v->sent_stamp) / 1000);
     return 0;
 }
 
