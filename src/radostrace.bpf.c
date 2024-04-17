@@ -123,6 +123,72 @@ int uprobe_send_op(struct pt_regs *ctx) {
     bpf_printk("uprobe_send_op got NULL vf at varid %d\n", varid);
   }
 
+  // read m_pool
+  ++varid;
+  vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL != vf) {
+    __u64 v = 0;
+    v = fetch_register(ctx, vf->varloc.reg);
+    __u64 m_pool_addr = fetch_var_member_addr(v, vf);
+    bpf_probe_read_user(&val.m_pool, sizeof(val.m_pool), (void *)m_pool_addr);
+    bpf_printk("uprobe_send_op got m_pool %d\n", val.m_pool);
+  } else {
+    bpf_printk("uprobe_send_op got NULL vf at varid %d\n", varid);
+  }
+  
+  // read m_seed
+  ++varid;
+  vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL != vf) {
+    __u64 v = 0;
+    v = fetch_register(ctx, vf->varloc.reg);
+    __u64 m_seed_addr = fetch_var_member_addr(v, vf);
+    bpf_probe_read_user(&val.m_seed, sizeof(val.m_seed), (void *)m_seed_addr);
+    bpf_printk("uprobe_send_op got m_seed %d\n", val.m_seed);
+  } else {
+    bpf_printk("uprobe_send_op got NULL vf at varid %d\n", varid);
+  }
+  
+  // read acting _M_start
+  ++varid;
+  __u64 m_start;
+  vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL != vf) {
+    __u64 v = 0;
+    v = fetch_register(ctx, vf->varloc.reg);
+    __u64 m_start_addr = fetch_var_member_addr(v, vf);
+    bpf_probe_read_user(&m_start, sizeof(m_start), (void *)m_start_addr);
+    bpf_printk("uprobe_send_op got m_start %d\n", m_start);
+  } else {
+    bpf_printk("uprobe_send_op got NULL vf at varid %d\n", varid);
+    return 0;
+  }
+
+  // read acting _M_finish
+  ++varid;
+  __u64 m_finish;
+  vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL != vf) {
+    __u64 v = 0;
+    v = fetch_register(ctx, vf->varloc.reg);
+    __u64 m_finish_addr = fetch_var_member_addr(v, vf);
+    bpf_probe_read_user(&m_finish, sizeof(m_finish), (void *)m_finish_addr);
+    bpf_printk("uprobe_send_op got m_start %d\n", m_start);
+  } else {
+    bpf_printk("uprobe_send_op got NULL vf at varid %d\n", varid);
+    return 0;
+  }
+
+  for (int i = 0 ; i < 8; ++i) {
+    val.acting[i] = -1;
+    if (m_start < m_finish) {
+	bpf_probe_read_user(&val.acting[i], sizeof(int), (void *)m_start);
+	m_start += sizeof(int);
+    } else {
+	break;
+    }
+  }
+
   
   bpf_map_update_elem(&ops, &key, &val, 0);
   return 0;

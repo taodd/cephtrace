@@ -42,6 +42,9 @@ struct client_op_v {
   //__u64 rb;
   //__u64 offset;
   char object_name[64];
+  __u64 m_pool;
+  __u32 m_seed;
+  int acting[8];
 };
 
 struct op_k {

@@ -57,7 +57,11 @@ DwarfParser::probes_t rados_probes = {
         {"op", "target", "osd"},
         {"op", "target", "base_oid", "name", "_M_string_length"},
         {"op", "target", "base_oid", "name", "_M_dataplus", "_M_p"},
-        {"op", "target", "flags"}}},
+        {"op", "target", "flags"},
+        {"op", "target", "actual_pgid", "pgid", "m_pool"},
+        {"op", "target", "actual_pgid", "pgid", "m_seed"},
+        {"op", "target", "acting", "_M_impl", "_M_start"},
+        {"op", "target", "acting", "_M_impl", "_M_finish"}}},
 
       {"Objecter::_finish_op", 
        {{"op", "tid"},
@@ -153,12 +157,17 @@ int attach_retuprobe(struct radostrace_bpf *skel,
 
 
 static int handle_event(void *ctx, void *data, size_t size) {
-
     struct client_op_v * op_v = (struct client_op_v *)data;
-    printf("pid:%d client.%lld tid %lld object:%s %s osd.%d lat %lld\n", 
-	    op_v->pid, op_v->cid, op_v->tid, op_v->object_name, 
+    std::stringstream ss;
+    ss << std::hex << op_v->m_seed;
+    std::string pgid(ss.str()); 
+
+    printf("pid:%d client.%lld tid %lld pgid %lld.%s object:%s %s osd.%d acting[%d %d %d] lat %lld\n", 
+	    op_v->pid, op_v->cid, op_v->tid, 
+	    op_v->m_pool, pgid.c_str(), op_v->object_name, 
 	    op_v->rw & CEPH_OSD_FLAG_WRITE ? "W" : "R",
-	    op_v->target_osd, (op_v->finish_stamp - op_v->sent_stamp) / 1000);
+	    op_v->target_osd, op_v->acting[0], op_v->acting[1], op_v->acting[2],
+	    (op_v->finish_stamp - op_v->sent_stamp) / 1000);
     return 0;
 }
 
