@@ -39,7 +39,8 @@ std::vector<std::string> probe_units = {"Objecter.cc"};
 
 func_id_t func_id = {
       {"Objecter::_send_op", 0},
-      {"Objecter::_finish_op", 10}
+      {"Objecter::_finish_op", 20}
+
 };
 
 
@@ -61,13 +62,25 @@ DwarfParser::probes_t rados_probes = {
         {"op", "target", "actual_pgid", "pgid", "m_pool"},
         {"op", "target", "actual_pgid", "pgid", "m_seed"},
         {"op", "target", "acting", "_M_impl", "_M_start"},
-        {"op", "target", "acting", "_M_impl", "_M_finish"}}},
+        {"op", "target", "acting", "_M_impl", "_M_finish"},
+        {"op", "ops", "m_holder", "m_start", "op", "op", "v"}}},
+        //{"op", "ops", "m_holder", "m_start", "op", "extent", "offset", "v"},
+        //{"op", "ops", "m_holder", "m_start", "op", "extent", "length", "v"}}},
 
       {"Objecter::_finish_op", 
        {{"op", "tid"},
 	{"this", "monc", "global_id"},
 	{"op", "target", "osd"}}}
 };
+
+const char * ceph_osd_op_str(int opc) {
+    const char *op_str = NULL;
+#define GENERATE_CASE_ENTRY(op, opcode, str)	case CEPH_OSD_OP_##op: op_str=str; break;
+    switch (opc) {
+    __CEPH_FORALL_OSD_OPS(GENERATE_CASE_ENTRY)
+    }
+    return op_str;
+}
 
 void fill_map_hprobes(std::string mod_path, DwarfParser &dwarfparser, struct bpf_map *hprobes) {
   auto &func2vf = dwarfparser.mod_func2vf[mod_path];
@@ -162,10 +175,11 @@ static int handle_event(void *ctx, void *data, size_t size) {
     ss << std::hex << op_v->m_seed;
     std::string pgid(ss.str()); 
 
-    printf("pid:%d client.%lld tid %lld pgid %lld.%s object:%s %s osd.%d acting[%d %d %d] lat %lld\n", 
+    printf("pid:%d client.%lld tid %lld pgid %lld.%s object:%s %s %s osd.%d acting[%d %d %d] lat %lld\n", 
 	    op_v->pid, op_v->cid, op_v->tid, 
 	    op_v->m_pool, pgid.c_str(), op_v->object_name, 
 	    op_v->rw & CEPH_OSD_FLAG_WRITE ? "W" : "R",
+	    ceph_osd_op_str(op_v->op_type),
 	    op_v->target_osd, op_v->acting[0], op_v->acting[1], op_v->acting[2],
 	    (op_v->finish_stamp - op_v->sent_stamp) / 1000);
     return 0;

@@ -136,6 +136,23 @@ __u64 fetch_var_member_addr(__u64 cur_addr, struct VarField *vf) {
   } else {
     cur_addr += vf->fields[6].offset;
   }
+
+  if (7 >= vf->size) return cur_addr;
+  if (vf->fields[7].pointer) {
+    bpf_probe_read_user(&tmpaddr, sizeof(tmpaddr), (void *)cur_addr);
+    cur_addr = tmpaddr + vf->fields[7].offset;
+  } else {
+    cur_addr += vf->fields[7].offset;
+  }
+
+  if (8 >= vf->size) return cur_addr;
+  if (vf->fields[8].pointer) {
+    bpf_probe_read_user(&tmpaddr, sizeof(tmpaddr), (void *)cur_addr);
+    cur_addr = tmpaddr + vf->fields[8].offset;
+  } else {
+    cur_addr += vf->fields[8].offset;
+  }
+
   return cur_addr;
 }
 

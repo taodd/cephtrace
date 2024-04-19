@@ -108,8 +108,10 @@ int uprobe_send_op(struct pt_regs *ctx) {
     bpf_printk("uprobe_send_op got NULL vf at varid %d\n", varid);
   }
 
-  name_len = name_len & (63);
+  memset(val.object_name, 0, 127);
+  name_len = name_len & (127);
   bpf_probe_read_user(val.object_name, name_len, (void *)name_base);
+  //val.object_name[name_len] = 0;
   // read op flags
   ++varid;
   vf = bpf_map_lookup_elem(&hprobes, &varid);
@@ -189,6 +191,20 @@ int uprobe_send_op(struct pt_regs *ctx) {
     }
   }
 
+  // read op type
+  ++varid;
+  vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL != vf) {
+    __u64 v = 0;
+    v = fetch_register(ctx, vf->varloc.reg);
+    __u64 op_type_addr = fetch_var_member_addr(v, vf);
+    bpf_probe_read_user(&val.op_type, sizeof(val.op_type), (void *)op_type_addr);
+    bpf_printk("uprobe_send_op got op_type %d\n", val.op_type);
+  } else {
+    bpf_printk("uprobe_send_op got NULL vf at varid %d\n", varid);
+    return 0;
+  }
+
   
   bpf_map_update_elem(&ops, &key, &val, 0);
   return 0;
@@ -197,7 +213,7 @@ int uprobe_send_op(struct pt_regs *ctx) {
 SEC("uprobe")
 int uprobe_finish_op(struct pt_regs *ctx) {
   bpf_printk("Entered uprobe_finish_op\n");
-  int varid = 10;
+  int varid = 20;
   struct client_op_k key;
   memset(&key, 0, sizeof(key));
   // read tid

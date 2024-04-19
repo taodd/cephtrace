@@ -31,6 +31,7 @@ struct client_op_v {
   __u64 cid;
   __u64 tid;
   __u16 rw;
+  __u16 op_type;
   __u64 sent_stamp;
   __u64 finish_stamp;
   __u32 target_osd;
@@ -41,7 +42,7 @@ struct client_op_v {
   //__u64 wb;
   //__u64 rb;
   //__u64 offset;
-  char object_name[64];
+  char object_name[128];
   __u64 m_pool;
   __u32 m_seed;
   int acting[8];
@@ -129,7 +130,7 @@ struct Field {
 #ifdef BPF_KERNEL_SPACE
 struct VarField {
   VarLocation varloc;
-  struct Field fields[8];
+  struct Field fields[10];
   int size;
 };
 #else
@@ -140,7 +141,7 @@ struct VarField {
 
 struct VarField_Kernel {
   VarLocation varloc;
-  struct Field fields[8];
+  struct Field fields[10];
   int size;
 };
 #endif
@@ -293,5 +294,174 @@ enum {
 };
 
 
+/*
+ * osd ops
+ *
+ * WARNING: do not use these op codes directly.  Use the helpers
+ * defined below instead.  In certain cases, op code behavior was
+ * redefined, resulting in special-cases in the helpers.
+ */
+#define CEPH_OSD_OP_MODE       0xf000
+#define CEPH_OSD_OP_MODE_RD    0x1000
+#define CEPH_OSD_OP_MODE_WR    0x2000
+#define CEPH_OSD_OP_MODE_RMW   0x3000
+#define CEPH_OSD_OP_MODE_SUB   0x4000
+#define CEPH_OSD_OP_MODE_CACHE 0x8000
+
+#define CEPH_OSD_OP_TYPE       0x0f00
+#define CEPH_OSD_OP_TYPE_DATA  0x0200
+#define CEPH_OSD_OP_TYPE_ATTR  0x0300
+#define CEPH_OSD_OP_TYPE_EXEC  0x0400
+#define CEPH_OSD_OP_TYPE_PG    0x0500
+//      LEAVE UNUSED           0x0600 used to be multiobject ops
+
+#define __CEPH_OSD_OP1(mode, nr) \
+	(CEPH_OSD_OP_MODE_##mode | (nr))
+
+#define __CEPH_OSD_OP(mode, type, nr) \
+	(CEPH_OSD_OP_MODE_##mode | CEPH_OSD_OP_TYPE_##type | (nr))
+
+#define __CEPH_FORALL_OSD_OPS(f)					    \
+	/** data **/							    \
+	/* read */							    \
+	f(READ,		__CEPH_OSD_OP(RD, DATA, 1),	"read")		    \
+	f(STAT,		__CEPH_OSD_OP(RD, DATA, 2),	"stat")		    \
+	f(MAPEXT,	__CEPH_OSD_OP(RD, DATA, 3),	"mapext")	    \
+	f(CHECKSUM,	__CEPH_OSD_OP(RD, DATA, 31),	"checksum")	    \
+									    \
+	/* fancy read */						    \
+	f(MASKTRUNC,	__CEPH_OSD_OP(RD, DATA, 4),	"masktrunc")	    \
+	f(SPARSE_READ,	__CEPH_OSD_OP(RD, DATA, 5),	"sparse-read")	    \
+									    \
+	f(NOTIFY,	__CEPH_OSD_OP(RD, DATA, 6),	"notify")	    \
+	f(NOTIFY_ACK,	__CEPH_OSD_OP(RD, DATA, 7),	"notify-ack")	    \
+									    \
+	/* versioning */						    \
+	f(ASSERT_VER,	__CEPH_OSD_OP(RD, DATA, 8),	"assert-version")   \
+									    \
+	f(LIST_WATCHERS, __CEPH_OSD_OP(RD, DATA, 9),	"list-watchers")    \
+									    \
+	f(LIST_SNAPS,	__CEPH_OSD_OP(RD, DATA, 10),	"list-snaps")	    \
+									    \
+	/* sync */							    \
+	f(SYNC_READ,	__CEPH_OSD_OP(RD, DATA, 11),	"sync_read")	    \
+									    \
+	/* write */							    \
+	f(WRITE,	__CEPH_OSD_OP(WR, DATA, 1),	"write")	    \
+	f(WRITEFULL,	__CEPH_OSD_OP(WR, DATA, 2),	"writefull")	    \
+	f(TRUNCATE,	__CEPH_OSD_OP(WR, DATA, 3),	"truncate")	    \
+	f(ZERO,		__CEPH_OSD_OP(WR, DATA, 4),	"zero")		    \
+	f(DELETE,	__CEPH_OSD_OP(WR, DATA, 5),	"delete")	    \
+									    \
+	/* fancy write */						    \
+	f(APPEND,	__CEPH_OSD_OP(WR, DATA, 6),	"append")	    \
+	f(STARTSYNC,	__CEPH_OSD_OP(WR, DATA, 7),	"startsync")	    \
+	f(SETTRUNC,	__CEPH_OSD_OP(WR, DATA, 8),	"settrunc")	    \
+	f(TRIMTRUNC,	__CEPH_OSD_OP(WR, DATA, 9),	"trimtrunc")	    \
+									    \
+	f(TMAPUP,	__CEPH_OSD_OP(RMW, DATA, 10),	"tmapup")	    \
+	f(TMAPPUT,	__CEPH_OSD_OP(WR, DATA, 11),	"tmapput")	    \
+	f(TMAPGET,	__CEPH_OSD_OP(RD, DATA, 12),	"tmapget")	    \
+									    \
+	f(CREATE,	__CEPH_OSD_OP(WR, DATA, 13),	"create")	    \
+	f(ROLLBACK,	__CEPH_OSD_OP(WR, DATA, 14),	"rollback")	    \
+									    \
+	f(WATCH,	__CEPH_OSD_OP(WR, DATA, 15),	"watch")	    \
+									    \
+	/* omap */							    \
+	f(OMAPGETKEYS,	__CEPH_OSD_OP(RD, DATA, 17),	"omap-get-keys")    \
+	f(OMAPGETVALS,	__CEPH_OSD_OP(RD, DATA, 18),	"omap-get-vals")    \
+	f(OMAPGETHEADER, __CEPH_OSD_OP(RD, DATA, 19),	"omap-get-header")  \
+	f(OMAPGETVALSBYKEYS, __CEPH_OSD_OP(RD, DATA, 20), "omap-get-vals-by-keys") \
+	f(OMAPSETVALS,	__CEPH_OSD_OP(WR, DATA, 21),	"omap-set-vals")    \
+	f(OMAPSETHEADER, __CEPH_OSD_OP(WR, DATA, 22),	"omap-set-header")  \
+	f(OMAPCLEAR,	__CEPH_OSD_OP(WR, DATA, 23),	"omap-clear")	    \
+	f(OMAPRMKEYS,	__CEPH_OSD_OP(WR, DATA, 24),	"omap-rm-keys")	    \
+	f(OMAPRMKEYRANGE, __CEPH_OSD_OP(WR, DATA, 44),	"omap-rm-key-range") \
+	f(OMAP_CMP,	__CEPH_OSD_OP(RD, DATA, 25),	"omap-cmp")	    \
+									    \
+	/* tiering */							    \
+	f(COPY_FROM,	__CEPH_OSD_OP(WR, DATA, 26),	"copy-from")	    \
+	f(COPY_FROM2,	__CEPH_OSD_OP(WR, DATA, 45),	"copy-from2")	    \
+	/* was copy-get-classic */					\
+	f(UNDIRTY,	__CEPH_OSD_OP(WR, DATA, 28),	"undirty")	    \
+	f(ISDIRTY,	__CEPH_OSD_OP(RD, DATA, 29),	"isdirty")	    \
+	f(COPY_GET,	__CEPH_OSD_OP(RD, DATA, 30),	"copy-get")	    \
+	f(CACHE_FLUSH,	__CEPH_OSD_OP(CACHE, DATA, 31),	"cache-flush")	    \
+	f(CACHE_EVICT,	__CEPH_OSD_OP(CACHE, DATA, 32),	"cache-evict")	    \
+	f(CACHE_TRY_FLUSH, __CEPH_OSD_OP(CACHE, DATA, 33), "cache-try-flush") \
+									    \
+	/* convert tmap to omap */					    \
+	f(TMAP2OMAP,	__CEPH_OSD_OP(RMW, DATA, 34),	"tmap2omap")	    \
+									    \
+	/* hints */							    \
+	f(SETALLOCHINT,	__CEPH_OSD_OP(WR, DATA, 35),	"set-alloc-hint")   \
+                                                                            \
+	/* cache pin/unpin */						    \
+	f(CACHE_PIN,	__CEPH_OSD_OP(WR, DATA, 36),	"cache-pin")        \
+	f(CACHE_UNPIN,	__CEPH_OSD_OP(WR, DATA, 37),	"cache-unpin")      \
+									    \
+	/* ESX/SCSI */							    \
+	f(WRITESAME,	__CEPH_OSD_OP(WR, DATA, 38),	"write-same")	    \
+	f(CMPEXT,	__CEPH_OSD_OP(RD, DATA, 32),	"cmpext")	    \
+									    \
+	/* Extensible */						    \
+	f(SET_REDIRECT,	__CEPH_OSD_OP(WR, DATA, 39),	"set-redirect")	    \
+	f(SET_CHUNK,	__CEPH_OSD_OP(CACHE, DATA, 40),	"set-chunk")	    \
+	f(TIER_PROMOTE,	__CEPH_OSD_OP(WR, DATA, 41),	"tier-promote")	    \
+	f(UNSET_MANIFEST, __CEPH_OSD_OP(WR, DATA, 42),	"unset-manifest")   \
+	f(TIER_FLUSH, __CEPH_OSD_OP(CACHE, DATA, 43),	"tier-flush")	    \
+	f(TIER_EVICT, __CEPH_OSD_OP(CACHE, DATA, 44),	"tier-evict")	    \
+									    \
+	/** attrs **/							    \
+	/* read */							    \
+	f(GETXATTR,	__CEPH_OSD_OP(RD, ATTR, 1),	"getxattr")	    \
+	f(GETXATTRS,	__CEPH_OSD_OP(RD, ATTR, 2),	"getxattrs")	    \
+	f(CMPXATTR,	__CEPH_OSD_OP(RD, ATTR, 3),	"cmpxattr")	    \
+									    \
+	/* write */							    \
+	f(SETXATTR,	__CEPH_OSD_OP(WR, ATTR, 1),	"setxattr")	    \
+	f(SETXATTRS,	__CEPH_OSD_OP(WR, ATTR, 2),	"setxattrs")	    \
+	f(RESETXATTRS,	__CEPH_OSD_OP(WR, ATTR, 3),	"resetxattrs")	    \
+	f(RMXATTR,	__CEPH_OSD_OP(WR, ATTR, 4),	"rmxattr")	    \
+									    \
+	/** subop **/							    \
+	f(PULL,		__CEPH_OSD_OP1(SUB, 1),		"pull")		    \
+	f(PUSH,		__CEPH_OSD_OP1(SUB, 2),		"push")		    \
+	f(BALANCEREADS,	__CEPH_OSD_OP1(SUB, 3),		"balance-reads")    \
+	f(UNBALANCEREADS, __CEPH_OSD_OP1(SUB, 4),	"unbalance-reads")  \
+	f(SCRUB,	__CEPH_OSD_OP1(SUB, 5),		"scrub")	    \
+	f(SCRUB_RESERVE, __CEPH_OSD_OP1(SUB, 6),	"scrub-reserve")    \
+	f(SCRUB_UNRESERVE, __CEPH_OSD_OP1(SUB, 7),	"scrub-unreserve")  \
+	/* 8 used to be scrub-stop */					\
+	f(SCRUB_MAP,	__CEPH_OSD_OP1(SUB, 9),		"scrub-map")	    \
+									    \
+	/** exec **/							    \
+	/* note: the RD bit here is wrong; see special-case below in helper */ \
+	f(CALL,		__CEPH_OSD_OP(RD, EXEC, 1),	"call")		    \
+									    \
+	/** pg **/							    \
+	f(PGLS,		__CEPH_OSD_OP(RD, PG, 1),	"pgls")		    \
+	f(PGLS_FILTER,	__CEPH_OSD_OP(RD, PG, 2),	"pgls-filter")	    \
+	f(PG_HITSET_LS,	__CEPH_OSD_OP(RD, PG, 3),	"pg-hitset-ls")	    \
+	f(PG_HITSET_GET, __CEPH_OSD_OP(RD, PG, 4),	"pg-hitset-get")    \
+	f(PGNLS,	__CEPH_OSD_OP(RD, PG, 5),	"pgnls")	    \
+	f(PGNLS_FILTER,	__CEPH_OSD_OP(RD, PG, 6),	"pgnls-filter")     \
+	f(SCRUBLS, __CEPH_OSD_OP(RD, PG, 7), "scrubls")
+
+enum {
+#define GENERATE_ENUM_ENTRY(op, opcode, str)	CEPH_OSD_OP_##op = (opcode),
+__CEPH_FORALL_OSD_OPS(GENERATE_ENUM_ENTRY)
+#undef GENERATE_ENUM_ENTRY
+};
+
+/*const char * ceph_osd_op_str(int opc) {
+    const char *op_str = NULL;
+#define GENERATE_CASE_ENTRY(op, opcode, str)	case CEPH_OSD_OP_##op: op_str=str; break;
+    switch (opc) {
+    __CEPH_FORALL_OSD_OPS(GENERATE_CASE_ENTRY)
+    }
+    return op_str;
+}*/
 
 #endif
