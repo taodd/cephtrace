@@ -63,7 +63,9 @@ DwarfParser::probes_t rados_probes = {
         {"op", "target", "actual_pgid", "pgid", "m_seed"},
         {"op", "target", "acting", "_M_impl", "_M_start"},
         {"op", "target", "acting", "_M_impl", "_M_finish"},
-        {"op", "ops", "m_holder", "m_start", "op", "op", "v"}}},
+	{"op", "ops", "m_holder", "m_start"},
+	{"op", "ops", "m_holder", "m_size"}}},
+        //{"op", "ops", "m_holder", "m_start", "op", "op", "v"}}},
         //{"op", "ops", "m_holder", "m_start", "op", "extent", "offset", "v"},
         //{"op", "ops", "m_holder", "m_start", "op", "extent", "length", "v"}}},
 
@@ -175,13 +177,25 @@ static int handle_event(void *ctx, void *data, size_t size) {
     ss << std::hex << op_v->m_seed;
     std::string pgid(ss.str()); 
 
-    printf("pid:%d client.%lld tid %lld pgid %lld.%s object:%s %s %s osd.%d acting[%d %d %d] lat %lld\n", 
+    printf("pid:%d client.%lld tid %lld pgid %lld.%s object:%s %s osd.%d acting[%d %d %d] lat %lld ", 
 	    op_v->pid, op_v->cid, op_v->tid, 
 	    op_v->m_pool, pgid.c_str(), op_v->object_name, 
 	    op_v->rw & CEPH_OSD_FLAG_WRITE ? "W" : "R",
-	    ceph_osd_op_str(op_v->op_type),
 	    op_v->target_osd, op_v->acting[0], op_v->acting[1], op_v->acting[2],
 	    (op_v->finish_stamp - op_v->sent_stamp) / 1000);
+
+    bool print_offset_length = false;
+    for (int i = 0; i < op_v->ops_size; ++i) {
+      printf("%s ", ceph_osd_op_str(op_v->ops[i]));
+      if (ceph_osd_op_extent(op_v->ops[i])) {
+        print_offset_length = true;
+      }
+    }
+    if (print_offset_length) {
+      printf("[%lld, %lld]\n", op_v->offset, op_v->length);
+    } else {
+      printf("\n");
+    }
     return 0;
 }
 

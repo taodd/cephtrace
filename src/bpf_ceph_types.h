@@ -14,7 +14,12 @@
 
 #define CEPH_OSD_FLAG_READ 0x0010
 #define CEPH_OSD_FLAG_WRITE 0x0020
- 
+
+#define CEPH_OSD_OP_SIZE 152 // see OSDOp
+//#define CEPH_OSD_OP_UNION_OFFSET 12 // refer ceph_osd_op
+#define CEPH_OSD_OP_EXTENT_OFFSET_OFFSET 6 // refer ceph_osd_op
+#define CEPH_OSD_OP_EXTENT_LENGTH_OFFSET 14 // refer ceph_osd_op
+
 static const __u8 flag_queued_for_pg=1 << 0;
 static const __u8 flag_reached_pg =  1 << 1;
 static const __u8 flag_delayed =     1 << 2;
@@ -31,7 +36,6 @@ struct client_op_v {
   __u64 cid;
   __u64 tid;
   __u16 rw;
-  __u16 op_type;
   __u64 sent_stamp;
   __u64 finish_stamp;
   __u32 target_osd;
@@ -46,6 +50,10 @@ struct client_op_v {
   __u64 m_pool;
   __u32 m_seed;
   int acting[8];
+  __u64 offset;
+  __u64 length;
+  __u16 ops[4];
+  __u32 ops_size;
 };
 
 struct op_k {
@@ -454,6 +462,37 @@ enum {
 __CEPH_FORALL_OSD_OPS(GENERATE_ENUM_ENTRY)
 #undef GENERATE_ENUM_ENTRY
 };
+
+static inline int ceph_osd_op_extent(int op)
+{
+    return op == CEPH_OSD_OP_READ ||
+	   op == CEPH_OSD_OP_SPARSE_READ ||
+	   op == CEPH_OSD_OP_SYNC_READ ||
+	   op == CEPH_OSD_OP_WRITE ||
+	   op == CEPH_OSD_OP_WRITEFULL ||
+	   op == CEPH_OSD_OP_ZERO ||
+	   op == CEPH_OSD_OP_APPEND ||
+	   op == CEPH_OSD_OP_MAPEXT ||
+	   op == CEPH_OSD_OP_CMPEXT ;
+}
+
+static inline int ceph_osd_op_type_data(int op)
+{
+	return (op & CEPH_OSD_OP_TYPE) == CEPH_OSD_OP_TYPE_DATA;
+}
+static inline int ceph_osd_op_type_attr(int op)
+{
+	return (op & CEPH_OSD_OP_TYPE) == CEPH_OSD_OP_TYPE_ATTR;
+}
+static inline int ceph_osd_op_type_exec(int op)
+{
+	return (op & CEPH_OSD_OP_TYPE) == CEPH_OSD_OP_TYPE_EXEC;
+}
+static inline int ceph_osd_op_type_pg(int op)
+{
+	return (op & CEPH_OSD_OP_TYPE) == CEPH_OSD_OP_TYPE_PG;
+}
+
 
 /*const char * ceph_osd_op_str(int opc) {
     const char *op_str = NULL;

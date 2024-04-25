@@ -153,14 +153,14 @@ int uprobe_send_op(struct pt_regs *ctx) {
   
   // read acting _M_start
   ++varid;
-  __u64 m_start;
+  __u64 M_start;
   vf = bpf_map_lookup_elem(&hprobes, &varid);
   if (NULL != vf) {
     __u64 v = 0;
     v = fetch_register(ctx, vf->varloc.reg);
-    __u64 m_start_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&m_start, sizeof(m_start), (void *)m_start_addr);
-    bpf_printk("uprobe_send_op got m_start %d\n", m_start);
+    __u64 M_start_addr = fetch_var_member_addr(v, vf);
+    bpf_probe_read_user(&M_start, sizeof(M_start), (void *)M_start_addr);
+    bpf_printk("uprobe_send_op got M_start %d\n", M_start);
   } else {
     bpf_printk("uprobe_send_op got NULL vf at varid %d\n", varid);
     return 0;
@@ -175,7 +175,7 @@ int uprobe_send_op(struct pt_regs *ctx) {
     v = fetch_register(ctx, vf->varloc.reg);
     __u64 m_finish_addr = fetch_var_member_addr(v, vf);
     bpf_probe_read_user(&m_finish, sizeof(m_finish), (void *)m_finish_addr);
-    bpf_printk("uprobe_send_op got m_start %d\n", m_start);
+    bpf_printk("uprobe_send_op got m_finish %d\n", m_finish);
   } else {
     bpf_printk("uprobe_send_op got NULL vf at varid %d\n", varid);
     return 0;
@@ -183,29 +183,61 @@ int uprobe_send_op(struct pt_regs *ctx) {
 
   for (int i = 0 ; i < 8; ++i) {
     val.acting[i] = -1;
-    if (m_start < m_finish) {
-	bpf_probe_read_user(&val.acting[i], sizeof(int), (void *)m_start);
-	m_start += sizeof(int);
+    if (M_start < m_finish) {
+	bpf_probe_read_user(&val.acting[i], sizeof(int), (void *)M_start);
+	M_start += sizeof(int);
     } else {
 	break;
     }
   }
 
-  // read op type
+  //read op->ops->m_holder->m_start
   ++varid;
+  __u64 m_start;
   vf = bpf_map_lookup_elem(&hprobes, &varid);
   if (NULL != vf) {
     __u64 v = 0;
     v = fetch_register(ctx, vf->varloc.reg);
-    __u64 op_type_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&val.op_type, sizeof(val.op_type), (void *)op_type_addr);
-    bpf_printk("uprobe_send_op got op_type %d\n", val.op_type);
+    __u64 m_start_addr = fetch_var_member_addr(v, vf);
+    bpf_probe_read_user(&m_start, sizeof(m_start), (void *)m_start_addr);
+    bpf_printk("uprobe_send_op got m_start %lld\n", m_start);
   } else {
     bpf_printk("uprobe_send_op got NULL vf at varid %d\n", varid);
     return 0;
   }
 
-  
+  //read op->ops->m_holder->m_size
+  ++varid;
+  vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL != vf) {
+    __u64 v = 0;
+    v = fetch_register(ctx, vf->varloc.reg);
+    __u64 m_size_addr = fetch_var_member_addr(v, vf);
+    bpf_probe_read_user(&val.ops_size, sizeof(val.ops_size), (void *)m_size_addr);
+    bpf_printk("uprobe_send_op got m_start %d\n", val.ops_size);
+  } else {
+    bpf_printk("uprobe_send_op got NULL vf at varid %d\n", varid);
+    return 0;
+  }
+
+  val.ops_size &= 3;
+  val.offset = 0;
+  val.length = 0;
+  for (int i = 0; i  < 4; ++i) {
+    if (i < val.ops_size) {
+      bpf_probe_read_user(&val.ops[i], sizeof(val.ops[i]), (void *)m_start); 
+      if (ceph_osd_op_extent(val.ops[i])){
+        // read extent offset and length
+        bpf_probe_read_user(&val.offset, sizeof(val.offset), (void *)(m_start + CEPH_OSD_OP_EXTENT_OFFSET_OFFSET)); 
+        bpf_probe_read_user(&val.length, sizeof(val.length), (void *)(m_start + CEPH_OSD_OP_EXTENT_LENGTH_OFFSET)); 
+	break; // one extent op is sufficient for us
+      }
+      m_start += CEPH_OSD_OP_SIZE;
+    } else {
+      break;
+    }
+  }
+
   bpf_map_update_elem(&ops, &key, &val, 0);
   return 0;
 }
