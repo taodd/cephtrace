@@ -473,7 +473,9 @@ static inline int ceph_osd_op_extent(int op)
 	   op == CEPH_OSD_OP_ZERO ||
 	   op == CEPH_OSD_OP_APPEND ||
 	   op == CEPH_OSD_OP_MAPEXT ||
-	   op == CEPH_OSD_OP_CMPEXT ;
+	   op == CEPH_OSD_OP_CMPEXT ||
+	   op == CEPH_OSD_OP_OMAPSETVALS ||
+	   op == CEPH_OSD_OP_OMAPGETKEYS;
 }
 
 static inline int ceph_osd_op_type_data(int op)
