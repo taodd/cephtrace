@@ -229,8 +229,8 @@ int main(int argc, char **argv) {
   struct ring_buffer *rb;
 
   clog << "Start to parse dwarf info" << endl;
-  std::string librados_path = "/home/taodd/Git/ceph/build/lib/librados.so";
-  std::string libceph_common_path = "/home/taodd/Git/ceph/build/lib/libceph-common.so";
+  std::string librados_path = "/lib/x86_64-linux-gnu/librados.so.2";
+  std::string libceph_common_path = "/lib/x86_64-linux-gnu/ceph/libceph-common.so.2";
 
   DwarfParser dwarfparser(rados_probes, probe_units);
   dwarfparser.add_module(librados_path);

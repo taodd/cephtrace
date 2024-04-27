@@ -957,7 +957,7 @@ int main(int argc, char **argv) {
 
   clog << "Start to parse ceph dwarf info" << endl;
 
-  std::string osd_path = "/home/taodd/Git/ceph/build/bin/ceph-osd";
+  std::string osd_path = "/usr/bin/ceph-osd";
   DwarfParser dwarfparser(osd_probes, probe_units);
   dwarfparser.add_module(osd_path);
   dwarfparser.parse();
