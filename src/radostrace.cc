@@ -229,10 +229,12 @@ int main(int argc, char **argv) {
   struct ring_buffer *rb;
 
   clog << "Start to parse dwarf info" << endl;
+  std::string librbd_path = "/lib/x86_64-linux-gnu/librbd.so.1";
   std::string librados_path = "/lib/x86_64-linux-gnu/librados.so.2";
-  std::string libceph_common_path = "/lib/x86_64-linux-gnu/ceph/libceph-common.so.2";
+  std::string libceph_common_path = "/usr/lib/x86_64-linux-gnu/ceph/libceph-common.so.2";
 
   DwarfParser dwarfparser(rados_probes, probe_units);
+  dwarfparser.add_module(librbd_path);
   dwarfparser.add_module(librados_path);
   dwarfparser.add_module(libceph_common_path);
   dwarfparser.parse();
@@ -253,12 +255,17 @@ int main(int argc, char **argv) {
 
   // map_fd = bpf_object__find_map_fd_by_name(skel->obj, "hprobes");
 
+  //fill_map_hprobes(libceph_common_path, dwarfparser, skel->maps.hprobes);
   fill_map_hprobes(librados_path, dwarfparser, skel->maps.hprobes);
 
   clog << "BPF prog loaded" << endl;
 
   attach_uprobe(skel, dwarfparser, librados_path, "Objecter::_send_op");
+  attach_uprobe(skel, dwarfparser, librbd_path, "Objecter::_send_op");
+  //attach_uprobe(skel, dwarfparser, libceph_common_path, "Objecter::_send_op");
   attach_uprobe(skel, dwarfparser, librados_path, "Objecter::_finish_op");
+  attach_uprobe(skel, dwarfparser, librbd_path, "Objecter::_finish_op");
+  //attach_uprobe(skel, dwarfparser, libceph_common_path, "Objecter::_finish_op");
 
   clog << "New a ring buffer" << endl;
 
