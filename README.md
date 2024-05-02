@@ -4,7 +4,7 @@ git clone https://github.com/taodd/cephtrace
 git submodule update --init --recursive
 
 Prerequisite packages:
-sudo apt-get install clang libelf-dev libc6-dev-i386 libdw-dev
+sudo apt-get install g++ clang libelf-dev libc6-dev-i386 libdw-dev
 sudo apt-get install ceph-osd-dbgsym //Refer https://wiki.ubuntu.com/Debug%20Symbol%20Packages to Enable dbgsym repo  
 
 Build:
