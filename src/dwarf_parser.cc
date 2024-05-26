@@ -23,6 +23,7 @@ extern "C" {
 #include <elfutils/libdwfl.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <stdlib.h>
 }
 #include "bpf_ceph_types.h"
 #include "dwarf_parser.h"
@@ -712,6 +713,14 @@ static int handle_module(Dwfl_Module *dwflmod, void **userdata,
 }
 
 int DwarfParser::parse() {
+  if(getenv("DEBUGINFOD_URLS") == NULL) {
+    //If the DEBUGINFOD_URLS is not set, set it to https://debuginfod.ubuntu.com as default
+    char envs[] = "DEBUGINFOD_URLS=https://debuginfod.ubuntu.com";
+    putenv(envs);
+  }
+  const char *debuginfod_urls = getenv("DEBUGINFOD_URLS");
+  clog << "DEBUGINFOD_URLS = " << debuginfod_urls << endl;
+
   for (auto dwfl: dwfls) {
     dwfl_getmodules(dwfl, preprocess_module, this, 0);
   }
