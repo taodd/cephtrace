@@ -719,7 +719,7 @@ int DwarfParser::parse() {
     putenv(envs);
   }
   const char *debuginfod_urls = getenv("DEBUGINFOD_URLS");
-  clog << "DEBUGINFOD_URLS = " << debuginfod_urls << endl;
+  clog << "Will download debug symbol from " << debuginfod_urls << " if no local debug symbol available" << endl;
 
   for (auto dwfl: dwfls) {
     dwfl_getmodules(dwfl, preprocess_module, this, 0);
