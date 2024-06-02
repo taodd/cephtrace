@@ -7,6 +7,9 @@ Prerequisite packages:
 sudo apt-get install g++ clang libelf-dev libc6-dev-i386 libdw-dev
 sudo apt-get install ceph-osd-dbgsym //Refer https://wiki.ubuntu.com/Debug%20Symbol%20Packages to Enable dbgsym repo  
 
+For Debuginfod to work (since jammy):
+sudo apt-get install libdebuginfod-dev
+
 Build:
 1. cd cephtrace
 2. make
