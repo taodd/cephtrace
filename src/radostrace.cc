@@ -170,6 +170,14 @@ int attach_retuprobe(struct radostrace_bpf *skel,
   return 0;
 }
 
+int digitnum(int x) {
+  int cnt = 1;
+  while(x / 10) {
+    cnt++;
+    x /= 10;
+  }
+  return cnt;
+}
 
 static int handle_event(void *ctx, void *data, size_t size) {
     struct client_op_v * op_v = (struct client_op_v *)data;
@@ -179,16 +187,14 @@ static int handle_event(void *ctx, void *data, size_t size) {
 
     static bool firsttime = true;
     if (firsttime) {
-      printf("     pid  client     tid  pool  pg     acting   w/r    size  latency     other\n");
+      printf("     pid  client     tid  pool  pg     acting            w/r    size  latency     other\n");
       firsttime = false;
     }
 
 
-    printf("%8d%8lld%8lld%6lld%4s    [%d,%d,%d]    %s  %7lld", 
+    printf("%8d%8lld%8lld%6lld%4s", 
 	    op_v->pid, op_v->cid, op_v->tid,
-	    op_v->m_pool, pgid.c_str(), 
-	    op_v->acting[0], op_v->acting[1], op_v->acting[2],
-	    op_v->rw & CEPH_OSD_FLAG_WRITE ? "W" : "R", op_v->length);
+	    op_v->m_pool, pgid.c_str()); 
     
     /*printf("pid:%d client.%lld tid %lld pgid %lld.%s object:%s %s osd.%d acting[%d %d %d] lat %lld ", 
 	    op_v->pid, op_v->cid, op_v->tid, 
@@ -196,6 +202,28 @@ static int handle_event(void *ctx, void *data, size_t size) {
 	    op_v->rw & CEPH_OSD_FLAG_WRITE ? "W" : "R",
 	    op_v->target_osd, op_v->acting[0], op_v->acting[1], op_v->acting[2],
 	    (op_v->finish_stamp - op_v->sent_stamp) / 1000);*/
+
+    int acting_length = 4;
+    for (int i = 0; i < 8; ++i) {
+      if(op_v->acting[i] < 0) break;
+      acting_length += digitnum(op_v->acting[i]);
+    }
+    printf("     [");
+    bool first = true;
+    for (int i = 0; i < 8; ++i) {
+      if(op_v->acting[i] < 0) break;
+      if (!first) printf(",");
+      printf("%d", op_v->acting[i]);
+      first = false;
+    }
+    printf("]");
+    int left_spaces = 18 - acting_length;
+    for (int i =0; i < left_spaces; ++i) printf(" "); 
+
+    //print "WR"
+    printf("%s  ", op_v->rw & CEPH_OSD_FLAG_WRITE ? "W" : "R");
+    //print length
+    printf("%7lld", op_v->length);
 
     printf("%8lld", (op_v->finish_stamp - op_v->sent_stamp) / 1000);
 
