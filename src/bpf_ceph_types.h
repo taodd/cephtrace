@@ -20,12 +20,24 @@
 #define CEPH_OSD_OP_EXTENT_OFFSET_OFFSET 6 // refer ceph_osd_op
 #define CEPH_OSD_OP_EXTENT_LENGTH_OFFSET 14 // refer ceph_osd_op
 
+#define CEPH_OSD_OP_CLS_CLASS_OFFSET 6
+#define CEPH_OSD_OP_CLS_METHOD_OFFSET 7
+
+#define CEPH_OSD_OP_BUFFER_CARRIAGE_OFFSET 96 //offset from the start of OSDOp 
+#define CEPH_OSD_OP_BUFFER_RAW_OFFSET 8  //offset in the ptr_node (_carriage)
+#define CEPH_OSD_OP_BUFFER_DATA_OFFSET 32 // offset in the raw 
+
 static const __u8 flag_queued_for_pg=1 << 0;
 static const __u8 flag_reached_pg =  1 << 1;
 static const __u8 flag_delayed =     1 << 2;
 static const __u8 flag_started =     1 << 3;
 static const __u8 flag_sub_op_sent = 1 << 4;
 static const __u8 flag_commit_sent = 1 << 5;
+
+typedef struct cls_op {
+  char cls_name[8];
+  char method_name[32];
+} cls_op_t;
 
 struct client_op_k {
   __u64 cid;
@@ -49,11 +61,13 @@ struct client_op_v {
   char object_name[128];
   __u64 m_pool;
   __u32 m_seed;
-  int acting[8];
+  int acting[6];
   __u64 offset;
   __u64 length;
-  __u16 ops[4];
+  __u16 ops[3];
   __u32 ops_size;
+  cls_op_t cls_ops[3];
+
 };
 
 struct op_k {
@@ -462,6 +476,11 @@ enum {
 __CEPH_FORALL_OSD_OPS(GENERATE_ENUM_ENTRY)
 #undef GENERATE_ENUM_ENTRY
 };
+
+static inline int ceph_osd_op_call(int op)
+{
+  return op == CEPH_OSD_OP_CALL;
+}
 
 static inline int ceph_osd_op_extent(int op)
 {

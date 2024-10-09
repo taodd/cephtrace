@@ -81,6 +81,7 @@ __u64 fetch_register(const struct pt_regs *const ctx, int reg) {
   return v;
 }
 
+
 // deal with member dereference vf->size > 1
 __u64 fetch_var_member_addr(__u64 cur_addr, struct VarField *vf) {
   if (vf == NULL) return 0;

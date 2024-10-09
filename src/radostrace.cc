@@ -227,14 +227,18 @@ static int handle_event(void *ctx, void *data, size_t size) {
 
     printf("%8lld", (op_v->finish_stamp - op_v->sent_stamp) / 1000);
 
-    printf("     %s", op_v->object_name);
+    printf("     %s ", op_v->object_name);
 
     printf("[");
     bool print_offset_length = false;
     for (int i = 0; i < op_v->ops_size; ++i) {
-      printf("%s ", ceph_osd_op_str(op_v->ops[i]));
       if (ceph_osd_op_extent(op_v->ops[i])) {
+        printf("%s ", ceph_osd_op_str(op_v->ops[i]));
         print_offset_length = true;
+      } else if (ceph_osd_op_call(op_v->ops[i])) {
+        printf("call(%s.%s) ", op_v->cls_ops[i].cls_name, op_v->cls_ops[i].method_name);
+      } else {
+        printf("%s ", ceph_osd_op_str(op_v->ops[i]));
       }
     }
     printf("]");
