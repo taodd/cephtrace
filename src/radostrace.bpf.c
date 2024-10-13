@@ -230,15 +230,13 @@ int uprobe_send_op(struct pt_regs *ctx) {
   val->ops_size &= 3;
   val->offset = 0;
   val->length = 0;
-  bool has_extent_op = false;
   for (int i = 0; i  < 3; ++i) {
     if (i < val->ops_size) {
       bpf_probe_read_user(&(val->ops[i]), sizeof(val->ops[i]), (void *)m_start); 
-      if (!has_extent_op && ceph_osd_op_extent(val->ops[i])){
+      if (ceph_osd_op_extent(val->ops[i])){
         // read extent offset and length
         bpf_probe_read_user(&val->offset, sizeof(val->offset), (void *)(m_start + CEPH_OSD_OP_EXTENT_OFFSET_OFFSET)); 
         bpf_probe_read_user(&val->length, sizeof(val->length), (void *)(m_start + CEPH_OSD_OP_EXTENT_LENGTH_OFFSET)); 
-	has_extent_op = true; // use first extent op's offset and length
       } else if (ceph_osd_op_call(val->ops[i])) {
         // read class name and method name length
 	__u8 cls_len = 0;
