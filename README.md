@@ -2,8 +2,8 @@
 cephtrace is a project contains various eBPF based ceph tracing tool, those tools can be used to trace different ceph components dynamically, without the need to restart or reconfig any ceph services, currently radostrace, osdtrace are implemented. These tool can provide us great insight on the per-io performance, and help us quickly identify the performance bottleneck. 
 
 ## Checkout source code:
-git clone https://github.com/taodd/cephtrace
-git submodule update --init --recursive
+- git clone https://github.com/taodd/cephtrace
+- git submodule update --init --recursive
 
 ## Build Prerequisites:
 I provide the Debian and Ubuntu apt commands in this procedure. If you use a system with a different package manager, then you will have to use different commands:
@@ -41,16 +41,16 @@ below is an example for tracing a vm which is doing 4k random read on a rbd volu
    ...
 ```
 Each row represent one IO sent from the client to the ceph cluster, below is the explaination for each column:
-pid:    ceph client process id
-client: ceph client global id, a unique number to identify the client
-tid:    operation id 
-pool:   pool id the operation is sent to
-pg:     pg id the operation is sent to, pool.pg is the pgid we usually talked about
-acting: the OSD acting set this operation is sent to
-w/r:    whether this operation is write or read
-size:   the write/read size of this operation
-latency: the latency of this request in microsecond
-object[ops][offset,length]: the object name, detailed osd op name, op's offset and length
+- pid:    ceph client process id
+- client: ceph client global id, a unique number to identify the client
+- tid:    operation id 
+- pool:   pool id the operation is sent to
+- pg:     pg id the operation is sent to, pool.pg is the pgid we usually talked about
+- acting: the OSD acting set this operation is sent to
+- w/r:    whether this operation is write or read
+- size:   the write/read size of this operation
+- latency: the latency of this request in microsecond
+- object[ops][offset,length]: the object name, detailed osd op name, op's offset and length
 
 ## Run osdtrace:
 ./osdtrace
