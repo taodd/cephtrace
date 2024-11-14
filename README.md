@@ -26,6 +26,7 @@ Those required debug packages for each different tool:
 ## Run radostrace:
 radostrace can trace any librados based ceph client, including vm with rbd volume attached, rgw, cinder, glance ...
 below is an example for tracing a vm which is doing 4k random read on a rbd volume.
+
 :~$ sudo ./radostrace
 ```
      pid  client     tid  pool  pg     acting            w/r    size  latency     object[ops][offset,length]
