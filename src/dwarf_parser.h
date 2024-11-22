@@ -6,7 +6,9 @@
 #include <elfutils/libdw.h>
 #include <elfutils/libdwfl.h>
 #include <vector>
+#include <nlohmann/json.hpp>  // nlohmann/json library
 
+using json = nlohmann::json;
 class DwarfParser;
 static int handle_function(Dwarf_Die *, void *);
 static int handle_module(Dwfl_Module *, void **, const char *, Dwarf_Addr,
@@ -81,6 +83,17 @@ class DwarfParser {
   Dwfl *create_dwfl(int, const char *);
   std::string special_inlined_function_scope(const char *);
   Dwarf_Die * dwarf_attr_die(Dwarf_Die*, unsigned int, Dwarf_Die*);
+  /**
+   * Exports the module function data (func2pc and func2vf) to a JSON file
+   * @param filename The path to the output JSON file
+   */
+  void export_to_json(const std::string& filename);
+  /**
+   * Imports the module function data (func2pc and func2vf) from a JSON file
+   * @param filename The path to the input JSON file
+   * @return bool Returns true if import was successful, false otherwise
+   */
+  bool import_from_json(const std::string& filename);
 };
 
 #endif

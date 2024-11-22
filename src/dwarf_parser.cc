@@ -14,6 +14,7 @@
 #include <unordered_map>
 #include <vector>
 #include <queue>
+#include <fstream>
 
 #include "osdtrace.skel.h"
 extern "C" {
@@ -777,3 +778,136 @@ DwarfParser::DwarfParser(probes_t ps, vector<string> pus)
 }
 
 DwarfParser::~DwarfParser() {}
+
+void DwarfParser::export_to_json(const std::string& filename) {
+    json j;
+
+    // Convert both maps to JSON structure
+    for (const auto& mod_pair : mod_func2vf) {
+        const std::string& module = mod_pair.first;
+        json module_obj;
+
+        // Add function addresses (mod_func2pc)
+        json pc_obj;
+        if (mod_func2pc.count(module) > 0) {
+            for (const auto& func_pc : mod_func2pc[module]) {
+                pc_obj[func_pc.first] = func_pc.second;
+            }
+        }
+        module_obj["func2pc"] = pc_obj;
+
+        // Add function variable fields (mod_func2vf)
+        json vf_obj;
+        for (const auto& func_pair : mod_pair.second) {
+            const std::string& function = func_pair.first;
+            json func_obj;
+
+            // Convert vector of VarFields to JSON array
+            json vars_array = json::array();
+            for (const auto& var_field : func_pair.second) {
+                json var_obj;
+                
+                // Store VarLocation
+                var_obj["location"] = {
+                    {"reg", var_field.varloc.reg},
+                    {"offset", var_field.varloc.offset},
+                    {"stack", var_field.varloc.stack}
+                };
+
+                // Store Fields
+                json fields_array = json::array();
+                for (const auto& field : var_field.fields) {
+                    fields_array.push_back({
+                        {"offset", field.offset},
+                        {"pointer", field.pointer}
+                    });
+                }
+                var_obj["fields"] = fields_array;
+
+                vars_array.push_back(var_obj);
+            }
+            func_obj["var_fields"] = vars_array;
+            vf_obj[function] = func_obj;
+        }
+        module_obj["func2vf"] = vf_obj;
+
+        j[module] = module_obj;
+    }
+
+    // Write to file
+    std::ofstream out(filename);
+    if (!out.is_open()) {
+        std::cerr << "Failed to open output file: " << filename << std::endl;
+        return;
+    }
+    out << j.dump(2);  // The '2' parameter adds indentation for pretty printing
+    out.close();
+}
+
+bool DwarfParser::import_from_json(const std::string& filename) {
+    try {
+        // Read JSON file
+        std::ifstream input(filename);
+        if (!input.is_open()) {
+            std::cerr << "Failed to open input file: " << filename << std::endl;
+            return false;
+        }
+        
+        json j;
+        input >> j;
+        input.close();
+
+        // Clear existing data
+        mod_func2pc.clear();
+        mod_func2vf.clear();
+
+        // Parse JSON structure
+        for (const auto& [module, module_data] : j.items()) {
+            // Import func2pc data
+            if (module_data.contains("func2pc")) {
+                const auto& pc_obj = module_data["func2pc"];
+                for (const auto& [func_name, addr] : pc_obj.items()) {
+                    mod_func2pc[module][func_name] = addr.get<Dwarf_Addr>();
+                }
+            }
+
+            // Import func2vf data
+            if (module_data.contains("func2vf")) {
+                const auto& vf_obj = module_data["func2vf"];
+                for (const auto& [func_name, func_data] : vf_obj.items()) {
+                    std::vector<VarField> var_fields;
+                    
+                    for (const auto& var_field_json : func_data["var_fields"]) {
+                        VarField var_field;
+                        
+                        // Parse VarLocation
+                        const auto& loc = var_field_json["location"];
+                        var_field.varloc.reg = loc["reg"].get<int>();
+                        var_field.varloc.offset = loc["offset"].get<int>();
+                        var_field.varloc.stack = loc["stack"].get<bool>();
+
+                        // Parse Fields
+                        for (const auto& field_json : var_field_json["fields"]) {
+                            Field field;
+                            field.offset = field_json["offset"].get<int>();
+                            field.pointer = field_json["pointer"].get<bool>();
+                            var_field.fields.push_back(field);
+                        }
+
+                        var_fields.push_back(var_field);
+                    }
+
+                    mod_func2vf[module][func_name] = var_fields;
+                }
+            }
+        }
+
+        return true;
+    } catch (const json::exception& e) {
+        std::cerr << "JSON parsing error: " << e.what() << std::endl;
+        return false;
+    } catch (const std::exception& e) {
+        std::cerr << "Error importing from JSON: " << e.what() << std::endl;
+        return false;
+    }
+}

@@ -833,9 +833,13 @@ static void handle_lost_event(void *ctx, int cpu, __u64 lost_cnt)
 }
 */
 
+std::string json_input_file;
+std::string json_output_file;
+bool import_json = false;
+bool export_json = false;
 int parse_args(int argc, char **argv) {
   char opt;
-  while ((opt = getopt(argc, argv, ":d:m:t:o:xb")) != -1) {
+  while ((opt = getopt(argc, argv, ":d:m:t:o:xbj:i:")) != -1) {
     switch (opt) {
       case 'd':
         period = optarg[0] - '0';
@@ -862,6 +866,14 @@ int parse_args(int argc, char **argv) {
       case 'o':
 	probe_osdid = stoi(optarg);
 	break;
+      case 'j':
+        export_json = true;
+        json_output_file = optarg;
+        break;
+      case 'i':
+        import_json = true;
+        json_input_file = optarg;
+        break;
       case '?':
         clog << "Unknown option: " << optopt << endl;
         return -1;
@@ -951,7 +963,6 @@ int main(int argc, char **argv) {
   if (parse_args(argc, argv) < 0) return 0;
 
   struct osdtrace_bpf *skel;
-  // long uprobe_offset;
   int ret = 0;
   struct ring_buffer *rb;
 
@@ -959,8 +970,26 @@ int main(int argc, char **argv) {
 
   std::string osd_path = "/usr/bin/ceph-osd";
   DwarfParser dwarfparser(osd_probes, probe_units);
-  dwarfparser.add_module(osd_path);
-  dwarfparser.parse();
+  
+  if (import_json) {
+    // Import dwarf data from JSON file
+    if (!dwarfparser.import_from_json(json_input_file)) {
+      cerr << "Failed to import dwarf data from " << json_input_file << endl;
+      return 1;
+    }
+    clog << "Successfully imported dwarf data from " << json_input_file << endl;
+  } else {
+    // Normal dwarf parsing path
+    dwarfparser.add_module(osd_path);
+    dwarfparser.parse();
+  }
+
+  // Export dwarf parsing results to JSON if requested
+  if (export_json) {
+    dwarfparser.export_to_json(json_output_file); 
+    clog << "Dwarf parsing data exported to " << json_output_file << endl;
+    return 0;
+  }
 
   libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
 
