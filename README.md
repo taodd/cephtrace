@@ -8,7 +8,7 @@ cephtrace is a project contains various eBPF based ceph tracing tool, those tool
 
 ## Build Prerequisites:
 I provide the Debian and Ubuntu apt commands in this procedure. If you use a system with a different package manager, then you will have to use different commands:
-- sudo apt-get install g++ clang libelf-dev libc6-dev-i386 libdw-dev
+- sudo apt-get install g++ clang libelf-dev libc6-dev-i386 libdw-dev nlohmann-json3-dev
 
 ## Build cephtrace
 - cd cephtrace
@@ -56,8 +56,8 @@ Each row represent one IO sent from the client to the ceph cluster, below is the
 - object[ops][offset,length]: the object name, detailed osd op name, op's offset and length
 
 ## Run osdtrace:
-:~$ sudo ./osdtrace
+:~$ sudo ./osdtrace -x
 
 ## Note:
-Can run fine on Ubuntu Jammy 22.04 and 20.04 with 5.15 kernel, other platform hasn't been tested.
-Not been tested for container-based process yet. 
+Tested on Ubuntu distro with 5.15 and 6.8 kernel, other platforms haven't been tested.
+It has not yet been tested for container-based processes. 
