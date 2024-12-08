@@ -5,6 +5,7 @@
 #include <elf.h>
 #include <elfutils/libdw.h>
 #include <elfutils/libdwfl.h>
+#include <elfutils/known-dwarf.h>
 #include <vector>
 #include <nlohmann/json.hpp>  // nlohmann/json library
 
@@ -94,6 +95,9 @@ class DwarfParser {
    * @return bool Returns true if import was successful, false otherwise
    */
   bool import_from_json(const std::string& filename);
+
+  static const char* dwarf_attr_string(unsigned int attrnum);
+  static const char* dwarf_form_string(unsigned int form);
 };
 
 #endif

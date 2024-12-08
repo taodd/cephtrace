@@ -444,6 +444,15 @@ std::string special_inlined_function_scope(const char *funcname){
   return "";
 }
 
+// implement the callback function handle_attr
+static int handle_attr(Dwarf_Attribute *attr, void *data) {
+  unsigned int code = dwarf_whatattr(attr);
+  unsigned int form = dwarf_whatform(attr);
+  // print code name and form name
+  printf("  code: %s, form: %s\n", DwarfParser::dwarf_attr_string(code), DwarfParser::dwarf_form_string(form));
+  return 0;
+}
+
 static int handle_function(Dwarf_Die *die, void *data) {
   assert(data != NULL);
   DwarfParser *dp = (DwarfParser *)data;
@@ -483,6 +492,10 @@ static int handle_function(Dwarf_Die *die, void *data) {
      // dwarf_func_inline_instances(die, &handle_instance, NULL);
      return 0;
   } 
+  
+  if (dwarf_getattrs(die, handle_attr, NULL, 0) != 1) {
+    cerr << "dwarf_getattrs failed" << endl;
+  }
 
   // TODO need to check if the class name matches
   Dwarf_Addr pc = dp->find_prologue(die);
@@ -660,7 +673,7 @@ static int preprocess_module(Dwfl_Module *dwflmod, void **userdata,
   }
 
 
-  dp->traverse_module(dwflmod, dwarf, true);
+  dp->traverse_module(dwflmod, dwarf, true); 
   return 0;
 }
 
@@ -910,4 +923,24 @@ bool DwarfParser::import_from_json(const std::string& filename) {
         std::cerr << "Error importing from JSON: " << e.what() << std::endl;
         return false;
     }
+}
+
+const char* DwarfParser::dwarf_attr_string(unsigned int attrnum) {
+  switch (attrnum) {
+    #define DWARF_ONE_KNOWN_DW_AT(NAME, CODE) case CODE: return  "DW_AT_"#NAME;
+    DWARF_ALL_KNOWN_DW_AT
+    #undef DWARF_ONE_KNOWN_DW_AT
+    default:
+      return "DW_AT_<unknown>";
+  }
+}
+
+const char* DwarfParser::dwarf_form_string(unsigned int form) {
+  switch (form) {
+    #define DWARF_ONE_KNOWN_DW_FORM(NAME, CODE) case CODE: return "DW_FORM_"#NAME;
+    DWARF_ALL_KNOWN_DW_FORM
+    #undef DWARF_ONE_KNOWN_DW_FORM
+    default:
+      return "DW_FORM_<unknown>";
+  }
 }
