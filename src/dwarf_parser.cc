@@ -236,30 +236,36 @@ VarLocation DwarfParser::translate_param_location(Dwarf_Die *func,
   return varloc;
 }
 
-Dwarf_Addr DwarfParser::find_prologue(Dwarf_Die *func) {
+bool DwarfParser::find_prologue(Dwarf_Die *func, Dwarf_Addr &pc) {
   Dwarf_Addr entrypc;
   string funcname = dwarf_diename(func);
-  if (func_entrypc(func, &entrypc) == false)
+  if (func_entrypc(func, &entrypc) == false) {
     cerr << "Error in func_entrypc " << funcname << endl;
+    return false;
+  }
 
   int dwbias = 0;
   entrypc += dwbias;
 
   // identify whether it's compiled with -O2 -g
-  if (has_loclist()) return entrypc;
+  if (has_loclist()) {
+    pc = entrypc;
+    return true;
+  }
 
   Dwarf_Addr *bkpts = NULL;
-  Dwarf_Addr pc = 0;
   int bcnt = dwarf_entry_breakpoints(func, &bkpts);
-  if (bcnt <= 0)
+  if (bcnt <= 0) {
     cerr << "Couldn't found prologue for function " << funcname << endl;
-  else {
-    if (bcnt > 1)
-      cout << "Found more than 1 prologue for function " << funcname << endl;
-    pc = bkpts[0];
-    cout << "prologue is " << pc << endl;
+    return false;
   }
-  return pc;
+
+  if (bcnt > 1) {
+    cout << "Found more than 1 prologue for function " << funcname << endl;
+  }
+  pc = bkpts[0];
+  cout << "prologue is " << pc << endl;
+  return true;
 }
 
 void DwarfParser::dwarf_die_type(Dwarf_Die *die, Dwarf_Die *typedie_mem) {
@@ -458,11 +464,21 @@ static int handle_function(Dwarf_Die *die, void *data) {
   DwarfParser *dp = (DwarfParser *)data;
   const char *funcname = dwarf_diename(die);
   if (!dp->filter_func(funcname)) return 0;
-  Dwarf_Die func_spec = *die;
-  if (dwarf_hasattr(die, DW_AT_specification)) {
+  Dwarf_Die func_abstract = *die;
+  // in case of compiler's lto optimization, need to find the abstract function die 
+  // in the source code module
+  if (dwarf_hasattr(die, DW_AT_abstract_origin)) {
     Dwarf_Attribute attr_mem;
     Dwarf_Attribute *tmpattr =
-        dwarf_attr_integrate(die, DW_AT_specification, &attr_mem);
+        dwarf_attr_integrate(die, DW_AT_abstract_origin, &attr_mem);
+    dwarf_formref_die(tmpattr, &func_abstract);
+  }
+
+  Dwarf_Die func_spec = func_abstract;
+  if (dwarf_hasattr(&func_abstract, DW_AT_specification)) {
+    Dwarf_Attribute attr_mem;
+    Dwarf_Attribute *tmpattr =
+        dwarf_attr_integrate(&func_abstract, DW_AT_specification, &attr_mem);
     dwarf_formref_die(tmpattr, &func_spec);
   }
   Dwarf_Die *scopes;
@@ -498,7 +514,11 @@ static int handle_function(Dwarf_Die *die, void *data) {
   }
 
   // TODO need to check if the class name matches
-  Dwarf_Addr pc = dp->find_prologue(die);
+  Dwarf_Addr pc;
+  if (!dp->find_prologue(die, pc)) {
+    // LTO optimization will not generate the low_pc/high_pc/rangs for the abstract function
+    return 0;
+  }
   auto &func2pc = dp->mod_func2pc[dp->cur_mod_name];
   func2pc[fullname] = pc;
 
@@ -709,7 +729,7 @@ static int handle_module(Dwfl_Module *dwflmod, void **userdata,
 
       string cu_name = dwarf_diename(&cu_die) ?: "<unknown>";
       cout << "handle_module cu name " << cu_name << endl;
-      if (dp->filter_cu(cu_name)) {
+      if (dp->filter_cu(cu_name) || cu_name == "<artificial>") {
         cout << "cu name " << cu_name << endl;
         dp->cur_cu = &cu_die;
         dwarf_getfuncs(&cu_die, (int (*)(Dwarf_Die *, void *))handle_function,

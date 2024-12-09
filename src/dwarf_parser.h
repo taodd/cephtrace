@@ -72,7 +72,7 @@ class DwarfParser {
   VarLocation translate_param_location(Dwarf_Die *, std::string, Dwarf_Addr,
                                        Dwarf_Die &);
   bool func_entrypc(Dwarf_Die *, Dwarf_Addr *);
-  Dwarf_Addr find_prologue(Dwarf_Die *);
+  bool find_prologue(Dwarf_Die *func, Dwarf_Addr &pc);
   void dwarf_die_type(Dwarf_Die *, Dwarf_Die *);
   void find_class_member(Dwarf_Die *, Dwarf_Die *, std::string,
                          Dwarf_Attribute *);
