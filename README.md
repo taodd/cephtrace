@@ -1,33 +1,52 @@
 # Cephtrace 
-cephtrace is a project contains various eBPF based ceph tracing tool, those tools can be used to trace different ceph components dynamically, without the need to restart or reconfig any ceph services, currently radostrace, osdtrace are implemented. These tool can provide us great insight on the per-io performance, and help us quickly identify the performance bottleneck. 
+```cephtrace``` is a project that delivers various ```eBPF``` based ceph tracing tools. These tools can be used to trace different ceph components dynamically, without the need to restart or reconfigure any of the ceph related services. Currently ```radostrace``` and ```osdtrace``` have been implemented.
 
-## Checkout source code:
-- git clone https://github.com/taodd/cephtrace
-- cd cephtrace
-- git submodule update --init --recursive
+These tools can provide a great insight on the per-io based performance, and help to quickly identify any potential performance bottlenecks.
 
-## Build Prerequisites:
-I provide the Debian and Ubuntu apt commands in this procedure. If you use a system with a different package manager, then you will have to use different commands:
-- sudo apt-get install g++ clang libelf-dev libc6-dev-i386 libdw-dev
+## Checkout source code
+To start:
+```
+git clone https://github.com/taodd/cephtrace
+cd cephtrace
+git submodule update --init --recursive
+```
+
+## Build Prerequisites
+On a Debian or Ubuntu based system, use the following apt command to start the build dependencies. If using a system with a different package manager, a different set of commands will be required:
+```
+sudo apt-get install g++ clang libelf-dev libc6-dev-i386 libdw-dev
+```
 
 ## Build cephtrace
-- cd cephtrace
-- make
+Build the binaries:
+```
+cd cephtrace
+make
+```
+It is possible to build the binaries on a different machine and then transfer them to the target host, as long as they are running the same versions of underlying packages as the builder machine.
 
-## Install debug symbol
-Debug symbol is required for those tools to work, different tool need different debug symbol package. For ubuntu, we now support to fetch debug symbols from debuginfod server automatically. Please install libdebuginfod package first: 
+## Install debug symbols
+Debug symbols are required for these tools to work. Each tool needs a different debug symbol package. For ubuntu, we now support fetching debug symbols from ```debuginfod``` server automatically.
+
+Please install ```libdebuginfod``` package first:
+```
 sudo apt-get install libdebuginfod-dev
+```
+You can also manually install debug packages in case debuginfod isn't working, please refer to [Getting dbgsymddeb Packages](https://ubuntu.com/server/docs/debug-symbol-packages#getting-dbgsymddeb-packages).
+These are required debug packages for each tool:
+- For ```radostrace```:
+```sudo apt-get install ceph-common-dbgsym librbd1-dbgsym librados2-dbgsym```
+- For ```osdtrace```:
+```sudo apt-get install ceph-osd-dbgsym```
 
-However, you can manually install debug packages in case debuginfod isn't working, please refer to https://ubuntu.com/server/docs/debug-symbol-packages#getting-dbgsymddeb-packages
-Those required debug packages for each different tool:
-- radostrace: sudo apt-get install ceph-common-dbgsym librbd1-dbgsym librados2-dbgsym
-- osdtrace: sudo apt-get install ceph-osd-dbgsym
+If tracing from a compute-only node that carries rbd client connections only, ```librbd1-dbgsym``` and ```librados2-dbgsym``` packages are sufficient to use ```radostrace```.
 
-## Run radostrace:
-radostrace can trace any librados based ceph client, including vm with rbd volume attached, rgw, cinder, glance ...
+## Run radostrace
+```radostrace``` can trace any librados based ceph client, including vm with rbd volume attached, rgw, cinder, glance...
 below is an example for tracing a vm which is doing 4k random read on a rbd volume.
-
+```
 :~$ sudo ./radostrace
+```
 ```
      pid  client     tid  pool  pg     acting            w/r    size  latency     object[ops][offset,length]
    19015   34206  419357     2  1e     [1,11,121,77,0]     W        0     887     rbd_header.374de3730ad0[watch ]
@@ -43,21 +62,23 @@ below is an example for tracing a vm which is doing 4k random read on a rbd volu
    ...
    ...
 ```
-Each row represent one IO sent from the client to the ceph cluster, below is the explaination for each column:
-- pid:    ceph client process id
-- client: ceph client global id, a unique number to identify the client
-- tid:    operation id 
-- pool:   pool id the operation is sent to
-- pg:     pg id the operation is sent to, pool.pg is the pgid we usually talked about
-- acting: the OSD acting set this operation is sent to
-- w/r:    whether this operation is write or read
-- size:   the write/read size of this operation
-- latency: the latency of this request in microsecond
-- object[ops][offset,length]: the object name, detailed osd op name, op's offset and length
+Each row represent one IO sent from the client to the ceph cluster, below is the explanation for each column:
+- ```pid```:    ceph client process id
+- ```client```: ceph client global id, a unique number to identify the client
+- ```tid```:    operation id
+- ```pool```:   pool id the operation is sent to
+- ```pg```:     pg id the operation is sent to, pool.pg is the pgid we usually refer to
+- ```acting```: the OSD acting set this operation is sent to
+- ```w/r```:    whether this operation is write or read
+- ```size```:   the write/read size of this operation
+- ```latency```: the latency of this request in microsecond
+- ```object[ops][offset,length]```: the object name, detailed osd op name, op's offset and length
 
-## Run osdtrace:
+## Run osdtrace
+```
 :~$ sudo ./osdtrace -x
+```
 
-## Note:
-Tested on Ubuntu distro with 5.15 and 6.8 kernel, other platforms haven't been tested.
-It has not yet been tested for container-based processes. 
+## Notes
+- These have been tested on Ubuntu distribution with 5.15 and 6.8 kernels. Other platforms have not been tested.
+- It has not yet been tested with containerized processes.

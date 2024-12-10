@@ -9,6 +9,8 @@
 #include <time.h>
 #include <signal.h>
 #include <bits/stdc++.h>
+#include <signal.h>
+#include <unistd.h>
 
 #include <cassert>
 #include <cstring>
@@ -75,6 +77,8 @@ DwarfParser::probes_t rados_probes = {
 	{"op", "target", "osd"}}}
 };
 
+volatile sig_atomic_t timeout_occurred = 0;
+
 const char * ceph_osd_op_str(int opc) {
     const char *op_str = NULL;
 #define GENERATE_CASE_ENTRY(op, opcode, str)	case CEPH_OSD_OP_##op: op_str=str; break;
@@ -113,6 +117,12 @@ void signal_handler(int signum){
       clog << "process killed" << endl;
   }
   exit(signum);
+}
+
+void timeout_handler(int signum) {
+    if (signum == SIGALRM) {
+        timeout_occurred = 1;
+    }
 }
 
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format,
@@ -250,10 +260,38 @@ static int handle_event(void *ctx, void *data, size_t size) {
     return 0;
 }
 
+
 int main(int argc, char **argv) {
   signal(SIGINT, signal_handler); 
 
-  //if (parse_args(argc, argv) < 0) return 0;
+  /* Default to unlimited execution time */
+  int timeout = -1;
+
+  /* Parse arguments */
+  for (int i = 1; i < argc; ++i) {
+      std::string arg = argv[i];
+      if ((arg == "-t" || arg == "--timeout") && i + 1 < argc) {
+          try {
+              timeout = std::stoi(argv[++i]);
+              if (timeout <= 0) throw std::invalid_argument("Negative timeout");
+          } catch (...) {
+              std::cerr << "Invalid timeout value. Must be a positive integer.\n";
+              return 1;
+          }
+      } else if (arg == "-h" || arg == "--help") {
+          std::cout << "Usage: " << argv[0] << " [-t <timeout seconds>] [--timeout <timeout seconds>]\n";
+          return 0;
+      }
+  }
+
+  /* Set up timeout if provided */
+  if (timeout > 0) {
+      signal(SIGALRM, timeout_handler);
+      alarm(timeout);
+      std::cout << "Execution timeout set to " << timeout << " seconds.\n";
+  } else {
+      std::cout << "No execution timeout set (unlimited).\n";
+  }
 
   struct radostrace_bpf *skel;
   // long uprobe_offset;
@@ -309,14 +347,18 @@ int main(int argc, char **argv) {
 
   clog << "Started to poll from ring buffer" << endl;
 
-  while ((ret = ring_buffer__poll(rb, 1000)) >= 0) {
+  while ((!timeout_occurred || timeout == -1) && (ret = ring_buffer__poll(rb, 1000)) >= 0) {
+      // Continue polling while timeout hasn't occurred or if unlimited execution time
   }
 
-  clog << "Unexpected line hit" << endl;
+  if (timeout_occurred) {
+      cerr << "Timeout occurred. Exiting." << endl;
+  }
+
 cleanup:
   clog << "Clean up the eBPF program" << endl;
   ring_buffer__free(rb);
   radostrace_bpf__destroy(skel);
-  return -errno;
+  return timeout_occurred ? -1 : -errno;
 }
 
