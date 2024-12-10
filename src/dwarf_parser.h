@@ -7,7 +7,7 @@
 #include <elfutils/libdwfl.h>
 #include <elfutils/known-dwarf.h>
 #include <vector>
-#include <nlohmann/json.hpp>  // nlohmann/json library
+#include "nlohmann/json.hpp"  // nlohmann/json library
 
 using json = nlohmann::json;
 class DwarfParser;

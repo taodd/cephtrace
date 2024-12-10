@@ -8,7 +8,7 @@ cephtrace is a project contains various eBPF based ceph tracing tool, those tool
 
 ## Build Prerequisites:
 I provide the Debian and Ubuntu apt commands in this procedure. If you use a system with a different package manager, then you will have to use different commands:
-- sudo apt-get install g++ clang libelf-dev libc6-dev-i386 libdw-dev nlohmann-json3-dev
+- sudo apt-get install g++ clang libelf-dev libc6-dev-i386 libdw-dev
 
 ## Build cephtrace
 - cd cephtrace
