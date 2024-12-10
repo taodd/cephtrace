@@ -22,7 +22,9 @@ LIBBPF_UAPI_INCLUDES = -I $(LIBBPF_TOP)/include/uapi
 #LIBBPF_LIBS = -L /usr/local/bpf/lib64 -lbpf
 LIBBPF_OBJ = $(abspath $(OUTPUT)/libbpf.a) 
 
-INCLUDES = -I$(OUTPUT) $(LIBBPF_UAPI_INCLUDES) -I$(LIBBPF_SRC)
+NLOHMANN_JSON_INCLUDES = $(abspath ./external/json/include)
+
+INCLUDES = -I$(OUTPUT) $(LIBBPF_UAPI_INCLUDES) -I$(LIBBPF_SRC) -I$(NLOHMANN_JSON_INCLUDES)
 
 CLANG_BPF_SYS_INCLUDES = $(shell $(CLANG) -v -E - </dev/null 2>&1 | sed -n '/<...> search starts here:/,/End of search list./{ s| \(/.*\)|-idirafter \1|p }')
 
