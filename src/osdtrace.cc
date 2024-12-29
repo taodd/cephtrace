@@ -837,9 +837,10 @@ std::string json_input_file;
 std::string json_output_file;
 bool import_json = false;
 bool export_json = false;
+int process_id = -1;  // Default to -1
 int parse_args(int argc, char **argv) {
   char opt;
-  while ((opt = getopt(argc, argv, ":d:m:t:o:xbj:i:")) != -1) {
+  while ((opt = getopt(argc, argv, ":d:m:t:o:xbj:i:p:")) != -1) {
     switch (opt) {
       case 'd':
         period = optarg[0] - '0';
@@ -873,6 +874,9 @@ int parse_args(int argc, char **argv) {
       case 'i':
         import_json = true;
         json_input_file = optarg;
+        break;
+      case 'p':
+        process_id = stoi(optarg);
         break;
       case '?':
         clog << "Unknown option: " << optopt << endl;
@@ -909,10 +913,16 @@ void fill_map_hprobes(std::string mod_path, DwarfParser &dwarfparser, struct bpf
 }
 
 int attach_uprobe(struct osdtrace_bpf *skel,
-	           DwarfParser &dp,
-	           std::string path,
-		   std::string funcname,
-		   int v = 0) {
+                 DwarfParser &dp,
+                 std::string path,
+                 int process_id,
+                 std::string funcname,
+                 int v = 0) {
+
+  std::string pid_path = path;
+  if (process_id != -1) {
+    pid_path = "/proc/" + std::to_string(process_id) + "/root/" + path;
+  }
 
   auto &func2pc = dp.mod_func2pc[path];
   size_t func_addr = func2pc[funcname];
@@ -922,8 +932,8 @@ int attach_uprobe(struct osdtrace_bpf *skel,
   struct bpf_link *ulink = bpf_program__attach_uprobe(
       *skel->skeleton->progs[pid].prog, 
       false /* not uretprobe */,
-      -1,
-      path.c_str(), func_addr);
+      -1,  // Pass the process_id parameter here
+      pid_path.c_str(), func_addr);
   if (!ulink) {
     cerr << "Failed to attach uprobe to " << funcname << endl;
     return -errno;
@@ -1013,33 +1023,33 @@ int main(int argc, char **argv) {
 
   //Start to load the probes
   if (probe_mode == OP_SINGLE_PROBE) {
-    attach_uprobe(skel, dwarfparser, osd_path, "PrimaryLogPG::log_op_stats", 2);
+    attach_uprobe(skel, dwarfparser, osd_path, process_id, "PrimaryLogPG::log_op_stats", 2);
   } else if (probe_mode == OP_FULL_PROBE) {
-    attach_uprobe(skel, dwarfparser, osd_path, "OSD::dequeue_op");
+    attach_uprobe(skel, dwarfparser, osd_path, process_id, "OSD::dequeue_op");
 
-    attach_uprobe(skel, dwarfparser, osd_path, "PrimaryLogPG::execute_ctx");
+    attach_uprobe(skel, dwarfparser, osd_path, process_id, "PrimaryLogPG::execute_ctx");
     
-    attach_uprobe(skel, dwarfparser, osd_path, "ECBackend::submit_transaction");
+    attach_uprobe(skel, dwarfparser, osd_path, process_id, "ECBackend::submit_transaction");
 
-    attach_uprobe(skel, dwarfparser, osd_path, "OpRequest::mark_flag_point_string");
+    attach_uprobe(skel, dwarfparser, osd_path, process_id, "OpRequest::mark_flag_point_string");
 
-    attach_uprobe(skel, dwarfparser, osd_path, "ReplicatedBackend::generate_subop");
+    attach_uprobe(skel, dwarfparser, osd_path, process_id, "ReplicatedBackend::generate_subop");
 
-    attach_uprobe(skel, dwarfparser, osd_path, "ReplicatedBackend::do_repop_reply");
+    attach_uprobe(skel, dwarfparser, osd_path, process_id, "ReplicatedBackend::do_repop_reply");
 
-    attach_uprobe(skel, dwarfparser, osd_path, "BlueStore::queue_transactions");
+    attach_uprobe(skel, dwarfparser, osd_path, process_id, "BlueStore::queue_transactions");
 
-    attach_uprobe(skel, dwarfparser, osd_path, "BlueStore::_txc_calc_cost");
+    attach_uprobe(skel, dwarfparser, osd_path, process_id, "BlueStore::_txc_calc_cost");
 
-    attach_uprobe(skel, dwarfparser, osd_path, "BlueStore::_txc_state_proc");
+    attach_uprobe(skel, dwarfparser, osd_path, process_id, "BlueStore::_txc_state_proc");
 
-    attach_uprobe(skel, dwarfparser, osd_path, "PrimaryLogPG::log_op_stats");
+    attach_uprobe(skel, dwarfparser, osd_path, process_id, "PrimaryLogPG::log_op_stats");
 
-    attach_uprobe(skel, dwarfparser, osd_path, "ReplicatedBackend::repop_commit");
+    attach_uprobe(skel, dwarfparser, osd_path, process_id, "ReplicatedBackend::repop_commit");
     
-    attach_uprobe(skel, dwarfparser, osd_path, "OSD::enqueue_op");
+    attach_uprobe(skel, dwarfparser, osd_path, process_id, "OSD::enqueue_op");
   } else if (probe_mode == BLUESTORE_PROBE) {
-    attach_uprobe(skel, dwarfparser, osd_path, "BlueStore::log_latency");
+    attach_uprobe(skel, dwarfparser, osd_path, process_id, "BlueStore::log_latency");
   }
 
   bootstamp = get_bootstamp();
