@@ -2,98 +2,95 @@ CLANG := clang
 CXX := g++
 OUTPUT := .output
 ARCH := $(shell uname -m | sed 's/x86_64/x86/' | sed 's/aarch64/arm64/' | sed 's/ppc64le/powerpc/' | sed 's/mips.*/mips/')
-#BPFTOOL ?= /usr/local/sbin/bpftool
 
-OSDTRACE_SRC = $(abspath ./src)
+# Source and tool paths
+OSDTRACE_SRC := $(abspath ./src)
+BPFTOOL_OUTPUT := $(abspath $(OUTPUT)/bpftool)
+BPFTOOL := $(BPFTOOL_OUTPUT)/bootstrap/bpftool
+BPFTOOL_SRC := $(abspath ./bpftool/src)
+LIBBPF_TOP := $(abspath ./libbpf)
+LIBBPF_SRC := $(LIBBPF_TOP)/src
+LIBBPF_OBJ := $(abspath $(OUTPUT)/libbpf.a)
 
-BPFTOOL_OUTPUT ?= $(abspath $(OUTPUT)/bpftool)
-BPFTOOL ?= $(BPFTOOL_OUTPUT)/bootstrap/bpftool
-BPFTOOL_SRC = $(abspath ./bpftool/src)
+# Common objects and includes
+COMMON_OBJS := $(OUTPUT)/dwarf_parser.o
+PROG_OBJS := osdtrace radostrace
+PROG_SRCS := $(addprefix $(OSDTRACE_SRC)/,$(addsuffix .cc,$(PROG_OBJS)))
+PROG_BPF_SRCS := $(addprefix $(OSDTRACE_SRC)/,$(addsuffix .bpf.c,$(PROG_OBJS)))
 
-OSDTRACE_OBJS = $(OUTPUT)/dwarf_parser.o $(OUTPUT)/osdtrace.o
+# Include paths
+INCLUDES := -I$(OUTPUT) \
+           -I$(LIBBPF_TOP)/include/uapi \
+           -I$(LIBBPF_SRC) \
+           -I$(abspath ./external/json/include)
 
-RADOSTRACE_OBJS = $(OUTPUT)/dwarf_parser.o $(OUTPUT)/radostrace.o
+# Compiler flags
+CLANG_BPF_SYS_INCLUDES := $(shell $(CLANG) -v -E - </dev/null 2>&1 | \
+    sed -n '/<...> search starts here:/,/End of search list./{ s| \(/.*\)|-idirafter \1|p }')
+CXXFLAGS := -g -O2 -D__TARGET_ARCH_$(ARCH) $(INCLUDES) $(CLANG_BPF_SYS_INCLUDES)
+LIBS := $(LIBBPF_OBJ) -lelf -ldw -lz
 
-LIBBPF_TOP = $(abspath ./libbpf)
-LIBBPF_SRC = $(LIBBPF_TOP)/src
-
-LIBBPF_UAPI_INCLUDES = -I $(LIBBPF_TOP)/include/uapi
-#LIBBPF_INCLUDES = -I $(LIBBPF_TOP)/include
-#LIBBPF_LIBS = -L /usr/local/bpf/lib64 -lbpf
-LIBBPF_OBJ = $(abspath $(OUTPUT)/libbpf.a) 
-
-NLOHMANN_JSON_INCLUDES = $(abspath ./external/json/include)
-
-INCLUDES = -I$(OUTPUT) $(LIBBPF_UAPI_INCLUDES) -I$(LIBBPF_SRC) -I$(NLOHMANN_JSON_INCLUDES)
-
-CLANG_BPF_SYS_INCLUDES = $(shell $(CLANG) -v -E - </dev/null 2>&1 | sed -n '/<...> search starts here:/,/End of search list./{ s| \(/.*\)|-idirafter \1|p }')
-
+# Build verbosity control
 ifeq ($(V),1)
-	Q =
-	msg =
+    Q =
+    msg =
 else
-	Q = @
-	msg = @printf '  %-8s %s%s\n'					\
-		      "$(1)"						\
-		      "$(patsubst $(abspath $(OUTPUT))/%,%,$(2))"	\
-		      "$(if $(3), $(3))";
-	MAKEFLAGS += --no-print-directory
+    Q = @
+    msg = @printf '  %-8s %s%s\n' "$(1)" "$(patsubst $(abspath $(OUTPUT))/%,%,$(2))" "$(if $(3), $(3))";
+    MAKEFLAGS += --no-print-directory
 endif
 
-all: build
+# Main targets
+.PHONY: all clean
+all: $(PROG_OBJS)
 
-build: osdtrace radostrace 
-
-.PHONY: clean
 clean:
 	$(call msg,CLEAN)
-	rm -rf $(OUTPUT) osdtrace radostrace
+	$(Q)rm -rf $(OUTPUT) $(PROG_OBJS)
+
 $(OUTPUT) $(OUTPUT)/libbpf $(BPFTOOL_OUTPUT):
 	$(call msg,MKDIR,$@)
-	mkdir -p $@
+	$(Q)mkdir -p $@
 
-# Build libbpf
+# Build rules
 $(LIBBPF_OBJ): $(wildcard $(LIBBPF_SRC)/*.[ch] $(LIBBPF_SRC)/Makefile) | $(OUTPUT)/libbpf
 	$(call msg,LIB,$@)
-	make -C $(LIBBPF_SRC) BUILD_STATIC_ONLY=1		      \
-		    OBJDIR=$(dir $@)/libbpf DESTDIR=$(dir $@)		      \
-		    INCLUDEDIR= LIBDIR= UAPIDIR=			      \
-		    install
+	$(Q)make -C $(LIBBPF_SRC) BUILD_STATIC_ONLY=1 \
+	    OBJDIR=$(dir $@)/libbpf DESTDIR=$(dir $@) \
+	    INCLUDEDIR= LIBDIR= UAPIDIR= \
+	    install
 
-# Build bpftool
 $(BPFTOOL): | $(BPFTOOL_OUTPUT)
 	$(call msg,BPFTOOL,$@)
-	make ARCH= CROSS_COMPILE= OUTPUT=$(BPFTOOL_OUTPUT)/ -C $(BPFTOOL_SRC) bootstrap
+	$(Q)make ARCH= CROSS_COMPILE= OUTPUT=$(BPFTOOL_OUTPUT)/ -C $(BPFTOOL_SRC) bootstrap
 
-# Build BPF Code
+# Build BPF objects and skeletons
 $(OUTPUT)/%.bpf.o: $(OSDTRACE_SRC)/%.bpf.c $(LIBBPF_OBJ) | $(OUTPUT) $(BPFTOOL)
 	$(call msg,BPF,$@)
-	$(CLANG)  -g -O2 -target bpf -D__TARGET_ARCH_$(ARCH) $(INCLUDES) $(CLANG_BPF_SYS_INCLUDES) -c $< -o $(patsubst %.bpf.o,%.tmp.bpf.o,$@) 
-	$(BPFTOOL) gen object $@ $(patsubst %.bpf.o,%.tmp.bpf.o,$@)
+	$(Q)$(CLANG) -g -O2 -target bpf $(CXXFLAGS) -c $< -o $(patsubst %.bpf.o,%.tmp.bpf.o,$@)
+	$(Q)$(BPFTOOL) gen object $@ $(patsubst %.bpf.o,%.tmp.bpf.o,$@)
 
-# Generate BPF skeletons
 $(OUTPUT)/%.skel.h: $(OUTPUT)/%.bpf.o | $(OUTPUT) $(BPFTOOL)
 	$(call msg,GEN-SKEL,$@)
-	$(BPFTOOL) gen skeleton $< > $@
+	$(Q)$(BPFTOOL) gen skeleton $< > $@
 
-$(OUTPUT)/osdtrace.o: $(OSDTRACE_SRC)/osdtrace.cc $(OSDTRACE_SRC)/*.h $(OUTPUT)/osdtrace.skel.h | $(OUTPUT) $(LIBBPF_OBJ)
-	$(CXX) -g $(INCLUDES) -c -o $@ $<
+# Build object files
+$(OUTPUT)/%.o: $(OSDTRACE_SRC)/%.cc $(OSDTRACE_SRC)/*.h $(OUTPUT)/%.skel.h | $(OUTPUT) $(LIBBPF_OBJ)
+	$(call msg,CXX,$@)
+	$(Q)$(CXX) $(CXXFLAGS) -c -o $@ $<
 
-$(OUTPUT)/radostrace.o: $(OSDTRACE_SRC)/radostrace.cc $(OSDTRACE_SRC)/*.h $(OUTPUT)/radostrace.skel.h | $(OUTPUT) $(LIBBPF_OBJ)
-	$(CXX) -g $(INCLUDES) -c -o $@ $<
+# Special rule for dwarf_parser.o since it doesn't need a skel.h
+$(OUTPUT)/dwarf_parser.o: $(OSDTRACE_SRC)/dwarf_parser.cc $(OSDTRACE_SRC)/*.h | $(OUTPUT) $(LIBBPF_OBJ)
+	$(call msg,CXX,$@)
+	$(Q)$(CXX) $(CXXFLAGS) -c -o $@ $<
 
+# Build final executables
+define build_rule
+$(1): $(OUTPUT)/$(1).o $(COMMON_OBJS) $(OUTPUT)/$(1).skel.h $(LIBBPF_OBJ) | $(OUTPUT)
+	$$(call msg,LINK,$$@)
+	$(Q)$$(CXX) $$(CXXFLAGS) -o $$@ $$< $$(COMMON_OBJS) $$(LIBS)
+endef
 
-$(OUTPUT)/dwarf_parser.o: $(OSDTRACE_SRC)/dwarf_parser.cc $(OSDTRACE_SRC)/*.h $(OUTPUT)/osdtrace.skel.h | $(OUTPUT) $(LIBBPF_OBJ)
-	$(CXX) -g $(INCLUDES) -c -o $@ $<
-
-# Generate osdtrace
-#osdtrace: $(OSDTRACE_SRC)/osdtrace.cc $(OSDTRACE_SRC)/*.h $(OUTPUT)/osdtrace.skel.h $(LIBBPF_OBJ) | $(OUTPUT)
-#	$(CXX)  -g -O2 -D__TARGET_ARCH_$(ARCH) $(INCLUDES) $(CLANG_BPF_SYS_INCLUDES) -o $@ $< $(LIBBPF_OBJ) -lelf -ldw -lz
-
-osdtrace: $(OUTPUT)/osdtrace.o $(OUTPUT)/dwarf_parser.o $(OUTPUT)/osdtrace.skel.h $(LIBBPF_OBJ) | $(OUTPUT)
-	$(CXX)  -g -O2 -D__TARGET_ARCH_$(ARCH) $(INCLUDES) $(CLANG_BPF_SYS_INCLUDES) -o $@ $(OSDTRACE_OBJS) $(LIBBPF_OBJ) -lelf -ldw -lz
-
-radostrace: $(OUTPUT)/radostrace.o $(OUTPUT)/dwarf_parser.o $(OUTPUT)/radostrace.skel.h $(LIBBPF_OBJ) | $(OUTPUT)
-	$(CXX)  -g -O2 -D__TARGET_ARCH_$(ARCH) $(INCLUDES) $(CLANG_BPF_SYS_INCLUDES) -o $@ $(RADOSTRACE_OBJS) $(LIBBPF_OBJ) -lelf -ldw -lz
+$(foreach prog,$(PROG_OBJS),$(eval $(call build_rule,$(prog))))
 
 
