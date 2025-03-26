@@ -266,6 +266,10 @@ int main(int argc, char **argv) {
 
   /* Default to unlimited execution time */
   int timeout = -1;
+  bool export_json = false;
+  bool import_json = false;
+  std::string json_output_file = "radostrace_dwarf.json";
+  std::string json_input_file;
 
   /* Parse arguments */
   for (int i = 1; i < argc; ++i) {
@@ -278,8 +282,25 @@ int main(int argc, char **argv) {
               std::cerr << "Invalid timeout value. Must be a positive integer.\n";
               return 1;
           }
+      } else if (arg == "-j" || arg == "--json") {
+          export_json = true;
+          if (i + 1 < argc && argv[i + 1][0] != '-') {
+              json_output_file = argv[++i];
+          }
+      } else if (arg == "-i" || arg == "--import-json") {
+          import_json = true;
+          if (i + 1 < argc) {
+              json_input_file = argv[++i];
+          } else {
+              std::cerr << "Error: -J/--import-json requires a filename argument\n";
+              return 1;
+          }
       } else if (arg == "-h" || arg == "--help") {
-          std::cout << "Usage: " << argv[0] << " [-t <timeout seconds>] [--timeout <timeout seconds>]\n";
+          std::cout << "Usage: " << argv[0] << " [-t <timeout seconds>] [--timeout <timeout seconds>] [-j [filename]] [-J <filename>]\n";
+          std::cout << "  -t, --timeout <seconds>    Set execution timeout in seconds\n";
+          std::cout << "  -j, --export-json <file>      Export DWARF info to JSON (default: radostrace_dwarf.json)\n";
+          std::cout << "  -i, --import-json <file>   Import DWARF info from JSON file\n";
+          std::cout << "  -h, --help                 Show this help message\n";
           return 0;
       }
   }
@@ -298,16 +319,31 @@ int main(int argc, char **argv) {
   int ret = 0;
   struct ring_buffer *rb;
 
-  clog << "Start to parse dwarf info" << endl;
+  DwarfParser dwarfparser(rados_probes, probe_units);
+  
   std::string librbd_path = "/lib/x86_64-linux-gnu/librbd.so.1";
   std::string librados_path = "/lib/x86_64-linux-gnu/librados.so.2";
   std::string libceph_common_path = "/usr/lib/x86_64-linux-gnu/ceph/libceph-common.so.2";
+  
+  if (import_json) {
+      clog << "Importing DWARF info from " << json_input_file << endl;
+      if (!dwarfparser.import_from_json(json_input_file)) {
+          cerr << "Failed to import DWARF info from " << json_input_file << endl;
+          return 1;
+      }
+  } else {
+      clog << "Start to parse dwarf info" << endl;
+      dwarfparser.add_module(librbd_path);
+      dwarfparser.add_module(librados_path);
+      dwarfparser.add_module(libceph_common_path);
+      dwarfparser.parse();
 
-  DwarfParser dwarfparser(rados_probes, probe_units);
-  dwarfparser.add_module(librbd_path);
-  dwarfparser.add_module(librados_path);
-  dwarfparser.add_module(libceph_common_path);
-  dwarfparser.parse();
+      // Export DWARF info to JSON if requested
+      if (export_json) {
+          clog << "Exporting DWARF info to " << json_output_file << endl;
+          dwarfparser.export_to_json(json_output_file);
+      }
+  }
 
   libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
 
