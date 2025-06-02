@@ -20,6 +20,9 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <fstream>
+#include <dlfcn.h>
+#include <link.h>
 
 #include "radostrace.skel.h"
 
@@ -260,6 +263,63 @@ static int handle_event(void *ctx, void *data, size_t size) {
     return 0;
 }
 
+std::string find_library_path(const std::string& lib_name) {
+    // First try to find the library using dlopen
+    void* handle = dlopen(lib_name.c_str(), RTLD_LAZY | RTLD_NOLOAD);
+    if (!handle) {
+        // If not loaded, try to load it
+        handle = dlopen(lib_name.c_str(), RTLD_LAZY);
+    }
+    
+    if (handle) {
+        // Get the path using dlinfo
+        struct link_map* link_map;
+        if (dlinfo(handle, RTLD_DI_LINKMAP, &link_map) == 0 && link_map) {
+            std::string path = link_map->l_name;
+            dlclose(handle);
+            if (!path.empty() && path != lib_name) {
+                clog << "Found library " << lib_name << " at: " << path << endl;
+                return path;
+            }
+        }
+        dlclose(handle);
+    }
+    
+    // Fallback: search in common library directories
+    std::vector<std::string> search_dirs = {
+        "/lib",
+        "/lib64", 
+        "/usr/lib",
+        "/usr/lib64",
+        "/lib/x86_64-linux-gnu",
+        "/usr/lib/x86_64-linux-gnu",
+        "/usr/lib/x86_64-linux-gnu/ceph",
+        "/usr/local/lib"
+    };
+    
+    // Try different possible filenames for the library
+    std::vector<std::string> possible_names;
+    if (lib_name.find(".so") == std::string::npos) {
+        // If no .so extension, try common patterns
+        possible_names.push_back("lib" + lib_name + ".so");
+        possible_names.push_back("lib" + lib_name + ".so.1");
+        possible_names.push_back("lib" + lib_name + ".so.2");
+    } else {
+        possible_names.push_back(lib_name);
+    }
+    
+    for (const auto& dir : search_dirs) {
+        for (const auto& name : possible_names) {
+            std::string full_path = dir + "/" + name;
+            if (access(full_path.c_str(), F_OK) == 0) {
+                clog << "Found library " << lib_name << " at: " << full_path << endl;
+                return full_path;
+            }
+        }
+    }
+    
+    return "";
+}
 
 int main(int argc, char **argv) {
   signal(SIGINT, signal_handler); 
@@ -321,10 +381,21 @@ int main(int argc, char **argv) {
 
   DwarfParser dwarfparser(rados_probes, probe_units);
   
-  std::string librbd_path = "/lib/x86_64-linux-gnu/librbd.so.1";
-  std::string librados_path = "/lib/x86_64-linux-gnu/librados.so.2";
-  std::string libceph_common_path = "/usr/lib/x86_64-linux-gnu/ceph/libceph-common.so.2";
-  
+  // Use the new function to find library paths dynamically
+  std::string librbd_path = find_library_path("librbd.so.1");
+  std::string librados_path = find_library_path("librados.so.2");
+  std::string libceph_common_path = find_library_path("libceph-common.so.2");
+
+  if(librbd_path.empty() || librados_path.empty() || libceph_common_path.empty()) {
+    cerr << "Error: Could not find one or more required Ceph libraries:" << endl;
+    if (librbd_path.empty()) cerr << "  - librbd.so.1 not found" << endl;
+    if (librados_path.empty()) cerr << "  - librados.so.2 not found" << endl;
+    if (libceph_common_path.empty()) cerr << "  - libceph-common.so.2 not found" << endl;
+    return 1;
+  } else {
+    clog << "Libraries to be traced: " << librbd_path << ", " << librados_path << ", " << libceph_common_path << endl;
+  }
+
   if (import_json) {
       clog << "Importing DWARF info from " << json_input_file << endl;
       if (!dwarfparser.import_from_json(json_input_file)) {
