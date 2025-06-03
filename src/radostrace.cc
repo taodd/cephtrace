@@ -198,67 +198,105 @@ static int handle_event(void *ctx, void *data, size_t size) {
     ss << std::hex << op_v->m_seed;
     std::string pgid(ss.str()); 
 
-    static bool firsttime = true;
-    if (firsttime) {
-      printf("     pid  client     tid  pool  pg     acting            w/r    size  latency     other\n");
-      firsttime = false;
-    }
-
-
-    printf("%8d%8lld%8lld%6lld%4s", 
-	    op_v->pid, op_v->cid, op_v->tid,
-	    op_v->m_pool, pgid.c_str()); 
+    // Define field widths based on actual data
+    struct FieldWidths {
+        int pid = 8;
+        int client = 8; 
+        int tid = 8;
+        int pool = 6;
+        int pg = 4;
+        int acting = 18;
+        int wr = 3;
+        int size = 7;
+        int latency = 8;
+    };
     
-    /*printf("pid:%d client.%lld tid %lld pgid %lld.%s object:%s %s osd.%d acting[%d %d %d] lat %lld ", 
-	    op_v->pid, op_v->cid, op_v->tid, 
-	    op_v->m_pool, pgid.c_str(), op_v->object_name, 
-	    op_v->rw & CEPH_OSD_FLAG_WRITE ? "W" : "R",
-	    op_v->target_osd, op_v->acting[0], op_v->acting[1], op_v->acting[2],
-	    (op_v->finish_stamp - op_v->sent_stamp) / 1000);*/
-
-    int acting_length = 4;
-    for (int i = 0; i < 8; ++i) {
-      if(op_v->acting[i] < 0) break;
-      acting_length += digitnum(op_v->acting[i]);
+    static FieldWidths widths;
+    static bool firsttime = true;
+    
+    if (firsttime) {
+        const char* header = "     pid  client     tid  pool  pg     acting            w/r    size  latency     other\n";
+        printf("%s", header);
+        
+        // Calculate field widths based on actual data from first event
+        widths.pid = MAX(8, (int)std::to_string(op_v->pid).length() + 1);
+        widths.client = MAX(8, (int)std::to_string(op_v->cid).length() + 1);
+        widths.tid = MAX(8, (int)std::to_string(op_v->tid).length() + 1);
+        widths.pool = MAX(6, (int)std::to_string(op_v->m_pool).length() + 1);
+        widths.pg = MAX(4, (int)pgid.length() + 1);
+        
+        // Calculate acting field width
+        std::stringstream acting_calc;
+        acting_calc << "     [";
+        bool first_acting = true;
+        for (int i = 0; i < 8; ++i) {
+            if(op_v->acting[i] < 0) break;
+            if (!first_acting) acting_calc << ",";
+            acting_calc << op_v->acting[i];
+            first_acting = false;
+        }
+        acting_calc << "]";
+        widths.acting = MAX(18, (int)acting_calc.str().length() + 1);
+        
+        widths.wr = 3; // "W" or "R" + padding
+        widths.size = MAX(7, (int)std::to_string(op_v->length).length() + 1);
+        
+        long long latency = (op_v->finish_stamp - op_v->sent_stamp) / 1000;
+        widths.latency = MAX(8, (int)std::to_string(latency).length() + 1);
+        
+        firsttime = false;
     }
-    printf("     [");
+
+    // Format output using calculated widths
+    printf("%*d%*lld%*lld%*lld%*s", 
+           widths.pid, op_v->pid,
+           widths.client, op_v->cid, 
+           widths.tid, op_v->tid,
+           widths.pool, op_v->m_pool, 
+           widths.pg, pgid.c_str()); 
+
+    // Handle acting field with dynamic spacing
+    std::stringstream acting_ss;
+    acting_ss << "     [";
     bool first = true;
     for (int i = 0; i < 8; ++i) {
-      if(op_v->acting[i] < 0) break;
-      if (!first) printf(",");
-      printf("%d", op_v->acting[i]);
-      first = false;
+        if(op_v->acting[i] < 0) break;
+        if (!first) acting_ss << ",";
+        acting_ss << op_v->acting[i];
+        first = false;
     }
-    printf("]");
-    int left_spaces = 18 - acting_length;
-    for (int i =0; i < left_spaces; ++i) printf(" "); 
+    acting_ss << "]";
+    
+    std::string acting_str = acting_ss.str();
+    printf("%*s", widths.acting, acting_str.c_str());
 
-    //print "WR"
-    printf("%s  ", op_v->rw & CEPH_OSD_FLAG_WRITE ? "W" : "R");
-    //print length
-    printf("%7lld", op_v->length);
+    // Format remaining fields with calculated widths
+    std::string wr_str = op_v->rw & CEPH_OSD_FLAG_WRITE ? "W" : "R";
+    printf("%*s%*lld%*lld", 
+           widths.wr, wr_str.c_str(),
+           widths.size, op_v->length,
+           widths.latency, (op_v->finish_stamp - op_v->sent_stamp) / 1000);
 
-    printf("%8lld", (op_v->finish_stamp - op_v->sent_stamp) / 1000);
-
+    // Object name and operations (no fixed width needed)
     printf("     %s ", op_v->object_name);
 
     printf("[");
     bool print_offset_length = false;
     for (int i = 0; i < op_v->ops_size; ++i) {
-      if (ceph_osd_op_extent(op_v->ops[i])) {
-        printf("%s ", ceph_osd_op_str(op_v->ops[i]));
-        print_offset_length = true;
-      } else if (ceph_osd_op_call(op_v->ops[i])) {
-        printf("call(%s.%s) ", op_v->cls_ops[i].cls_name, op_v->cls_ops[i].method_name);
-      } else {
-        printf("%s ", ceph_osd_op_str(op_v->ops[i]));
-      }
+        if (ceph_osd_op_extent(op_v->ops[i])) {
+            printf("%s ", ceph_osd_op_str(op_v->ops[i]));
+            print_offset_length = true;
+        } else if (ceph_osd_op_call(op_v->ops[i])) {
+            printf("call(%s.%s) ", op_v->cls_ops[i].cls_name, op_v->cls_ops[i].method_name);
+        } else {
+            printf("%s ", ceph_osd_op_str(op_v->ops[i]));
+        }
     }
     printf("]");
     if (print_offset_length) {
-      printf("[%lld, %lld]\n", op_v->offset, op_v->length);
+        printf("[%lld, %lld]\n", op_v->offset, op_v->length);
     } else {
-      printf("\n");
+        printf("\n");
     }
     return 0;
 }
