@@ -249,7 +249,7 @@ static int handle_event(void *ctx, void *data, size_t size) {
                widths.pool, "pool", 
                widths.pg, "pg",
                widths.acting, "acting",
-               widths.wr, "w/r",
+               widths.wr + 1, "w/r",
                widths.size, "size",
                widths.latency, "latency",
                "     object[ops]");
