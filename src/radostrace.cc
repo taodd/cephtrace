@@ -1,6 +1,6 @@
 //Main purpose for this client tracing
-//1. observe the latency client -> osds for each read/write, if possible, including the network latency and the process latency
-//   
+//observe the client <-> osds latency for each request.
+
 #include <bpf/libbpf.h>
 #include <errno.h>
 #include <getopt.h>
@@ -215,9 +215,6 @@ static int handle_event(void *ctx, void *data, size_t size) {
     static bool firsttime = true;
     
     if (firsttime) {
-        const char* header = "     pid  client     tid  pool  pg     acting            w/r    size  latency     other\n";
-        printf("%s", header);
-        
         // Calculate field widths based on actual data from first event
         widths.pid = MAX(8, (int)std::to_string(op_v->pid).length() + 1);
         widths.client = MAX(8, (int)std::to_string(op_v->cid).length() + 1);
@@ -236,13 +233,26 @@ static int handle_event(void *ctx, void *data, size_t size) {
             first_acting = false;
         }
         acting_calc << "]";
-        widths.acting = MAX(18, (int)acting_calc.str().length() + 1);
+        widths.acting = MAX(15, (int)acting_calc.str().length() + 1);
         
-        widths.wr = 3; // "W" or "R" + padding
-        widths.size = MAX(7, (int)std::to_string(op_v->length).length() + 1);
+        widths.wr = 4; // "W" or "R" + padding
+        widths.size = MAX(9, (int)std::to_string(op_v->length).length() + 1);
         
         long long latency = (op_v->finish_stamp - op_v->sent_stamp) / 1000;
-        widths.latency = MAX(8, (int)std::to_string(latency).length() + 1);
+        widths.latency = MAX(9, (int)std::to_string(latency).length() + 1);
+        
+        // Print header using calculated widths
+        printf("%*s%*s%*s%*s%*s%*s%*s%*s%s\n", 
+               widths.pid, "pid",
+               widths.client, "client", 
+               widths.tid, "tid",
+               widths.pool, "pool", 
+               widths.pg, "pg",
+               widths.acting, "acting",
+               widths.wr, "w/r",
+               widths.size, "size",
+               widths.latency, "latency",
+               "     object[ops]");
         
         firsttime = false;
     }
