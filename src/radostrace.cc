@@ -242,7 +242,7 @@ static int handle_event(void *ctx, void *data, size_t size) {
         widths.latency = MAX(9, (int)std::to_string(latency).length() + 1);
         
         // Print header using calculated widths
-        printf("%*s%*s%*s%*s%*s%*s%*s%*s%s\n", 
+        printf("%*s%*s%*s%*s%*s%*s%*s%*s%*s%s\n", 
                widths.pid, "pid",
                widths.client, "client", 
                widths.tid, "tid",
