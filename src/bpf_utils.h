@@ -56,28 +56,21 @@ __u64 fetch_register(const struct pt_regs *const ctx, int reg) {
   return v;
 
   /* switch case is not supported well by eBPF, we'll run into  unable to
-  deference modified ctx error switch (reg) { case 6: v = ctx->rbp; break; case
-  7: v = ctx->rsp; break; case 0: v = ctx->rax; break; case 1: v =
-  PT_REGS_PARM3(ctx); //rdx break; case 2: v = PT_REGS_PARM4(ctx); //rcx break;
-      case 3:
-          v = ctx->rbx;
-          break;
-      case 4:
-          v = PT_REGS_PARM2(ctx); //rsi
-          break;
-      case 5:
-          v = PT_REGS_PARM1(ctx); //rdi
-          break;
-      case 8:
-          v = PT_REGS_PARM5(ctx); //r8
-          break;
-      case 9:
-          v = ctx->r9;
-          break;
-      default:
-          break;
+  deference modified ctx error 
+  switch (reg) { 
+        case 6: v = ctx->rbp; break; 
+        case 7: v = ctx->rsp; break; 
+        case 0: v = ctx->rax; break; 
+        case 1: v = PT_REGS_PARM3(ctx); //rdx break; 
+        case 2: v = PT_REGS_PARM4(ctx); //rcx break;
+        case 3: v = ctx->rbx; break;
+        case 4: v = PT_REGS_PARM2(ctx); //rsi break;
+        case 5: v = PT_REGS_PARM1(ctx); //rdi break;
+        case 8: v = PT_REGS_PARM5(ctx); //r8 break;
+        case 9: v = PT_REGS_PARM6(ctx); //r9 break;
+        default: break;
   }
-  */
+  */ 
   return v;
 }
 
@@ -96,8 +89,8 @@ __u64 fetch_var_member_addr(__u64 cur_addr, struct VarField *vf) {
     }
   }
   cur_addr += vf->fields[1].offset;
-  
-  for (int i = 2; i < min(vf->size, 9); i++) {
+  int bound = min(max(vf->size, 0), 9);
+  for (int i = 2; i < bound; i++) { // Bounded loop supported since v5.3 kernel
     if (vf->fields[i].pointer) {
       bpf_probe_read_user(&tmpaddr, sizeof(tmpaddr), (void *)cur_addr);
       cur_addr = tmpaddr;
