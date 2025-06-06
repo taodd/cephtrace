@@ -85,9 +85,8 @@ __u64 fetch_register(const struct pt_regs *const ctx, int reg) {
 // deal with member dereference vf->size > 1
 __u64 fetch_var_member_addr(__u64 cur_addr, struct VarField *vf) {
   if (vf == NULL) return 0;
-  //__u64 cur_addr = fetch_register(ctx, vf->varloc.reg);
   if (cur_addr == 0) return 0;
-  // special handling for the first member
+  //Special handling for the first member
   __u64 tmpaddr;
   if (vf->varloc.stack) {
     cur_addr += vf->varloc.offset;
@@ -97,56 +96,14 @@ __u64 fetch_var_member_addr(__u64 cur_addr, struct VarField *vf) {
     }
   }
   cur_addr += vf->fields[1].offset;
-
-  if (2 >= vf->size) return cur_addr;
-  if (vf->fields[2].pointer) {
-    bpf_probe_read_user(&tmpaddr, sizeof(tmpaddr), (void *)cur_addr);
-    cur_addr = tmpaddr;
+  
+  for (int i = 2; i < min(vf->size, 9); i++) {
+    if (vf->fields[i].pointer) {
+      bpf_probe_read_user(&tmpaddr, sizeof(tmpaddr), (void *)cur_addr);
+      cur_addr = tmpaddr;
+    } 
+    cur_addr += vf->fields[i].offset;
   }
-  cur_addr += vf->fields[2].offset;
-
-  if (3 >= vf->size) return cur_addr;
-  if (vf->fields[3].pointer) {
-    bpf_probe_read_user(&tmpaddr, sizeof(tmpaddr), (void *)cur_addr);
-    cur_addr = tmpaddr;
-  }
-  cur_addr += vf->fields[3].offset;
-
-  if (4 >= vf->size) return cur_addr;
-  if (vf->fields[4].pointer) {
-    bpf_probe_read_user(&tmpaddr, sizeof(tmpaddr), (void *)cur_addr);
-    cur_addr = tmpaddr;
-  }
-  cur_addr += vf->fields[4].offset;
-
-  if (5 >= vf->size) return cur_addr;
-  if (vf->fields[5].pointer) {
-    bpf_probe_read_user(&tmpaddr, sizeof(tmpaddr), (void *)cur_addr);
-    cur_addr = tmpaddr;
-  }
-  cur_addr += vf->fields[5].offset;
-
-  if (6 >= vf->size) return cur_addr;
-  if (vf->fields[6].pointer) {
-    bpf_probe_read_user(&tmpaddr, sizeof(tmpaddr), (void *)cur_addr);
-    cur_addr = tmpaddr;
-  }
-  cur_addr += vf->fields[6].offset;
-
-  if (7 >= vf->size) return cur_addr;
-  if (vf->fields[7].pointer) {
-    bpf_probe_read_user(&tmpaddr, sizeof(tmpaddr), (void *)cur_addr);
-    cur_addr = tmpaddr;
-  }
-  cur_addr += vf->fields[7].offset;
-
-  if (8 >= vf->size) return cur_addr;
-  if (vf->fields[8].pointer) {
-    bpf_probe_read_user(&tmpaddr, sizeof(tmpaddr), (void *)cur_addr);
-    cur_addr = tmpaddr;
-  }
-  cur_addr += vf->fields[8].offset;
-
   return cur_addr;
 }
 
