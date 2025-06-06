@@ -101,58 +101,51 @@ __u64 fetch_var_member_addr(__u64 cur_addr, struct VarField *vf) {
   if (2 >= vf->size) return cur_addr;
   if (vf->fields[2].pointer) {
     bpf_probe_read_user(&tmpaddr, sizeof(tmpaddr), (void *)cur_addr);
-    cur_addr = tmpaddr + vf->fields[2].offset;
-  } else {
-    cur_addr += vf->fields[2].offset;
+    cur_addr = tmpaddr;
   }
+  cur_addr += vf->fields[2].offset;
 
   if (3 >= vf->size) return cur_addr;
   if (vf->fields[3].pointer) {
     bpf_probe_read_user(&tmpaddr, sizeof(tmpaddr), (void *)cur_addr);
-    cur_addr = tmpaddr + vf->fields[3].offset;
-  } else {
-    cur_addr += vf->fields[3].offset;
+    cur_addr = tmpaddr;
   }
+  cur_addr += vf->fields[3].offset;
 
   if (4 >= vf->size) return cur_addr;
   if (vf->fields[4].pointer) {
     bpf_probe_read_user(&tmpaddr, sizeof(tmpaddr), (void *)cur_addr);
-    cur_addr = tmpaddr + vf->fields[4].offset;
-  } else {
-    cur_addr += vf->fields[4].offset;
+    cur_addr = tmpaddr;
   }
+  cur_addr += vf->fields[4].offset;
 
   if (5 >= vf->size) return cur_addr;
   if (vf->fields[5].pointer) {
     bpf_probe_read_user(&tmpaddr, sizeof(tmpaddr), (void *)cur_addr);
-    cur_addr = tmpaddr + vf->fields[5].offset;
-  } else {
-    cur_addr += vf->fields[5].offset;
+    cur_addr = tmpaddr;
   }
+  cur_addr += vf->fields[5].offset;
 
   if (6 >= vf->size) return cur_addr;
   if (vf->fields[6].pointer) {
     bpf_probe_read_user(&tmpaddr, sizeof(tmpaddr), (void *)cur_addr);
-    cur_addr = tmpaddr + vf->fields[6].offset;
-  } else {
-    cur_addr += vf->fields[6].offset;
+    cur_addr = tmpaddr;
   }
+  cur_addr += vf->fields[6].offset;
 
   if (7 >= vf->size) return cur_addr;
   if (vf->fields[7].pointer) {
     bpf_probe_read_user(&tmpaddr, sizeof(tmpaddr), (void *)cur_addr);
-    cur_addr = tmpaddr + vf->fields[7].offset;
-  } else {
-    cur_addr += vf->fields[7].offset;
+    cur_addr = tmpaddr;
   }
+  cur_addr += vf->fields[7].offset;
 
   if (8 >= vf->size) return cur_addr;
   if (vf->fields[8].pointer) {
     bpf_probe_read_user(&tmpaddr, sizeof(tmpaddr), (void *)cur_addr);
-    cur_addr = tmpaddr + vf->fields[8].offset;
-  } else {
-    cur_addr += vf->fields[8].offset;
+    cur_addr = tmpaddr;
   }
+  cur_addr += vf->fields[8].offset;
 
   return cur_addr;
 }
