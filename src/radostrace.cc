@@ -1,6 +1,6 @@
 //Main purpose for this client tracing
 //observe the client <-> osds latency for each request.
-
+#include <bpf/bpf.h>
 #include <bpf/libbpf.h>
 #include <errno.h>
 #include <getopt.h>
@@ -107,8 +107,7 @@ void fill_map_hprobes(std::string mod_path, DwarfParser &dwarfparser, struct bpf
       for (int i = 0; i < vfk.size; ++i) {
         vfk.fields[i] = vf.fields[i];
       }
-      bpf_map__update_elem(hprobes, &key_idx, sizeof(key_idx), &vfk,
-                           sizeof(vfk), 0);
+      bpf_map_update_elem(bpf_map__fd(hprobes), &key_idx, &vfk, 0);
       ++key_idx;
     }
   }
