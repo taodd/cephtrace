@@ -1,6 +1,8 @@
 #ifndef BPF_UTILS_H
 #define BPF_UTILS_H
 
+#include <linux/kernel.h>
+
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 
@@ -31,52 +33,25 @@ __u32 get_tid() {
 }
 
 // currently only work for x86_64 arch
-__u64 fetch_register(const struct pt_regs *const ctx, int reg) {
+static __always_inline __u64 fetch_register(const struct pt_regs *const ctx, int reg) {
   __u64 v = 0;
-  if (reg == 4)
-    v = ctx->rsi;
-  else if (reg == 5)
-    v = ctx->rdi;
-  else if (reg == 6)
-    v = ctx->rbp;
-  else if (reg == 7)
-    v = ctx->rsp;
-  else if (reg == 8)
-    v = ctx->r8;
-  else if (reg == 9)
-    v = ctx->r9;
-  else if (reg == 0)
-    v = ctx->rax;
-  else if (reg == 1)
-    v = ctx->rdx;
-  else if (reg == 2)
-    v = ctx->rcx;
-  else if (reg == 3)
-    v = ctx->rbx;
-  else {
-    bpf_printk("unexpected register used\n");
+  switch (reg) {
+    case 0: v = ctx->rax; break;
+    case 1: v = ctx->rdx; break;
+    case 2: v = ctx->rcx; break;
+    case 3: v = ctx->rbx; break;
+    case 4: v = ctx->rsi; break;
+    case 5: v = ctx->rdi; break;
+    case 6: v = ctx->rbp; break;
+    case 7: v = ctx->rsp; break;
+    case 8: v = ctx->r8; break;
+    case 9: v = ctx->r9; break;
+    default:
+      bpf_printk("unexpected register used\n");
+      break;
   }
-  return v;
-
-  /* switch case is not supported well by eBPF, we'll run into  unable to
-  deference modified ctx error 
-  switch (reg) { 
-        case 6: v = ctx->rbp; break; 
-        case 7: v = ctx->rsp; break; 
-        case 0: v = ctx->rax; break; 
-        case 1: v = PT_REGS_PARM3(ctx); //rdx break; 
-        case 2: v = PT_REGS_PARM4(ctx); //rcx break;
-        case 3: v = ctx->rbx; break;
-        case 4: v = PT_REGS_PARM2(ctx); //rsi break;
-        case 5: v = PT_REGS_PARM1(ctx); //rdi break;
-        case 8: v = PT_REGS_PARM5(ctx); //r8 break;
-        case 9: v = PT_REGS_PARM6(ctx); //r9 break;
-        default: break;
-  }
-  */ 
   return v;
 }
-
 
 // deal with member dereference vf->size > 1
 __u64 fetch_var_member_addr(__u64 cur_addr, struct VarField *vf) {
