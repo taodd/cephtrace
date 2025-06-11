@@ -1,9 +1,6 @@
 #ifndef BPF_UTILS_H
 #define BPF_UTILS_H
 
-#define MAX(a, b) ((a) > (b) ? (a) : (b))
-#define MIN(a, b) ((a) < (b) ? (a) : (b))
-
 struct utime_t {
   __u32 sec;
   __u32 nsec;
@@ -56,7 +53,6 @@ __u64 fetch_register(const struct pt_regs *const ctx, int reg) {
   else {
     bpf_printk("unexpected register used\n");
   }
-  return v;
 
   /* switch case is not supported well by eBPF, we'll run into  unable to
   deference modified ctx error 
@@ -92,8 +88,10 @@ __u64 fetch_var_member_addr(__u64 cur_addr, struct VarField *vf) {
     }
   }
   cur_addr += vf->fields[1].offset;
-  int bound = MIN(MAX(vf->size, 0), 9);
-  for (int i = 2; i < bound; i++) { // Bounded loop supported since v5.3 kernel
+  // Bounded loop support since v5.3 kernel
+  // Use 9, hard coded bound is easier to pass the kernel verifier
+  for (int i = 2; i < 9; i++) { // Bounded loop supported since v5.3 kernel
+    if (vf->size <= i) break;
     if (vf->fields[i].pointer) {
       bpf_probe_read_user(&tmpaddr, sizeof(tmpaddr), (void *)cur_addr);
       cur_addr = tmpaddr;
