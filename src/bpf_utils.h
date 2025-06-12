@@ -3,9 +3,6 @@
 
 #include <linux/kernel.h>
 
-#define MAX(a, b) ((a) > (b) ? (a) : (b))
-#define MIN(a, b) ((a) < (b) ? (a) : (b))
-
 struct utime_t {
   __u32 sec;
   __u32 nsec;
@@ -67,8 +64,8 @@ __u64 fetch_var_member_addr(__u64 cur_addr, struct VarField *vf) {
     }
   }
   cur_addr += vf->fields[1].offset;
-  int bound = MIN(MAX(vf->size, 0), 9);
-  for (int i = 2; i < bound; i++) { // Bounded loop supported since v5.3 kernel
+  for (int i = 2; i < 9; i++) { // Bounded loop supported since v5.3 kernel
+    if(vf->size <= i) break;
     if (vf->fields[i].pointer) {
       bpf_probe_read_user(&tmpaddr, sizeof(tmpaddr), (void *)cur_addr);
       cur_addr = tmpaddr;

@@ -35,7 +35,7 @@ void initialize_value(struct client_op_k key) {
   bpf_map_update_elem(&ops, &key, &val, 0);
 }
 
-SEC("uprobe")
+SEC("uprobe/.*")
 int uprobe_send_op(struct pt_regs *ctx) {
   bpf_printk("Entered uprobe_send_op\n");
   int varid = 0;
@@ -270,7 +270,7 @@ int uprobe_send_op(struct pt_regs *ctx) {
   return 0;
 }
 
-SEC("uprobe")
+SEC("uprobe/.*")
 int uprobe_finish_op(struct pt_regs *ctx) {
   bpf_printk("Entered uprobe_finish_op\n");
   int varid = 20;
