@@ -48,7 +48,7 @@ struct {
   __uint(max_entries, 8192);
 } hprobes SEC(".maps");
 
-SEC("uprobe")
+SEC("uprobe/.*")
 int uprobe_enqueue_op(struct pt_regs *ctx) {
   int varid = 0;
   struct op_k key;
@@ -185,7 +185,7 @@ int uprobe_enqueue_op(struct pt_regs *ctx) {
   return 0;
 }
 
-SEC("uprobe")
+SEC("uprobe/.*")
 int uprobe_dequeue_op(struct pt_regs *ctx) {
   bpf_printk("Entered into uprobe_dequeue_op\n");
 
@@ -282,7 +282,7 @@ int uprobe_dequeue_op(struct pt_regs *ctx) {
   return 0;
 }
 
-SEC("uprobe")
+SEC("uprobe/.*")
 int uprobe_execute_ctx(struct pt_regs *ctx) {
   bpf_printk("Entered into uprobe_execute_ctx\n");
 
@@ -330,7 +330,7 @@ int uprobe_execute_ctx(struct pt_regs *ctx) {
 }
 
 //Not Attached
-SEC("uprobe")
+SEC("uprobe/.*")
 int uprobe_submit_transaction(struct pt_regs *ctx) {
   bpf_printk("Entered into uprobe_submit_transaction\n");
 
@@ -384,7 +384,7 @@ int uprobe_submit_transaction(struct pt_regs *ctx) {
 }
 
 // BlueStore::queue_transactions
-SEC("uprobe")
+SEC("uprobe/.*")
 int uprobe_queue_transactions(struct pt_regs *ctx) {
   bpf_printk("Entered into uprobe_queue_transactions\n");
   __u64 ptid = bpf_get_current_pid_tgid();
@@ -408,7 +408,7 @@ int uprobe_queue_transactions(struct pt_regs *ctx) {
 
 //Not attached
 // BlueStore::_do_write
-SEC("uprobe")
+SEC("uprobe/.*")
 int uprobe_do_write(struct pt_regs *ctx) {
   bpf_printk("Entered into uprobe_do_write\n");
   __u64 ptid = bpf_get_current_pid_tgid();
@@ -431,7 +431,7 @@ int uprobe_do_write(struct pt_regs *ctx) {
 
 // Not attach
 // BlueStore::_wctx_finish
-SEC("uprobe")
+SEC("uprobe/.*")
 int uprobe_wctx_finish(struct pt_regs *ctx) {
   bpf_printk("Entered into uprobe_wctx_finish\n");
   __u64 ptid = bpf_get_current_pid_tgid();
@@ -480,7 +480,7 @@ int uprobe_wctx_finish(struct pt_regs *ctx) {
 }
 
 // BlueStore::_txc_state_proc
-SEC("uprobe")
+SEC("uprobe/.*")
 int uprobe_txc_state_proc(struct pt_regs *ctx) {
   bpf_printk("Entered into uprobe_txc_state_proc\n");
   // read ctx->osr->px->sequencer_id
@@ -558,7 +558,7 @@ int uprobe_txc_state_proc(struct pt_regs *ctx) {
 int uprobe_txc_apply_kv(struct pt_regs *ctx) {
 }*/
 
-SEC("uprobe")
+SEC("uprobe/.*")
 int uprobe_log_op_stats(struct pt_regs *ctx) {
   bpf_printk("Entered into uprobe_log_op_stats\n");
   int varid = 90;
@@ -609,7 +609,7 @@ end:
   return 0;
 }
 
-SEC("uprobe")
+SEC("uprobe/.*")
 int uprobe_log_op_stats_v2(struct pt_regs *ctx) {
   bpf_printk("Entered into uprobe_log_op_stats v2\n");
   int varid = 90;
@@ -688,7 +688,7 @@ int uprobe_log_op_stats_v2(struct pt_regs *ctx) {
   return 0;
 }
 
-SEC("uprobe")
+SEC("uprobe/.*")
 int uprobe_generate_subop(struct pt_regs *ctx)
 {
   bpf_printk("Entered into uprobe_generate_subop\n");
@@ -747,7 +747,7 @@ int uprobe_generate_subop(struct pt_regs *ctx)
   return 0;
 }
 
-SEC("uprobe")
+SEC("uprobe/.*")
 int uprobe_do_repop_reply(struct pt_regs *ctx)
 {
   bpf_printk("Entered into uprobe_do_repop_reply\n");
@@ -804,7 +804,7 @@ int uprobe_do_repop_reply(struct pt_regs *ctx)
   return 0;
 }
 
-SEC("uprobe")
+SEC("uprobe/.*")
 int uprobe_mark_flag_point_string(struct pt_regs *ctx)
 {
   bpf_printk("Entered into mark_flag_point_string\n");
@@ -875,7 +875,7 @@ int uprobe_mark_flag_point_string(struct pt_regs *ctx)
   return 0;
 }
 
-SEC("uprobe")
+SEC("uprobe/.*")
 int uprobe_log_latency(struct pt_regs *ctx)
 {
   bpf_printk("Entered into log_latency\n");
@@ -908,7 +908,7 @@ int uprobe_log_latency(struct pt_regs *ctx)
 }
 
 //Not attach: it get inlined with production ceph-osd by gcc 
-SEC("uprobe")
+SEC("uprobe/.*")
 int uprobe_log_subop_stats(struct pt_regs *ctx)
 {
   bpf_printk("Entered into log_subop_stats\n");
@@ -970,7 +970,7 @@ int uprobe_log_subop_stats(struct pt_regs *ctx)
   return 0;
 }
 
-SEC("uprobe")
+SEC("uprobe/.*")
 int uprobe_ec_submit_transaction(struct pt_regs *ctx) {
   bpf_printk("Entered into uprobe_ec_submit_transaction\n");
 
@@ -1013,7 +1013,7 @@ int uprobe_ec_submit_transaction(struct pt_regs *ctx) {
 
 }
 
-SEC("uprobe")
+SEC("uprobe/.*")
 int uprobe_txc_calc_cost(struct pt_regs *ctx)
 {
   bpf_printk("Entered into _tcx_calc_cost\n");
@@ -1063,7 +1063,7 @@ int uprobe_txc_calc_cost(struct pt_regs *ctx)
 }
 
 
-SEC("uprobe")
+SEC("uprobe/.*")
 int uprobe_repop_commit(struct pt_regs *ctx)
 {
   bpf_printk("Entered into repop_commit\n");
