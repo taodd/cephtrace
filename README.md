@@ -35,11 +35,9 @@ sudo apt-get install libdebuginfod-dev
 You can also manually install debug packages in case debuginfod isn't working, please refer to [Getting dbgsymddeb Packages](https://ubuntu.com/server/docs/debug-symbol-packages#getting-dbgsymddeb-packages).
 These are required debug packages for each tool:
 - For ```radostrace```:
-```sudo apt-get install ceph-common-dbgsym librbd1-dbgsym librados2-dbgsym```
+```sudo apt-get install librbd1-dbgsym librados2-dbgsym```
 - For ```osdtrace```:
 ```sudo apt-get install ceph-osd-dbgsym```
-
-If tracing from a compute-only node that carries rbd client connections only, ```librbd1-dbgsym``` and ```librados2-dbgsym``` packages are sufficient to use ```radostrace```.
 
 ## Run radostrace
 ```radostrace``` can trace any librados based ceph client, including vm with rbd volume attached, rgw, cinder, glance...
