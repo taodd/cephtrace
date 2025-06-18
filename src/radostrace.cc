@@ -427,7 +427,7 @@ int main(int argc, char **argv) {
   clog << "Start to parse dwarf info" << endl;
   dwarfparser.add_module(librbd_path);
   dwarfparser.add_module(librados_path);
-  //dwarfparser.add_module(libceph_common_path);
+  dwarfparser.add_module(libceph_common_path);
   dwarfparser.parse();
 
   libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
