@@ -87,14 +87,16 @@ class DwarfParser {
   /**
    * Exports the module function data (func2pc and func2vf) to a JSON file
    * @param filename The path to the output JSON file
+   * @param version Optional version string to include in the JSON output
    */
-  void export_to_json(const std::string& filename);
+  void export_to_json(const std::string& filename, const std::string& version = "");
   /**
    * Imports the module function data (func2pc and func2vf) from a JSON file
    * @param filename The path to the input JSON file
+   * @param expected_version Optional expected version string to compare with JSON version
    * @return bool Returns true if import was successful, false otherwise
    */
-  bool import_from_json(const std::string& filename);
+  bool import_from_json(const std::string& filename, const std::string& expected_version = "");
 
   static const char* dwarf_attr_string(unsigned int attrnum);
   static const char* dwarf_form_string(unsigned int form);

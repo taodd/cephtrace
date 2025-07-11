@@ -369,6 +369,82 @@ std::string find_library_path(const std::string& lib_name) {
     return "";
 }
 
+std::string get_package_version(const std::string& library_path) {
+    // Extract the library name from the path
+    std::string lib_name;
+    size_t last_slash = library_path.find_last_of('/');
+    if (last_slash != std::string::npos) {
+        lib_name = library_path.substr(last_slash + 1);
+    } else {
+        lib_name = library_path;
+    }
+    
+    // Remove .so extension and version numbers
+    std::string base_name = lib_name;
+    size_t dot_pos = base_name.find(".so");
+    if (dot_pos != std::string::npos) {
+        base_name = base_name.substr(0, dot_pos);
+    }
+    
+    // Remove "lib" prefix if present
+    if (base_name.substr(0, 3) == "lib") {
+        base_name = base_name.substr(3);
+    }
+    
+    // Try to get version using dpkg
+    std::string cmd = "dpkg -s " + base_name + " 2>/dev/null | grep '^Version:' | cut -d' ' -f2";
+    FILE* pipe = popen(cmd.c_str(), "r");
+    if (!pipe) {
+        return "unknown";
+    }
+    
+    char buffer[256];
+    std::string result = "";
+    while (fgets(buffer, sizeof(buffer), pipe) != NULL) {
+        result += buffer;
+    }
+    pclose(pipe);
+    
+    // Remove trailing newline
+    if (!result.empty() && result[result.length()-1] == '\n') {
+        result.erase(result.length()-1);
+    }
+    
+    if (result.empty()) {
+        // Try alternative package names for Ceph libraries
+        std::vector<std::string> alt_names;
+        if (base_name == "rados") {
+            alt_names = {"librados2", "ceph-common"};
+        } else if (base_name == "rbd") {
+            alt_names = {"librbd1", "ceph-common"};
+        } else if (base_name == "ceph-common") {
+            alt_names = {"ceph-common"};
+        }
+        
+        for (const auto& alt_name : alt_names) {
+            cmd = "dpkg -s " + alt_name + " 2>/dev/null | grep '^Version:' | cut -d' ' -f2";
+            pipe = popen(cmd.c_str(), "r");
+            if (pipe) {
+                result = "";
+                while (fgets(buffer, sizeof(buffer), pipe) != NULL) {
+                    result += buffer;
+                }
+                pclose(pipe);
+                
+                if (!result.empty() && result[result.length()-1] == '\n') {
+                    result.erase(result.length()-1);
+                }
+                
+                if (!result.empty()) {
+                    break;
+                }
+            }
+        }
+    }
+    
+    return result.empty() ? "unknown" : result;
+}
+
 int main(int argc, char **argv) {
   signal(SIGINT, signal_handler); 
 
@@ -446,7 +522,17 @@ int main(int argc, char **argv) {
 
   if (import_json) {
       clog << "Importing DWARF info from " << json_input_file << endl;
-      if (!dwarfparser.import_from_json(json_input_file)) {
+      
+      // Get version information from the primary library (librados) for comparison
+      std::string version = get_package_version(librados_path);
+      if (version != "unknown") {
+          clog << "Current package version: " << version << endl;
+      } else {
+          clog << "Could not determine current package version for librados2, exit" << endl;
+          return 1;
+      }
+      
+      if (!dwarfparser.import_from_json(json_input_file, version)) {
           cerr << "Failed to import DWARF info from " << json_input_file << endl;
           return 1;
       }
@@ -460,7 +546,16 @@ int main(int argc, char **argv) {
       // Export DWARF info to JSON if requested
       if (export_json) {
           clog << "Exporting DWARF info to " << json_output_file << endl;
-          dwarfparser.export_to_json(json_output_file);
+          
+          // Get version information from the primary library (librados)
+          std::string version = get_package_version(librados_path);
+          if (version != "unknown") {
+              clog << "Detected package version: " << version << endl;
+          } else {
+              clog << "Could not determine package version for librados2, using 'unknown'" << endl;
+          }
+          
+          dwarfparser.export_to_json(json_output_file, version);
       }
   }
 

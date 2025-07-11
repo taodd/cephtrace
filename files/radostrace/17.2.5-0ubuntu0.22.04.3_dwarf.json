@@ -1,4 +1,5 @@
 {
+  "version": "17.2.5-0ubuntu0.22.04.3",
   "/lib/x86_64-linux-gnu/librados.so.2": {
     "func2pc": {
       "Objecter::_finish_op": 911184,

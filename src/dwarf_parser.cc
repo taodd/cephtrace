@@ -812,8 +812,13 @@ DwarfParser::DwarfParser(probes_t ps, vector<string> pus)
 
 DwarfParser::~DwarfParser() {}
 
-void DwarfParser::export_to_json(const std::string& filename) {
+void DwarfParser::export_to_json(const std::string& filename, const std::string& version) {
     json j;
+
+    // Add version information if provided
+    if (!version.empty()) {
+        j["version"] = version;
+    }
 
     // Convert both maps to JSON structure
     for (const auto& mod_pair : mod_func2vf) {
@@ -877,7 +882,7 @@ void DwarfParser::export_to_json(const std::string& filename) {
     out.close();
 }
 
-bool DwarfParser::import_from_json(const std::string& filename) {
+bool DwarfParser::import_from_json(const std::string& filename, const std::string& expected_version) {
     try {
         // Read JSON file
         std::ifstream input(filename);
@@ -890,12 +895,36 @@ bool DwarfParser::import_from_json(const std::string& filename) {
         input >> j;
         input.close();
 
+        // Check version compatibility if expected_version is provided
+        if (!expected_version.empty()) {
+            if (j.contains("version")) {
+                std::string json_version = j["version"].get<std::string>();
+                if (json_version != expected_version) {
+                    std::cerr << "Version mismatch! JSON file version: " << json_version 
+                              << ", Expected version: " << expected_version << std::endl;
+                    std::cerr << "The JSON file was generated for a different version of the library." << std::endl;
+                    std::cerr << "Please regenerate the JSON file or use the correct library version." << std::endl;
+                    return false;
+                }
+                std::cout << "Version check passed: " << json_version << std::endl;
+            } else {
+                std::cerr << "Error: JSON file does not contain version information." << std::endl;
+                std::cerr << "Expected version: " << expected_version << std::endl;
+                return false;
+            }
+        }
+
         // Clear existing data
         mod_func2pc.clear();
         mod_func2vf.clear();
 
         // Parse JSON structure
         for (const auto& [module, module_data] : j.items()) {
+            // Skip the version field as it's not a module
+            if (module == "version") {
+                continue;
+            }
+            
             // Import func2pc data
             if (module_data.contains("func2pc")) {
                 const auto& pc_obj = module_data["func2pc"];
