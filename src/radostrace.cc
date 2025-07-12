@@ -138,24 +138,29 @@ int attach_uprobe(struct radostrace_bpf *skel,
 	           DwarfParser &dp,
 	           std::string path,
 		   std::string funcname,
+		   int process_id = -1,
 		   int v = 0) {
 
   auto &func2pc = dp.mod_func2pc[path];
   size_t func_addr = func2pc[funcname];
   if (v > 0)
       funcname = funcname + "_v" + std::to_string(v); 
-  int pid = func_progid[funcname];
+  int prog_id = func_progid[funcname];
   struct bpf_link *ulink = bpf_program__attach_uprobe(
-      *skel->skeleton->progs[pid].prog, 
+      *skel->skeleton->progs[prog_id].prog, 
       false /* not uretprobe */,
-      -1,
+      process_id,  // Use the specified process ID
       path.c_str(), func_addr);
   if (!ulink) {
     cerr << "Failed to attach uprobe to " << funcname << endl;
     return -errno;
   }
 
-  clog << "uprobe " << funcname <<  " attached" << endl;
+  if (process_id > 0) {
+    clog << "uprobe " << funcname << " attached to process " << process_id << endl;
+  } else {
+    clog << "uprobe " << funcname << " attached to all processes" << endl;
+  }
   return 0;
 }
 
@@ -163,23 +168,28 @@ int attach_retuprobe(struct radostrace_bpf *skel,
 	           DwarfParser &dp,
 	           std::string path,
 		   std::string funcname,
+		   int process_id = -1,
 		   int v = 0) {
   auto &func2pc = dp.mod_func2pc[path];
   size_t func_addr = func2pc[funcname];
   if (v > 0)
       funcname = funcname + "_v" + std::to_string(v); 
-  int pid = func_progid[funcname];
+  int prog_id = func_progid[funcname];
   struct bpf_link *ulink = bpf_program__attach_uprobe(
-      *skel->skeleton->progs[pid].prog, 
+      *skel->skeleton->progs[prog_id].prog, 
       true /* uretprobe */,
-      -1,
+      process_id,  // Use the specified process ID
       path.c_str(), func_addr);
   if (!ulink) {
     cerr << "Failed to attach uretprobe to " << funcname << endl;
     return -errno;
   }
 
-  clog << "uretprobe " << funcname <<  " attached" << endl;
+  if (process_id > 0) {
+    clog << "uretprobe " << funcname << " attached to process " << process_id << endl;
+  } else {
+    clog << "uretprobe " << funcname << " attached to all processes" << endl;
+  }
   return 0;
 }
 
@@ -454,6 +464,7 @@ int main(int argc, char **argv) {
   bool import_json = false;
   std::string json_output_file = "radostrace_dwarf.json";
   std::string json_input_file;
+  int process_id = -1;  // Default to -1 (all processes)
 
   /* Parse arguments */
   for (int i = 1; i < argc; ++i) {
@@ -476,14 +487,28 @@ int main(int argc, char **argv) {
           if (i + 1 < argc) {
               json_input_file = argv[++i];
           } else {
-              std::cerr << "Error: -J/--import-json requires a filename argument\n";
+              std::cerr << "Error: -i/--import-json requires a filename argument\n";
+              return 1;
+          }
+      } else if (arg == "-p" || arg == "--pid") {
+          if (i + 1 < argc) {
+              try {
+                  process_id = std::stoi(argv[++i]);
+                  if (process_id <= 0) throw std::invalid_argument("Invalid PID");
+              } catch (...) {
+                  std::cerr << "Invalid process ID. Must be a positive integer.\n";
+                  return 1;
+              }
+          } else {
+              std::cerr << "Error: -p/--pid requires a process ID argument\n";
               return 1;
           }
       } else if (arg == "-h" || arg == "--help") {
-          std::cout << "Usage: " << argv[0] << " [-t <timeout seconds>] [--timeout <timeout seconds>] [-j [filename]] [-J <filename>]\n";
+          std::cout << "Usage: " << argv[0] << " [-t <timeout seconds>] [--timeout <timeout seconds>] [-j [filename]] [-i <filename>] [-p <pid>]\n";
           std::cout << "  -t, --timeout <seconds>    Set execution timeout in seconds\n";
-          std::cout << "  -j, --export-json <file>      Export DWARF info to JSON (default: radostrace_dwarf.json)\n";
+          std::cout << "  -j, --export-json <file>   Export DWARF info to JSON (default: radostrace_dwarf.json)\n";
           std::cout << "  -i, --import-json <file>   Import DWARF info from JSON file\n";
+          std::cout << "  -p, --pid <pid>            Attach uprobes only to the specified process ID\n";
           std::cout << "  -h, --help                 Show this help message\n";
           return 0;
       }
@@ -580,12 +605,12 @@ int main(int argc, char **argv) {
 
   clog << "BPF prog loaded" << endl;
 
-  attach_uprobe(skel, dwarfparser, librados_path, "Objecter::_send_op");
-  attach_uprobe(skel, dwarfparser, librbd_path, "Objecter::_send_op");
-  //attach_uprobe(skel, dwarfparser, libceph_common_path, "Objecter::_send_op");
-  attach_uprobe(skel, dwarfparser, librados_path, "Objecter::_finish_op");
-  attach_uprobe(skel, dwarfparser, librbd_path, "Objecter::_finish_op");
-  //attach_uprobe(skel, dwarfparser, libceph_common_path, "Objecter::_finish_op");
+  attach_uprobe(skel, dwarfparser, librados_path, "Objecter::_send_op", process_id);
+  attach_uprobe(skel, dwarfparser, librbd_path, "Objecter::_send_op", process_id);
+  //attach_uprobe(skel, dwarfparser, libceph_common_path, "Objecter::_send_op", process_id);
+  attach_uprobe(skel, dwarfparser, librados_path, "Objecter::_finish_op", process_id);
+  attach_uprobe(skel, dwarfparser, librbd_path, "Objecter::_finish_op", process_id);
+  //attach_uprobe(skel, dwarfparser, libceph_common_path, "Objecter::_finish_op", process_id);
 
   clog << "New a ring buffer" << endl;
 

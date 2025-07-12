@@ -9,7 +9,7 @@
 #include <vector>
 #include "nlohmann/json.hpp"  // nlohmann/json library
 
-using json = nlohmann::json;
+using json = nlohmann::ordered_json;
 class DwarfParser;
 static int handle_function(Dwarf_Die *, void *);
 static int handle_module(Dwfl_Module *, void **, const char *, Dwarf_Addr,

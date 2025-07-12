@@ -815,7 +815,7 @@ DwarfParser::~DwarfParser() {}
 void DwarfParser::export_to_json(const std::string& filename, const std::string& version) {
     json j;
 
-    // Add version information if provided
+    // Add version information first if provided (will appear at the top)
     if (!version.empty()) {
         j["version"] = version;
     }
