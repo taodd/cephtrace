@@ -28,7 +28,7 @@ INCLUDES := -I$(OUTPUT) \
 CLANG_BPF_SYS_INCLUDES := $(shell $(CLANG) -v -E - </dev/null 2>&1 | \
     sed -n '/<...> search starts here:/,/End of search list./{ s| \(/.*\)|-idirafter \1|p }')
 CXXFLAGS := -g -O2 -D__TARGET_ARCH_$(ARCH) $(INCLUDES) $(CLANG_BPF_SYS_INCLUDES)
-LIBS := $(LIBBPF_OBJ) -lelf -ldw -lz
+LIBS := $(LIBBPF_OBJ) -lelf -ldw -lz -ldl
 
 # Build verbosity control
 ifeq ($(V),1)
