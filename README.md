@@ -90,14 +90,12 @@ wget https://raw.githubusercontent.com/taodd/cephtrace/main/files/radostrace/17.
 sudo ./radostrace -i 17.2.6-0ubuntu0.22.04.2_dwarf.json
 ```
 
-**Note**: Make sure your system has the same Ceph version (17.2.6-0ubuntu0.22.04.2 in this example) as the JSON file. The tool will automatically verify version compatibility and exit with an error if versions don't match.
-
 ## Run radostrace
 ```radostrace``` can trace any librados based ceph client, including vm with rbd volume attached, rgw, cinder, glance...
 
 ### Basic Usage
 ```
-:~$ sudo ./radostrace
+:~$ sudo ./radostrace   # By default trace all processes(based on librados) on the host
 ```
 
 ### Advanced Options
