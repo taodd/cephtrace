@@ -39,12 +39,76 @@ These are required debug packages for each tool:
 - For ```osdtrace```:
 ```sudo apt-get install ceph-osd-dbgsym```
 
+## Using JSON Export/Import for Easy Deployment
+
+To avoid the need to install debug symbols on every target machine, you can export the DWARF information to a JSON file on a machine with debug symbols installed, then import it on other machines with the same Ceph version.
+
+### Step 1: Export DWARF Information (on a machine with debug symbols)
+
+First, export the DWARF information for your specific Ceph version:
+
+```bash
+# Export DWARF info for radostrace
+sudo ./radostrace -j radostrace_dwarf.json
+```
+
+This will create JSON files containing all the necessary DWARF information with version information embedded.
+
+### Step 2: Import and Use on Target Machines
+
+On any machine with the same Ceph version (but without debug symbols), you can import the JSON file:
+
+```bash
+# Use radostrace with imported DWARF data
+sudo ./radostrace -i radostrace_dwarf.json
+```
+
+### Version Compatibility
+
+The tools automatically check version compatibility when importing JSON files. If the target machine has a different Ceph version than what the JSON file was generated for, the tool will report an error and exit.
+
+### Benefits
+
+- **No debug symbols required** on target machines
+- **Faster startup** (no DWARF parsing needed)
+- **Consistent results** across machines with the same Ceph version
+- **Easy deployment** in production environments
+
+### Pre-generated JSON Files
+
+We provide pre-generated JSON files for Common Ceph versions in the `files/radostrace/` directory. These files are named with their corresponding version (e.g., `17.2.6-0ubuntu0.22.04.2_dwarf.json`).
+
+#### Example: Using a Pre-generated JSON File
+
+To use a specific version, download the corresponding JSON file and run radostrace with it:
+
+```bash
+# Download a specific version JSON file
+wget https://raw.githubusercontent.com/taodd/cephtrace/main/files/radostrace/17.2.6-0ubuntu0.22.04.2_dwarf.json
+
+# Run radostrace with the downloaded JSON file
+sudo ./radostrace -i 17.2.6-0ubuntu0.22.04.2_dwarf.json
+```
+
+**Note**: Make sure your system has the same Ceph version (17.2.6-0ubuntu0.22.04.2 in this example) as the JSON file. The tool will automatically verify version compatibility and exit with an error if versions don't match.
+
 ## Run radostrace
 ```radostrace``` can trace any librados based ceph client, including vm with rbd volume attached, rgw, cinder, glance...
-below is an example for tracing a vm which is doing 4k random read on a rbd volume.
+
+### Basic Usage
 ```
 :~$ sudo ./radostrace
 ```
+
+### Advanced Options
+```
+:~$ sudo ./radostrace -p <pid>          # Trace only the specified process ID
+:~$ sudo ./radostrace -t <seconds>      # Set execution timeout
+:~$ sudo ./radostrace -j <file>         # Export DWARF info to JSON file
+:~$ sudo ./radostrace -i <file>         # Import DWARF info from JSON file
+```
+
+Below is an example for tracing a vm which is doing 4k random read on a rbd volume:
 ```
      pid  client     tid  pool  pg     acting            w/r    size  latency     object[ops][offset,length]
    19015   34206  419357     2  1e     [1,11,121,77,0]     W        0     887     rbd_header.374de3730ad0[watch ]
