@@ -474,7 +474,6 @@ bool check_process_library_deleted(int pid, const std::string& lib_name) {
         // Format: start-end perms offset dev inode path
         if (line.find(lib_name) != std::string::npos) {
             // Check if the library is marked as deleted (old version still in memory)
-            clog << "librados found in pid " << pid << endl;
             if (line.find("(deleted)") != std::string::npos) {
                 is_deleted = true;
                 cerr << "librados is deleted in process " << pid << endl;
