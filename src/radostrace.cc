@@ -23,6 +23,8 @@
 #include <fstream>
 #include <dlfcn.h>
 #include <link.h>
+#include <dirent.h>
+#include <ctype.h>
 
 #include "radostrace.skel.h"
 
@@ -455,6 +457,97 @@ std::string get_package_version(const std::string& library_path) {
     return result.empty() ? "unknown" : result;
 }
 
+bool check_process_library_deleted(int pid, const std::string& lib_name) {
+    std::string maps_path = "/proc/" + std::to_string(pid) + "/maps";
+    std::ifstream maps_file(maps_path);
+    if (!maps_file.is_open()) {
+        cerr << "Error: Could not open " << maps_path << " for process " << pid << endl;
+        return true;
+    }
+    
+    std::string line;
+    bool is_deleted = false;
+    
+    // Look for the library in the process memory maps
+    while (std::getline(maps_file, line)) {
+        // Parse the maps line to extract the library path
+        // Format: start-end perms offset dev inode path
+        if (line.find(lib_name) != std::string::npos) {
+            // Check if the library is marked as deleted (old version still in memory)
+            clog << "librados found in pid " << pid << endl;
+            if (line.find("(deleted)") != std::string::npos) {
+                is_deleted = true;
+                cerr << "librados is deleted in process " << pid << endl;
+                break;
+            }
+        }
+    }
+    
+    maps_file.close();
+    return is_deleted;
+}
+
+// Check if the library is updated on disk and old version is still in use
+bool check_library_deleted(int process_id, const std::string& lib_name) {
+    
+    if (process_id > 0) {
+        // Check specific process
+        bool found_deleted = check_process_library_deleted(process_id, lib_name);
+        if (found_deleted) {
+            return true;
+        }
+    } else {
+        // Check all processes using lib_name
+        std::vector<int> pids;
+        
+        // Find all processes that have lib_name loaded
+        DIR* proc_dir = opendir("/proc");
+        if (!proc_dir) {
+            cerr << "Error: Could not open /proc directory" << endl;
+            return true;
+        }
+        
+        struct dirent* entry;
+        while ((entry = readdir(proc_dir)) != NULL) {
+            // Check if it's a numeric directory (process ID)
+            if (entry->d_type == DT_DIR && isdigit(entry->d_name[0])) {
+                int pid = std::stoi(entry->d_name);
+                std::string maps_path = "/proc/" + std::to_string(pid) + "/maps";
+                std::ifstream maps_file(maps_path);
+                
+                if (maps_file.is_open()) {
+                    std::string line;
+                    bool has_lib = false;
+                    
+                    while (std::getline(maps_file, line)) {
+                        if (line.find(lib_name) != std::string::npos) {
+                            has_lib = true;
+                            break;
+                        }
+                    }
+                    
+                    if (has_lib) {
+                        pids.push_back(pid);
+                    }
+                    
+                    maps_file.close();
+                }
+            }
+        }
+        closedir(proc_dir);
+        
+        // Check if any process is using deleted library 
+        for (int pid : pids) {
+            bool found_deleted = check_process_library_deleted(pid, lib_name);
+            if (found_deleted) {
+                return true;
+            }
+        }
+    }
+    
+    return false;
+}
+
 int main(int argc, char **argv) {
   signal(SIGINT, signal_handler); 
 
@@ -544,6 +637,13 @@ int main(int argc, char **argv) {
   } else {
     clog << "Libraries to be traced: " << librbd_path << ", " << librados_path << ", " << libceph_common_path << endl;
   }
+
+  if (check_library_deleted(process_id, "librados")) {
+     cerr << "Error: librados library mismatch detected!" << endl;
+     cerr << "The ceph package has been upgraded on disk, but one or more processes are still using the old version in memory." << endl;
+     cerr << "Please restart the affected processes to pick up the new version." << endl;
+     return 1;
+   }
 
   if (import_json) {
       clog << "Importing DWARF info from " << json_input_file << endl;
