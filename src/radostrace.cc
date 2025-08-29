@@ -84,6 +84,10 @@ DwarfParser::probes_t rados_probes = {
 
 volatile sig_atomic_t timeout_occurred = 0;
 
+// CSV Output
+bool export_csv = false;
+std::string csv_output_file = "radostrace_events.csv";
+
 const char * ceph_osd_op_str(int opc) {
     const char *op_str = NULL;
 #define GENERATE_CASE_ENTRY(op, opcode, str)	case CEPH_OSD_OP_##op: op_str=str; break;
@@ -208,7 +212,28 @@ static int handle_event(void *ctx, void *data, size_t size) {
     struct client_op_v * op_v = (struct client_op_v *)data;
     std::stringstream ss;
     ss << std::hex << op_v->m_seed;
-    std::string pgid(ss.str()); 
+    std::string pgid(ss.str());
+
+    // Properly Escape CSV Characters
+    auto csv_escape = [](const std::string& in) -> std::string {
+        bool need_quotes = false;
+        for (char c : in) {
+            if (c == ',' || c == '"' || c == '\n' || c == '\r') {
+                need_quotes = true;
+                break;
+            }
+        }
+        if (!need_quotes) return in;
+        std::string out;
+        out.reserve(in.size() + 2);
+        out.push_back('"');
+        for (char c : in) {
+            if (c == '"') out.push_back('"');
+            out.push_back(c);
+        }
+        out.push_back('"');
+        return out;
+    };
 
     // Define field widths based on actual data
     struct FieldWidths {
@@ -226,6 +251,87 @@ static int handle_event(void *ctx, void *data, size_t size) {
     static FieldWidths widths;
     static bool firsttime = true;
     
+    // Compile acting OSD list
+    std::stringstream acting_osd_list;
+    acting_osd_list << "[";
+    {
+        bool first = true;
+        for (int i = 0; i < 8; ++i) {
+            if (op_v->acting[i] < 0) break;
+            if (!first) acting_osd_list << ",";
+            acting_osd_list << op_v->acting[i];
+            first = false;
+        }
+        acting_osd_list << "]";
+    }
+    std::string acting_str = acting_osd_list.str();
+
+    // Compile Ops list
+    std::stringstream ops_list;
+    bool print_offset_length = false;
+    ops_list << "[";
+    for (int i = 0; i < op_v->ops_size; ++i) {
+        if (i) ops_list << " ";
+        if (ceph_osd_op_extent(op_v->ops[i])) {
+            ops_list << ceph_osd_op_str(op_v->ops[i]);
+            print_offset_length = true;
+        } else if (ceph_osd_op_call(op_v->ops[i])) {
+            ops_list << "call(" << op_v->cls_ops[i].cls_name
+                   << "." << op_v->cls_ops[i].method_name << ")";
+        } else {
+            ops_list << ceph_osd_op_str(op_v->ops[i]);
+        }
+    }
+    ops_list << "]";
+    std::string ops_str = ops_list.str();
+
+    long long latency_us = (op_v->finish_stamp - op_v->sent_stamp) / 1000;
+    std::string wr_str = (op_v->rw & CEPH_OSD_FLAG_WRITE) ? "W" : "R";
+
+    // CSV output
+    if (export_csv) {
+        static bool csv_headers_printed = false;
+        static FILE* csv_fp = nullptr;
+
+        // Open CSV file
+        if (!csv_fp) {
+            csv_fp = fopen(csv_output_file.c_str(), "w");
+            if (!csv_fp) {
+                perror("fopen for CSV output failure");
+                export_csv = false; // disable CSV output on failure
+            }
+        }
+        // Print CSV Headers
+        if (csv_fp && !csv_headers_printed) {
+            fprintf(csv_fp, "pid,client,tid,pool,pg,acting,WR,size,latency,object,ops,offset,length\n");
+            csv_headers_printed = true;
+        }
+
+        std::string offset_field = print_offset_length ? std::to_string(op_v->offset) : "";
+        std::string length_field = print_offset_length ? std::to_string(op_v->length) : "";
+
+        if (csv_fp) {
+            fprintf(csv_fp,
+               "%d,%lld,%lld,%lld,%s,%s,%s,%lld,%lld,%s,%s,%s,%s\n",
+                op_v->pid,
+                (long long)op_v->cid,
+                (long long)op_v->tid,
+                (long long)op_v->m_pool,
+                pgid.c_str(),
+                csv_escape(acting_str).c_str(),
+                wr_str.c_str(),
+                (long long)op_v->length,
+                (long long)latency_us,
+                csv_escape(op_v->object_name).c_str(),
+                csv_escape(ops_str).c_str(),
+                csv_escape(offset_field).c_str(),
+                csv_escape(length_field).c_str());
+
+            fflush(csv_fp); // Flush file to disk
+        }
+    }
+
+    // Standard output
     if (firsttime) {
         // Calculate field widths based on actual data from first event
         widths.pid = MAX(8, (int)std::to_string(op_v->pid).length() + 1);
@@ -233,25 +339,10 @@ static int handle_event(void *ctx, void *data, size_t size) {
         widths.tid = MAX(8, (int)std::to_string(op_v->tid).length() + 1);
         widths.pool = MAX(6, (int)std::to_string(op_v->m_pool).length() + 1);
         widths.pg = MAX(4, (int)pgid.length() + 1);
-        
-        // Calculate acting field width
-        std::stringstream acting_calc;
-        acting_calc << "     [";
-        bool first_acting = true;
-        for (int i = 0; i < 8; ++i) {
-            if(op_v->acting[i] < 0) break;
-            if (!first_acting) acting_calc << ",";
-            acting_calc << op_v->acting[i];
-            first_acting = false;
-        }
-        acting_calc << "]";
-        widths.acting = MAX(15, (int)acting_calc.str().length() + 1);
-        
-        widths.wr = 4; // "W" or "R" + padding
+        widths.acting = MAX(15, (int)acting_str.length() + 1);
+        widths.wr = 4;
         widths.size = MAX(9, (int)std::to_string(op_v->length).length() + 1);
-        
-        long long latency = (op_v->finish_stamp - op_v->sent_stamp) / 1000;
-        widths.latency = MAX(9, (int)std::to_string(latency).length() + 1);
+        widths.latency = MAX(9, (int)std::to_string(latency_us).length() + 1);
         
         // Print header using calculated widths
         printf("%*s%*s%*s%*s%*s%*s%*s%*s%*s%s\n", 
@@ -277,49 +368,23 @@ static int handle_event(void *ctx, void *data, size_t size) {
            widths.pool, op_v->m_pool, 
            widths.pg, pgid.c_str()); 
 
-    // Handle acting field with dynamic spacing
-    std::stringstream acting_ss;
-    acting_ss << "     [";
-    bool first = true;
-    for (int i = 0; i < 8; ++i) {
-        if(op_v->acting[i] < 0) break;
-        if (!first) acting_ss << ",";
-        acting_ss << op_v->acting[i];
-        first = false;
-    }
-    acting_ss << "]";
-    
-    std::string acting_str = acting_ss.str();
     printf("%*s", widths.acting, acting_str.c_str());
 
-    // Format remaining fields with calculated widths
-    std::string wr_str = op_v->rw & CEPH_OSD_FLAG_WRITE ? "W" : "R";
-    printf("%*s%*lld%*lld", 
+    printf("%*s%*lld%*lld",
            widths.wr, wr_str.c_str(),
            widths.size, op_v->length,
-           widths.latency, (op_v->finish_stamp - op_v->sent_stamp) / 1000);
+           widths.latency, latency_us);
 
     // Object name and operations (no fixed width needed)
     printf("     %s ", op_v->object_name);
+    printf("%s", ops_str.c_str());
 
-    printf("[");
-    bool print_offset_length = false;
-    for (int i = 0; i < op_v->ops_size; ++i) {
-        if (ceph_osd_op_extent(op_v->ops[i])) {
-            printf("%s ", ceph_osd_op_str(op_v->ops[i]));
-            print_offset_length = true;
-        } else if (ceph_osd_op_call(op_v->ops[i])) {
-            printf("call(%s.%s) ", op_v->cls_ops[i].cls_name, op_v->cls_ops[i].method_name);
-        } else {
-            printf("%s ", ceph_osd_op_str(op_v->ops[i]));
-        }
-    }
-    printf("]");
     if (print_offset_length) {
         printf("[%lld, %lld]\n", op_v->offset, op_v->length);
     } else {
         printf("\n");
     }
+
     return 0;
 }
 
@@ -582,6 +647,11 @@ int main(int argc, char **argv) {
               std::cerr << "Error: -i/--import-json requires a filename argument\n";
               return 1;
           }
+      } else if (arg == "-o" || arg == "--output") {
+          export_csv = true;
+          if (i + 1 < argc && argv[i + 1][0] != '-') {
+              csv_output_file = argv[++i];
+          }
       } else if (arg == "-p" || arg == "--pid") {
           if (i + 1 < argc) {
               try {
@@ -596,10 +666,11 @@ int main(int argc, char **argv) {
               return 1;
           }
       } else if (arg == "-h" || arg == "--help") {
-          std::cout << "Usage: " << argv[0] << " [-t <timeout seconds>] [--timeout <timeout seconds>] [-j [filename]] [-i <filename>] [-p <pid>]\n";
+          std::cout << "Usage: " << argv[0] << " [-t <timeout seconds>] [--timeout <timeout seconds>] [-j [filename]] [-i <filename>] [-o [filename]] [-p <pid>]\n";
           std::cout << "  -t, --timeout <seconds>    Set execution timeout in seconds\n";
           std::cout << "  -j, --export-json <file>   Export DWARF info to JSON (default: radostrace_dwarf.json)\n";
           std::cout << "  -i, --import-json <file>   Import DWARF info from JSON file\n";
+          std::cout << "  -o, --output <file>        Export events data info to CSV (default: radostrace_events.csv)\n";
           std::cout << "  -p, --pid <pid>            Attach uprobes only to the specified process ID\n";
           std::cout << "  -h, --help                 Show this help message\n";
           return 0;
