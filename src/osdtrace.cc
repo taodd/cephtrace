@@ -194,8 +194,10 @@ enum probe_mode_e probe_mode = OP_SINGLE_PROBE;
 static __u64 bootstamp = 0;
 
 int threshold = 0; //in millisecond
+int timeout = -1; //in seconds
 int probe_osdid = -1;
 
+volatile sig_atomic_t timeout_occurred = 0;
 
 static __u64 cnt = 0;
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format,
@@ -575,6 +577,12 @@ void signal_handler(int signum){
   exit(signum);
 }
 
+void timeout_handler(int signum) {
+    if (signum == SIGALRM) {
+        timeout_occurred = 1;
+    }
+}
+
 osd_op_t generate_op(op_v *val) {
   osd_op_t op;
   memset(&op, 0, sizeof(osd_op_t));
@@ -840,7 +848,7 @@ bool export_json = false;
 int process_id = -1;  // Default to -1
 int parse_args(int argc, char **argv) {
   char opt;
-  while ((opt = getopt(argc, argv, ":d:m:t:o:xbj:i:p:")) != -1) {
+  while ((opt = getopt(argc, argv, ":d:m:t:o:xbj:i:l:p:")) != -1) {
     switch (opt) {
       case 'd':
         period = optarg[0] - '0';
@@ -860,13 +868,13 @@ int parse_args(int argc, char **argv) {
         break;
       case 'x':
         probe_mode = OP_FULL_PROBE;
-	break;
+        break;
       case 'b':
         probe_mode = BLUESTORE_PROBE;
-	break;
+        break;
       case 'o':
-	probe_osdid = stoi(optarg);
-	break;
+        probe_osdid = stoi(optarg);
+        break;
       case 'j':
         export_json = true;
         json_output_file = optarg;
@@ -875,12 +883,43 @@ int parse_args(int argc, char **argv) {
         import_json = true;
         json_input_file = optarg;
         break;
+      case 'l':
+        try {
+            timeout = stoi(optarg);
+            if (timeout <= 0) throw std::invalid_argument("Negative timeout");
+        } catch (...) {
+            std::cerr << "Invalid timeout value. Must be a positive integer.\n";
+            exit(1);
+        }
+        break;
       case 'p':
         process_id = stoi(optarg);
         break;
       case '?':
-        clog << "Unknown option: " << optopt << endl;
-        return -1;
+      case 'h':
+        std::cout << "Usage: " << argv[0] << "[-d <seconds>] [-m <avg|max>] [-l <milliseconds>] [-o <osd-id>] [-x] [-b] [-j] [-i <filename>] [-t <seconds>] [-p <pid>]\n";
+        std::cout << "  -d <seconds>       Set probe duration in seconds to calculate average latency\n";
+        std::cout << "  -m <avg|max>       Set operation latency collection mode\n";
+        std::cout << "  -l <milliseconds>  Set operation latency threshold to capture\n";
+        std::cout << "  -o <od-id>         Only probe a specific OSD\n";
+        std::cout << "  -x                 Set probe mode to Full OPs. See below for details.\n";
+        std::cout << "  -b                 Set probe mode to Bluestore. See below for details.\n";
+        std::cout << "  -j                 Export DWARF parsing data\n";
+        std::cout << "  -i <filename>      Import JSON DWARF data from file\n";
+        std::cout << "  -t <seconds>       Set execution timeout in seconds\n";
+        std::cout << "  -p <pid>           Probe using a Process ID\n";
+        std::cout << "  -h                 Show this help message\n";
+        std::cout << "----------------------------------------------------------------------------------------------------------------------------------------\n";
+        std::cout << "                                                SUPPORTED PROBE MODE DETAILS\n";
+        std::cout << "----------------------------------------------------------------------------------------------------------------------------------------\n";
+        std::cout << "  Default:\n    PrimaryLogPG::log_op_stats\n";
+        std::cout << "  \n  Full Ops (-x):\n    OSD::dequeue_op\n";
+        std::cout << "    PrimaryLogPG::execute_ctx\n    ECBackend::submit_transaction\n    OpRequest::mark_flag_point_string\n";
+        std::cout << "    PrimaryLogPG::log_op_stats\n    ReplicatedBackend::generate_subop\n    ReplicatedBackend::do_repop_reply\n";
+        std::cout << "    BlueStore::queue_transactions\n    BlueStore::_txc_calc_cost\n    BlueStore::_txc_state_proc\n";
+        std::cout << "    ReplicatedBackend::repop_commit\n    OSD::enqueue_op\n";
+        std::cout << "  \n  Bluestore (-b):\n    BlueStore::log_latency\n";
+        exit(0);
       case ':':
         clog << "Missing arg for " << optopt << endl;
         return -1;
@@ -976,6 +1015,15 @@ int main(int argc, char **argv) {
   int ret = 0;
   struct ring_buffer *rb;
 
+  /* Set up timeout if provided */
+  if (timeout > 0) {
+      signal(SIGALRM, timeout_handler);
+      alarm(timeout);
+      std::cout << "Execution timeout set to " << timeout << " seconds.\n";
+  } else {
+      std::cout << "No execution timeout set (unlimited).\n";
+  }
+
   clog << "Start to parse ceph dwarf info" << endl;
 
   std::string osd_path = "/usr/bin/ceph-osd";
@@ -1066,7 +1114,12 @@ int main(int argc, char **argv) {
   clock_gettime(CLOCK_BOOTTIME, &lasttime);
   memset(op_stat, 0, MAX_OSD * sizeof(op_stat[0]));
 
-  while ((ret = ring_buffer__poll(rb, 1000)) >= 0) {
+  while ((!timeout_occurred || timeout == -1) && (ret = ring_buffer__poll(rb, 1000)) >= 0) {
+      // Continue polling while timeout hasn't occurred or if unlimited execution time
+  }
+
+  if (timeout_occurred) {
+      cerr << "Timeout occurred. Exiting." << endl;
   }
 
   /* we can also attach uprobe/uretprobe to any existing or future
@@ -1081,5 +1134,5 @@ cleanup:
   clog << "Clean up the eBPF program" << endl;
   ring_buffer__free(rb);
   osdtrace_bpf__destroy(skel);
-  return -errno;
+  return timeout_occurred ? -1 : -errno;
 }
