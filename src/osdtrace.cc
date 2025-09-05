@@ -467,7 +467,7 @@ void print_srl(int osd) {
     printf("%s | %d | ", size_ranges[idx].c_str(), l);
     sort(wv.begin(), wv.end());
     if(l > 0) {
-      print_lat_dist(wv, l);	
+      print_lat_dist(wv, l);
     }
     printf("\n");
     idx++;
@@ -863,7 +863,7 @@ int parse_args(int argc, char **argv) {
           return -1;
         }
         break;
-      case 't':
+      case 'l':
         threshold = stoi(optarg);
         break;
       case 'x':
@@ -883,7 +883,7 @@ int parse_args(int argc, char **argv) {
         import_json = true;
         json_input_file = optarg;
         break;
-      case 'l':
+      case 't':
         try {
             timeout = stoi(optarg);
             if (timeout <= 0) throw std::invalid_argument("Negative timeout");
@@ -904,8 +904,8 @@ int parse_args(int argc, char **argv) {
         std::cout << "  -o <od-id>         Only probe a specific OSD\n";
         std::cout << "  -x                 Set probe mode to Full OPs. See below for details.\n";
         std::cout << "  -b                 Set probe mode to Bluestore. See below for details.\n";
-        std::cout << "  -j                 Export DWARF parsing data\n";
-        std::cout << "  -i <filename>      Import JSON DWARF data from file\n";
+        std::cout << "  -j                 Export DWARF info to JSON file\n";
+        std::cout << "  -i <filename>      Import DWARF info from JSON file\n";
         std::cout << "  -t <seconds>       Set execution timeout in seconds\n";
         std::cout << "  -p <pid>           Probe using a Process ID\n";
         std::cout << "  -h                 Show this help message\n";
