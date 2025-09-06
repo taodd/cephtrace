@@ -1,0 +1,27 @@
+Source: cephtrace
+Rules-Requires-Root: no
+Section: devel
+Priority: optional
+Maintainer: Alan Baghumian <alan@technotux.org>
+Standards-Version: 4.7.2
+Build-Depends: clang,
+               debhelper (>= 13),
+               debhelper-compat (=13),
+               docutils,
+               g++,
+               libelf-dev,
+               libc6-dev-i386,
+               libdw-dev,
+               libcap-dev,
+               libbpf-dev,
+               nlohmann-json3-dev,
+               pkg-config
+Homepage: https://github.com/taodd/cephtrace/
+Vcs-Git: https://github.com/taodd/cephtrace.git
+
+Package: cephtrace
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: radostrace and osdtrace tools can provide a great insight on the
+ per-io based performance, and help to quickly identify any potential
+ performance bottlenecks.

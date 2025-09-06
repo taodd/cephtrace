@@ -901,9 +901,9 @@ int parse_args(int argc, char **argv) {
         std::cout << "  -d <seconds>       Set probe duration in seconds to calculate average latency\n";
         std::cout << "  -m <avg|max>       Set operation latency collection mode\n";
         std::cout << "  -l <milliseconds>  Set operation latency threshold to capture\n";
-        std::cout << "  -o <od-id>         Only probe a specific OSD\n";
-        std::cout << "  -x                 Set probe mode to Full OPs. See below for details.\n";
-        std::cout << "  -b                 Set probe mode to Bluestore. See below for details.\n";
+        std::cout << "  -o <osd-id>        Only probe a specific OSD\n";
+        std::cout << "  -x                 Set probe mode to Full OPs. See below for details\n";
+        std::cout << "  -b                 Set probe mode to Bluestore. See below for details\n";
         std::cout << "  -j                 Export DWARF info to JSON file\n";
         std::cout << "  -i <filename>      Import DWARF info from JSON file\n";
         std::cout << "  -t <seconds>       Set execution timeout in seconds\n";
