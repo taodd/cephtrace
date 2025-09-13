@@ -30,7 +30,7 @@ LIBBPF_OBJ := $(abspath $(OUTPUT)/libbpf.a)
 
 # Common objects and includes
 COMMON_OBJS := $(OUTPUT)/dwarf_parser.o $(OUTPUT)/version_utils.o
-PROG_OBJS := osdtrace radostrace
+PROG_OBJS := osdtrace radostrace kfstrace
 PROG_SRCS := $(addprefix $(OSDTRACE_SRC)/,$(addsuffix .cc,$(PROG_OBJS)))
 PROG_BPF_SRCS := $(addprefix $(OSDTRACE_SRC)/,$(addsuffix .bpf.c,$(PROG_OBJS)))
 
@@ -93,7 +93,7 @@ src-pkg:
 
 clean:
 	$(call msg,CLEAN)
-	$(Q)rm -rf $(OUTPUT) $(PROG_OBJS) $(DOCDIR)/*.8.gz $(DOCDIR)/*.in
+	$(Q)rm -rf $(OUTPUT) $(PROG_OBJS) $(DOCDIR)/*.8.gz $(DOCDIR)/*.in $(OSDTRACE_SRC)/ceph_btf.h
 
 $(OUTPUT) $(OUTPUT)/libbpf $(BPFTOOL_OUTPUT):
 	$(call msg,MKDIR,$@)
@@ -111,7 +111,34 @@ $(BPFTOOL): | $(BPFTOOL_OUTPUT)
 	$(call msg,BPFTOOL,$@)
 	$(Q)make ARCH= CROSS_COMPILE= OUTPUT=$(BPFTOOL_OUTPUT)/ -C $(BPFTOOL_SRC) bootstrap
 
-# Build BPF objects and skeletons
+# Generate Ceph BTF header
+$(OSDTRACE_SRC)/ceph_btf.h: | $(OUTPUT) $(BPFTOOL)
+	$(call msg,GEN-BTF,$@)
+	$(Q)if [ -f /sys/kernel/btf/ceph ]; then \
+		$(BPFTOOL) btf dump file /sys/kernel/btf/ceph format c > $@; \
+	else \
+		echo "ceph module BTF not found, trying to load module..."; \
+		if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then \
+			if sudo modprobe ceph 2>/dev/null && [ -f /sys/kernel/btf/ceph ]; then \
+				$(BPFTOOL) btf dump file /sys/kernel/btf/ceph format c > $@; \
+			else \
+				echo "Error: Failed to load ceph module or BTF not available"; \
+				echo "Please run: sudo modprobe ceph"; \
+				exit 1; \
+			fi; \
+		else \
+			echo "Error: ceph module not loaded and cannot load automatically"; \
+			echo "Please run: sudo modprobe ceph"; \
+			exit 1; \
+		fi; \
+	fi
+
+# Build BPF objects and skeletons  
+$(OUTPUT)/kfstrace.bpf.o: $(OSDTRACE_SRC)/kfstrace.bpf.c $(OSDTRACE_SRC)/ceph_btf.h $(LIBBPF_OBJ) | $(OUTPUT) $(BPFTOOL)
+	$(call msg,BPF,$@)
+	$(Q)$(CLANG) -g -O2 -target bpf $(CXXFLAGS) -c $< -o $(patsubst %.bpf.o,%.tmp.bpf.o,$@)
+	$(Q)$(BPFTOOL) gen object $@ $(patsubst %.bpf.o,%.tmp.bpf.o,$@)
+
 $(OUTPUT)/%.bpf.o: $(OSDTRACE_SRC)/%.bpf.c $(LIBBPF_OBJ) | $(OUTPUT) $(BPFTOOL)
 	$(call msg,BPF,$@)
 	$(Q)$(CLANG) -g -O2 -target bpf $(CXXFLAGS) -c $< -o $(patsubst %.bpf.o,%.tmp.bpf.o,$@)
@@ -136,6 +163,11 @@ $(OUTPUT)/version_utils.o: $(OSDTRACE_SRC)/version_utils.cc $(OSDTRACE_SRC)/*.h 
 	$(call msg,CXX,$@)
 	$(Q)$(CXX) $(CXXFLAGS) -c -o $@ $<
 
+# Special rule for kfstrace.o since it doesn't need dwarf_parser
+$(OUTPUT)/kfstrace.o: $(OSDTRACE_SRC)/kfstrace.cc $(OSDTRACE_SRC)/bpf_ceph_types.h $(OUTPUT)/kfstrace.skel.h | $(OUTPUT) $(LIBBPF_OBJ)
+	$(call msg,CXX,$@)
+	$(Q)$(CXX) $(CXXFLAGS) -c -o $@ $<
+
 # Build final executables
 define build_rule
 $(1): $(OUTPUT)/$(1).o $(COMMON_OBJS) $(OUTPUT)/$(1).skel.h $(LIBBPF_OBJ) | $(OUTPUT)
@@ -143,6 +175,12 @@ $(1): $(OUTPUT)/$(1).o $(COMMON_OBJS) $(OUTPUT)/$(1).skel.h $(LIBBPF_OBJ) | $(OU
 	$(Q)$$(CXX) $$(CXXFLAGS) -o $$@ $$< $$(COMMON_OBJS) $$(LIBS)
 endef
 
-$(foreach prog,$(PROG_OBJS),$(eval $(call build_rule,$(prog))))
+# Special rule for kfstrace - doesn't need dwarf_parser
+kfstrace: $(OUTPUT)/kfstrace.o $(OUTPUT)/kfstrace.skel.h $(LIBBPF_OBJ) | $(OUTPUT)
+	$(call msg,LINK,$@)
+	$(Q)$(CXX) $(CXXFLAGS) -o $@ $< $(LIBBPF_OBJ) -lelf -lz -ldl
+
+# Apply build rule to other programs (osdtrace and radostrace)
+$(foreach prog,$(filter-out kfstrace,$(PROG_OBJS)),$(eval $(call build_rule,$(prog))))
 
 
