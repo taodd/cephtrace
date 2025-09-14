@@ -21,10 +21,6 @@ struct request_key {
     __u64 tid;        // Transaction ID
 };
 
-// Ceph operation mode flags
-#define CEPH_OSD_OP_MODE_RD    0x1000
-#define CEPH_OSD_OP_MODE_WR    0x2000
-#define CEPH_OSD_OP_MODE_RMW   0x3000
 
 // Check if operation is extent-based (uses offset/length)
 static inline int ceph_osd_op_extent(int op)
@@ -57,7 +53,6 @@ struct kernel_request_info {
     __u32 pid;              // Process ID
     char object_name[CEPH_OID_INLINE_LEN];
     __u32 object_name_len;
-    __u16 op_type;
     __u8 is_read;
     __u8 is_write;
     __u64 pool_id;          // Pool ID
@@ -71,7 +66,7 @@ struct kernel_request_info {
 
 struct kernel_trace_event {
     __u64 tid;
-    __u64 client_id;        // Ceph client entity number  
+    __u64 client_id;        // Ceph client entity number
     __u64 start_time;
     __u64 end_time;
     __u64 latency_us;
@@ -81,7 +76,6 @@ struct kernel_trace_event {
     __u32 pid;              // Process ID
     char object_name[CEPH_OID_INLINE_LEN];
     __u32 object_name_len;
-    __u16 op_type;
     __u8 is_read;
     __u8 is_write;
     __u64 pool_id;          // Pool ID
@@ -190,6 +184,14 @@ int trace_send_request(struct pt_regs *ctx)
         info.pg_id = spgid.pgid.seed;  // This should be the calculated PG ID
         bpf_printk("trace_send_request: pool_id=%llu, pg_id=%u\n", info.pool_id, info.pg_id);
     }
+
+    // Read flags from target and determine read/write based on CEPH_OSD_FLAG_WRITE
+    __u32 flags;
+    if (bpf_core_read(&flags, sizeof(flags), &target->flags) == 0) {
+        info.is_write = (flags & CEPH_OSD_FLAG_WRITE) ? 1 : 0;
+        info.is_read = !info.is_write;  // If not write, then it's read
+        bpf_printk("trace_send_request: flags=0x%x, is_write=%u, is_read=%u\n", flags, info.is_write, info.is_read);
+    }
     
     // Read all operations from the r_ops array
     __u32 r_num_ops;
@@ -204,12 +206,6 @@ int trace_send_request(struct pt_regs *ctx)
             if (bpf_core_read(&op_type, sizeof(op_type), &req->r_ops[i].op) == 0) {
                 info.ops[i] = op_type;
                 
-                // For the first operation, set legacy fields
-                if (i == 0) {
-                    info.op_type = op_type;
-                    info.is_read = (op_type & CEPH_OSD_OP_MODE_RD) ? 1 : 0;
-                    info.is_write = (op_type & CEPH_OSD_OP_MODE_WR) ? 1 : 0;
-                }
                 
                 // Extract offset and length for extent operations
                 if (ceph_osd_op_extent(op_type)) {
@@ -350,7 +346,6 @@ int trace_osd_dispatch(struct pt_regs *ctx)
     }
     
     // Copy operation type information
-    event->op_type = info->op_type;
     event->is_read = info->is_read;
     event->is_write = info->is_write;
     

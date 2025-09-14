@@ -41,7 +41,6 @@ struct kernel_trace_event {
     __u32 pid;
     char object_name[CEPH_OID_INLINE_LEN];
     __u32 object_name_len;
-    __u16 op_type;
     __u8 is_read;
     __u8 is_write;
     __u64 pool_id;
