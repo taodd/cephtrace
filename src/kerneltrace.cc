@@ -69,19 +69,23 @@ const char * ceph_osd_op_str(int opc) {
     return op_str;
 }
 
-// Format ops array similar to radostrace
+// Format ops array with offset/length integrated
 static std::string format_ops(const kernel_trace_event* event)
 {
     std::stringstream ops_list;
     ops_list << "[";
+    bool first = true;
     for (int i = 0; i < event->ops_size && i < CEPH_OSD_MAX_OPS; i++) {
         if (i > 0) ops_list << " ";
-        
+
+        if (!first) 
+                ops_list << ","; 
+        first = false;
         // Check if this is a call operation with class and method names
-        if (event->ops[i] == CEPH_OSD_OP_CALL && 
-            strlen(event->cls_ops[i].cls_name) > 0 && 
+        if (event->ops[i] == CEPH_OSD_OP_CALL &&
+            strlen(event->cls_ops[i].cls_name) > 0 &&
             strlen(event->cls_ops[i].method_name) > 0) {
-            ops_list << "call(" << event->cls_ops[i].cls_name 
+            ops_list << "call(" << event->cls_ops[i].cls_name
                      << "." << event->cls_ops[i].method_name << ")";
         } else {
             const char* op_name = ceph_osd_op_str(event->ops[i]);
@@ -89,6 +93,11 @@ static std::string format_ops(const kernel_trace_event* event)
                 ops_list << op_name;
             } else {
                 ops_list << "op_" << event->ops[i];
+            }
+
+            // Add offset and length for extent-based operations (offset can be 0, check length > 0)
+            if (ceph_osd_op_extent(event->ops[i]) && event->length > 0) {
+                ops_list << "(" << event->offset << "," << event->length << ")";
             }
         }
     }
@@ -150,16 +159,12 @@ static int handle_event(void *ctx, void *data, size_t data_sz)
         op_str = "OTHER";
     }
 
-    // Format ops array
+    // Format ops array (now includes offset/length for extent operations)
     std::string ops_str = format_ops(event);
-    
-    // Format offset and length (only show if it's an extent operation)
-    std::string offset_str = (event->offset > 0) ? std::to_string(event->offset) : "";
-    std::string length_str = (event->length > 0) ? std::to_string(event->length) : "";
-    
-    printf("%-8s %-8u %-10llu %-16llu %-8llu %-8u %-6s %-20s %-32s %-20s %-10s %-10s %-10llu us\n",
+
+    printf("%-8s %-8u %-10llu %-16llu %-8llu %-8u %-6s %-20s %-32s %-30s %-12llu\n",
            ts, event->pid, event->client_id, event->tid, event->pool_id, event->pg_id, op_str, acting_set,
-           object_name, ops_str.c_str(), offset_str.c_str(), length_str.c_str(), event->latency_us);
+           object_name, ops_str.c_str(), event->latency_us);
 
     return 0;
 }
@@ -249,8 +254,8 @@ int main(int argc, char **argv)
     }
 
     printf("Tracing Ceph kernel client requests... Press Ctrl+C to stop.\n");
-    printf("%-8s %-8s %-10s %-16s %-8s %-8s %-6s %-20s %-32s %-20s %-10s %-10s %-10s\n", 
-           "TIME", "PID", "CLIENT_ID", "TID", "POOL", "PG", "OP", "ACTING_SET", "OBJECT", "OPS", "OFFSET", "LENGTH", "LATENCY");
+    printf("%-8s %-8s %-10s %-16s %-8s %-8s %-6s %-20s %-32s %-30s %-12s\n",
+           "TIME", "PID", "CLIENT_ID", "TID", "POOL", "PG", "OP", "ACTING_SET", "OBJECT", "OPS", "LATENCY(us)");
 
     // Set up timeout if specified  
     start_time = time(NULL);

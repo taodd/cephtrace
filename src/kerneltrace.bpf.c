@@ -43,33 +43,12 @@ static inline int ceph_osd_op_call(int op)
     return op == CEPH_OSD_OP_CALL;
 }
 
-struct kernel_request_info {
-    __u64 tid;
-    __u64 client_id;        // Ceph client entity number
-    __u64 start_time;
-    __u32 primary_osd;
-    __u32 acting_osds[CEPH_PG_MAX_SIZE];
-    __u32 acting_size;
-    __u32 pid;              // Process ID
-    char object_name[CEPH_OID_INLINE_LEN];
-    __u32 object_name_len;
-    __u8 is_read;
-    __u8 is_write;
-    __u64 pool_id;          // Pool ID
-    __u32 pg_id;            // Actual PG ID (seed % pg_num)
-    __u16 ops[CEPH_OSD_MAX_OPS];  // Array of operation types
-    __u8 ops_size;          // Number of operations
-    __u64 offset;           // Offset for extent operations
-    __u64 length;           // Length for extent operations
-    struct cls_op cls_ops[CEPH_OSD_MAX_OPS];  // Class operation names
-};
-
 struct kernel_trace_event {
     __u64 tid;
     __u64 client_id;        // Ceph client entity number
     __u64 start_time;
-    __u64 end_time;
-    __u64 latency_us;
+    __u64 end_time;         // Set to 0 in pending requests, filled on completion
+    __u64 latency_us;       // Set to 0 in pending requests, calculated on completion
     __u32 primary_osd;
     __u32 acting_osds[CEPH_PG_MAX_SIZE];
     __u32 acting_size;
@@ -91,7 +70,7 @@ struct {
     __uint(type, BPF_MAP_TYPE_HASH);
     __uint(max_entries, MAX_REQUESTS);
     __type(key, struct request_key);  // client_id + tid
-    __type(value, struct kernel_request_info);
+    __type(value, struct kernel_trace_event);
 } pending_requests SEC(".maps");
 
 struct {
@@ -103,7 +82,7 @@ SEC("kprobe/send_request")
 int trace_send_request(struct pt_regs *ctx)
 {
     struct ceph_osd_request *req = (struct ceph_osd_request *)PT_REGS_PARM1(ctx);
-    struct kernel_request_info info = {};
+    struct kernel_trace_event info = {};
     struct request_key key = {};
     __u64 tid;
     __u32 primary_osd;
@@ -129,17 +108,14 @@ int trace_send_request(struct pt_regs *ctx)
     // Extract Ceph client ID from req->r_osdc->client->msgr structure
     struct ceph_osd_client *osdc;
     struct ceph_client *client;
-    struct ceph_messenger *msgr;
     struct ceph_entity_name entity_name;
     __u64 client_id = 0;
-    
+
     // Follow the chain: req->r_osdc->client->msgr to get client entity
     if (bpf_core_read(&osdc, sizeof(osdc), &req->r_osdc) == 0 &&
-        bpf_core_read(&client, sizeof(client), &osdc->client) == 0) {
-        // Try to read the client entity name from the messenger
-        if (bpf_core_read(&entity_name, sizeof(entity_name), &client->msgr.inst.name) == 0) {
-            client_id = entity_name.num;
-        }
+        bpf_core_read(&client, sizeof(client), &osdc->client) == 0 &&
+        bpf_core_read(&entity_name, sizeof(entity_name), &client->msgr.inst.name) == 0) {
+        client_id = entity_name.num;
     }
     
     bpf_printk("trace_send_request: client_id=%llu\n", client_id);
@@ -207,17 +183,11 @@ int trace_send_request(struct pt_regs *ctx)
                 info.ops[i] = op_type;
                 
                 
-                // Extract offset and length for extent operations
-                if (ceph_osd_op_extent(op_type)) {
-                    __u64 offset, length;
-                    if (bpf_core_read(&offset, sizeof(offset), &req->r_ops[i].extent.offset) == 0) {
-                        info.offset = offset;
-                        bpf_printk("trace_send_request: offset=%llu\n", offset);
-                    }
-                    if (bpf_core_read(&length, sizeof(length), &req->r_ops[i].extent.length) == 0) {
-                        info.length = length;
-                        bpf_printk("trace_send_request: length=%llu\n", length);
-                    }
+                // Extract offset and length for extent operations (from first extent op only)
+                if (ceph_osd_op_extent(op_type) && info.offset == 0 && info.length == 0) {
+                    bpf_core_read(&info.offset, sizeof(info.offset), &req->r_ops[i].extent.offset);
+                    bpf_core_read(&info.length, sizeof(info.length), &req->r_ops[i].extent.length);
+                    bpf_printk("trace_send_request: offset=%llu, length=%llu\n", info.offset, info.length);
                 } else if (ceph_osd_op_call(op_type)) {
                     // Extract class name and method name for call operations
                     const char *class_name = NULL;
@@ -269,7 +239,7 @@ int trace_osd_dispatch(struct pt_regs *ctx)
     struct ceph_connection *con = (struct ceph_connection *)PT_REGS_PARM1(ctx);
     struct ceph_msg *msg = (struct ceph_msg *)PT_REGS_PARM2(ctx);
     struct request_key key = {};
-    struct kernel_request_info *info;
+    struct kernel_trace_event *info;
     struct kernel_trace_event *event;
     __u64 end_time;
     
@@ -315,66 +285,13 @@ int trace_osd_dispatch(struct pt_regs *ctx)
     event = bpf_ringbuf_reserve(&rb, sizeof(struct kernel_trace_event), 0);
     if (!event)
         goto cleanup;
-    
-    event->tid = key.tid;
-    event->client_id = info->client_id;
-    event->start_time = info->start_time;
+
+    // Copy the entire structure from pending request
+    *event = *info;
+
+    // Update completion fields
     event->end_time = end_time;
     event->latency_us = (end_time - info->start_time) / 1000;
-    event->primary_osd = info->primary_osd;
-    event->acting_size = info->acting_size;
-    event->pid = info->pid;
-    
-    // Copy acting OSDs array
-    for (int i = 0; i < info->acting_size && i < CEPH_PG_MAX_SIZE; i++) {
-        event->acting_osds[i] = info->acting_osds[i];
-    }
-    
-    // Copy object name with proper bounds checking
-    event->object_name_len = info->object_name_len;
-    if (event->object_name_len >= CEPH_OID_INLINE_LEN) {
-        event->object_name_len = CEPH_OID_INLINE_LEN - 1;
-    }
-    
-    for (int i = 0; i < event->object_name_len && i < CEPH_OID_INLINE_LEN - 1; i++) {
-        event->object_name[i] = info->object_name[i];
-    }
-    
-    // Ensure null termination with bounds check
-    if (event->object_name_len < CEPH_OID_INLINE_LEN) {
-        event->object_name[event->object_name_len] = '\0';
-    }
-    
-    // Copy operation type information
-    event->is_read = info->is_read;
-    event->is_write = info->is_write;
-    
-    // Copy pool and PG information
-    event->pool_id = info->pool_id;
-    event->pg_id = info->pg_id;
-    
-    // Copy ops information
-    event->ops_size = info->ops_size;
-    event->offset = info->offset;
-    event->length = info->length;
-    for (int i = 0; i < info->ops_size && i < CEPH_OSD_MAX_OPS; i++) {
-        event->ops[i] = info->ops[i];
-    }
-    
-    // Copy class operation information
-    for (int i = 0; i < info->ops_size && i < CEPH_OSD_MAX_OPS; i++) {
-        // Copy class name strings directly (they are already null-terminated from send_request)
-        for (int j = 0; j < sizeof(info->cls_ops[i].cls_name) && j < sizeof(event->cls_ops[i].cls_name); j++) {
-            event->cls_ops[i].cls_name[j] = info->cls_ops[i].cls_name[j];
-            if (event->cls_ops[i].cls_name[j] == '\0') break;
-        }
-        
-        // Copy method name strings directly
-        for (int j = 0; j < sizeof(info->cls_ops[i].method_name) && j < sizeof(event->cls_ops[i].method_name); j++) {
-            event->cls_ops[i].method_name[j] = info->cls_ops[i].method_name[j];
-            if (event->cls_ops[i].method_name[j] == '\0') break;
-        }
-    }
     
     bpf_ringbuf_submit(event, 0);
     
