@@ -28,6 +28,10 @@
 #define CEPH_OID_INLINE_LEN 32
 #define CEPH_OSD_MAX_OPS 3
 
+// MDS tracing constants (must match eBPF definitions)
+#define CEPH_MDS_OP_NAME_MAX 32
+#define CEPH_MDS_PATH_MAX 128
+
 
 struct kernel_trace_event {
     __u64 tid;
@@ -50,6 +54,26 @@ struct kernel_trace_event {
     __u64 offset;
     __u64 length;
     cls_op_t cls_ops[CEPH_OSD_MAX_OPS];
+} __attribute__((packed));
+
+// MDS request event structure (must match eBPF definition)
+struct mds_trace_event {
+    __u64 tid;                    // Transaction ID
+    __u64 client_id;              // Ceph client entity number
+    __u64 submit_time;            // When request was submitted
+    __u64 unsafe_reply_time;      // When unsafe reply was received (0 if none)
+    __u64 safe_reply_time;        // When safe reply was received
+    __u64 unsafe_latency_us;      // Submit to unsafe reply latency
+    __u64 safe_latency_us;        // Submit to safe reply latency
+    __u32 op;                     // MDS operation type (CEPH_MDS_OP_*)
+    __u32 pid;                    // Process ID
+    __u32 mds_rank;               // Target MDS rank
+    __u32 result;                 // Operation result code
+    __u8 got_unsafe_reply;        // 1 if received unsafe reply
+    __u8 got_safe_reply;          // 1 if received safe reply
+    __u8 is_write_op;             // 1 if this is a write operation
+    char op_name[CEPH_MDS_OP_NAME_MAX]; // Human readable operation name
+    char path[CEPH_MDS_PATH_MAX]; // Request path (truncated if needed)
 } __attribute__((packed));
 
 static volatile bool exiting = false;
@@ -169,18 +193,80 @@ static int handle_event(void *ctx, void *data, size_t data_sz)
     return 0;
 }
 
+static int handle_mds_event(void *ctx, void *data, size_t data_sz)
+{
+    const struct mds_trace_event *event = (const struct mds_trace_event *)data;
+    struct tm *tm;
+    char ts[32];
+    time_t t;
+
+    if (data_sz < sizeof(*event)) {
+        fprintf(stderr, "Invalid MDS event size: %zu (expected >= %zu)\n", data_sz, sizeof(*event));
+        return 0;
+    }
+
+    t = time(NULL);
+    tm = localtime(&t);
+    strftime(ts, sizeof(ts), "%H:%M:%S", tm);
+
+    // Format latencies
+    char unsafe_lat[16] = "-";
+    char safe_lat[16];
+
+    if (event->got_unsafe_reply && event->unsafe_latency_us > 0) {
+        if (event->unsafe_latency_us >= 1000) {
+            snprintf(unsafe_lat, sizeof(unsafe_lat), "%.1fms", event->unsafe_latency_us / 1000.0);
+        } else {
+            snprintf(unsafe_lat, sizeof(unsafe_lat), "%lluμs", event->unsafe_latency_us);
+        }
+    }
+
+    if (event->safe_latency_us >= 1000) {
+        snprintf(safe_lat, sizeof(safe_lat), "%.1fms", event->safe_latency_us / 1000.0);
+    } else {
+        snprintf(safe_lat, sizeof(safe_lat), "%lluμs", event->safe_latency_us);
+    }
+
+    // Format result
+    const char *result_str = (event->result == 0) ? "OK" : "ERR";
+
+    // Clean up path for display (keep leading slash and truncate if too long)
+    const char *display_path = event->path;
+
+    char truncated_path[64];
+    if (strlen(display_path) > 60) {
+        strncpy(truncated_path, display_path, 57);
+        strcpy(truncated_path + 57, "...");
+        display_path = truncated_path;
+    }
+
+    // Output format: TIME PID CLIENT_ID TID MDS OP PATH UNSAFE_LAT SAFE_LAT RESULT
+    printf("%-8s %-8u %-10llu %-16llu %-3u %-8s %-32s %-10s %-10s %-6s\n",
+           ts, event->pid, event->client_id, event->tid, event->mds_rank,
+           event->op_name, display_path, unsafe_lat, safe_lat, result_str);
+
+    return 0;
+}
+
 static void print_usage(const char *prog)
 {
     printf("Usage: %s [OPTIONS]\n", prog);
     printf("\nOPTIONS:\n");
     printf("  -h, --help        Show this help message\n");
     printf("  -t, --timeout <s> Set execution timeout (default: no timeout)\n");
+    printf("  -m, --mode <mode> Tracing mode: osd, mds, or both (default: osd)\n");
+    printf("  -d, --details     Show detailed MDS operation info (MDS mode only)\n");
     printf("\nDescription:\n");
-    printf("  Traces Ceph kernel client requests to OSDs using kprobes.\n");
-    printf("  Shows request latencies, target OSDs, and operation details.\n");
+    printf("  Traces Ceph kernel client requests using kprobes.\n");
+    printf("  OSD mode: Shows data requests to OSDs with latencies and operation details.\n");
+    printf("  MDS mode: Shows metadata requests to MDS with two-phase reply timing.\n");
+    printf("  Both mode: Shows both OSD and MDS requests concurrently.\n");
     printf("\nExamples:\n");
-    printf("  sudo %s                # Trace all kernel Ceph client activity\n", prog);
-    printf("  sudo %s -t 30          # Trace for 30 seconds then exit\n", prog);
+    printf("  sudo %s                # Trace OSD requests only\n", prog);
+    printf("  sudo %s -m mds         # Trace MDS requests only\n", prog);
+    printf("  sudo %s -m both        # Trace both OSD and MDS requests\n", prog);
+    printf("  sudo %s -m mds -d      # Trace MDS with detailed output\n", prog);
+    printf("  sudo %s -t 30 -m both  # Trace both for 30 seconds\n", prog);
     printf("\nNote: Requires root privileges and kernel v5.8+\n");
 }
 
@@ -188,19 +274,26 @@ int main(int argc, char **argv)
 {
     struct kerneltrace_bpf *skel = NULL;
     struct ring_buffer *rb = NULL;
+    struct ring_buffer *mds_rb = NULL;
     int err = 0;
     int timeout_seconds = 0;
     time_t start_time;
-    
+
+    // Tracing mode configuration
+    enum trace_mode { MODE_OSD, MODE_MDS, MODE_BOTH } mode = MODE_OSD;
+    bool detailed_output = false;
+
     static const struct option long_options[] = {
         {"help", no_argument, NULL, 'h'},
         {"timeout", required_argument, NULL, 't'},
+        {"mode", required_argument, NULL, 'm'},
+        {"details", no_argument, NULL, 'd'},
         {NULL, 0, NULL, 0}
     };
 
     // Parse command line arguments
     int opt;
-    while ((opt = getopt_long(argc, argv, "ht:", long_options, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "ht:m:d", long_options, NULL)) != -1) {
         switch (opt) {
         case 'h':
             print_usage(argv[0]);
@@ -211,6 +304,21 @@ int main(int argc, char **argv)
                 fprintf(stderr, "Invalid timeout value: %s\n", optarg);
                 return 1;
             }
+            break;
+        case 'm':
+            if (strcmp(optarg, "osd") == 0) {
+                mode = MODE_OSD;
+            } else if (strcmp(optarg, "mds") == 0) {
+                mode = MODE_MDS;
+            } else if (strcmp(optarg, "both") == 0) {
+                mode = MODE_BOTH;
+            } else {
+                fprintf(stderr, "Invalid mode: %s (must be osd, mds, or both)\n", optarg);
+                return 1;
+            }
+            break;
+        case 'd':
+            detailed_output = true;
             break;
         default:
             print_usage(argv[0]);
@@ -245,30 +353,77 @@ int main(int argc, char **argv)
         goto cleanup;
     }
 
-    // Create ring buffer
-    rb = ring_buffer__new(bpf_map__fd(skel->maps.rb), handle_event, NULL, NULL);
-    if (!rb) {
-        fprintf(stderr, "Failed to create ring buffer\n");
-        err = 1;
-        goto cleanup;
+    // Create ring buffers based on tracing mode
+    if (mode == MODE_OSD || mode == MODE_BOTH) {
+        rb = ring_buffer__new(bpf_map__fd(skel->maps.rb), handle_event, NULL, NULL);
+        if (!rb) {
+            fprintf(stderr, "Failed to create OSD ring buffer\n");
+            err = 1;
+            goto cleanup;
+        }
     }
 
-    printf("Tracing Ceph kernel client requests... Press Ctrl+C to stop.\n");
-    printf("%-8s %-8s %-10s %-16s %-8s %-8s %-6s %-20s %-32s %-30s %-12s\n",
-           "TIME", "PID", "CLIENT_ID", "TID", "POOL", "PG", "OP", "ACTING_SET", "OBJECT", "OPS", "LATENCY(us)");
+    if (mode == MODE_MDS || mode == MODE_BOTH) {
+        mds_rb = ring_buffer__new(bpf_map__fd(skel->maps.mds_rb), handle_mds_event, NULL, NULL);
+        if (!mds_rb) {
+            fprintf(stderr, "Failed to create MDS ring buffer\n");
+            err = 1;
+            goto cleanup;
+        }
+    }
+
+    // Print appropriate headers based on mode
+    if (mode == MODE_OSD) {
+        printf("Tracing Ceph kernel OSD requests... Press Ctrl+C to stop.\n");
+        printf("%-8s %-8s %-10s %-16s %-8s %-8s %-6s %-20s %-32s %-30s %-12s\n",
+               "TIME", "PID", "CLIENT_ID", "TID", "POOL", "PG", "OP", "ACTING_SET", "OBJECT", "OPS", "LATENCY(us)");
+    } else if (mode == MODE_MDS) {
+        printf("Tracing Ceph kernel MDS requests... Press Ctrl+C to stop.\n");
+        printf("%-8s %-8s %-10s %-16s %-3s %-8s %-32s %-10s %-10s %-6s\n",
+               "TIME", "PID", "CLIENT_ID", "TID", "MDS", "OP", "PATH", "UNSAFE_LAT", "SAFE_LAT", "RESULT");
+    } else {
+        printf("Tracing Ceph kernel OSD and MDS requests... Press Ctrl+C to stop.\n");
+        printf("OSD Events:\n");
+        printf("%-8s %-8s %-10s %-16s %-8s %-8s %-6s %-20s %-32s %-30s %-12s\n",
+               "TIME", "PID", "CLIENT_ID", "TID", "POOL", "PG", "OP", "ACTING_SET", "OBJECT", "OPS", "LATENCY(us)");
+        printf("\nMDS Events:\n");
+        printf("%-8s %-8s %-10s %-16s %-3s %-8s %-32s %-10s %-10s %-6s\n",
+               "TIME", "PID", "CLIENT_ID", "TID", "MDS", "OP", "PATH", "UNSAFE_LAT", "SAFE_LAT", "RESULT");
+        printf("\n");
+    }
 
     // Set up timeout if specified  
     start_time = time(NULL);
     
     // Poll for events
     while (!exiting) {
-        err = ring_buffer__poll(rb, 1000 /* timeout in ms */);
-        if (err == -EINTR) {
-            break;
+        // Poll OSD ring buffer if in OSD or BOTH mode
+        if (rb) {
+            err = ring_buffer__poll(rb, 100 /* timeout in ms */);
+            if (err == -EINTR) {
+                break;
+            }
+            if (err < 0) {
+                fprintf(stderr, "Error polling OSD ring buffer: %s\n", strerror(-err));
+                break;
+            }
         }
-        if (err < 0) {
-            fprintf(stderr, "Error polling ring buffer: %s\n", strerror(-err));
-            break;
+
+        // Poll MDS ring buffer if in MDS or BOTH mode
+        if (mds_rb) {
+            err = ring_buffer__poll(mds_rb, 100 /* timeout in ms */);
+            if (err == -EINTR) {
+                break;
+            }
+            if (err < 0) {
+                fprintf(stderr, "Error polling MDS ring buffer: %s\n", strerror(-err));
+                break;
+            }
+        }
+
+        // If neither ring buffer is active, sleep briefly to avoid busy loop
+        if (!rb && !mds_rb) {
+            usleep(100000); // 100ms
         }
         
         // Check timeout
@@ -283,6 +438,7 @@ int main(int argc, char **argv)
 
 cleanup:
     ring_buffer__free(rb);
+    ring_buffer__free(mds_rb);
     kerneltrace_bpf__destroy(skel);
 
     return err != 0 ? 1 : 0;
