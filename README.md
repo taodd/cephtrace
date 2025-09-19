@@ -11,6 +11,16 @@ cd cephtrace
 git submodule update --init --recursive
 ```
 
+## Build Source Code Package
+To make a source code tarball for general release use:
+```
+make src-pkg
+```
+To make a source code tarball to build `deb` packages for Debian or Ubuntu, use:
+```
+make src-pkg SRC_TGT=debian
+```
+
 ## Build Prerequisites
 On a Debian or Ubuntu based system, use the following apt command to start the build dependencies. If using a system with a different package manager, a different set of commands will be required:
 ```

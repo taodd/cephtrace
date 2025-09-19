@@ -1,0 +1,16 @@
+#!/usr/bin/make -f
+# Uncomment this to turn on verbose mode
+# export DH_VERBOSE = 1
+export DEB_CFLAGS_MAINT_APPEND   = -Wno-sign-compare -Wno-error=sign-compare \
+                                   -Wno-maybe-uninitialized -Wno-error=maybe-uninitialized
+export DEB_CXXFLAGS_MAINT_APPEND = -Wno-sign-compare -Wno-error=sign-compare \
+                                   -Wno-maybe-uninitialized -Wno-error=maybe-uninitialized
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	$(MAKE)
+
+override_dh_auto_install:
+	$(MAKE) install DESTDIR=$(CURDIR)/debian/tmp/$(dh_listpackages)

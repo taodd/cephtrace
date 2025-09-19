@@ -666,7 +666,7 @@ int main(int argc, char **argv) {
               return 1;
           }
       } else if (arg == "-h" || arg == "--help") {
-          std::cout << "Usage: " << argv[0] << " [-t <timeout seconds>] [--timeout <timeout seconds>] [-j [filename]] [-i <filename>] [-o [filename]] [-p <pid>]\n";
+          std::cout << "Usage: " << argv[0] << " [-t <timeout seconds>] [-j [filename]] [-i <filename>] [-o [filename]] [-p <pid>]\n";
           std::cout << "  -t, --timeout <seconds>    Set execution timeout in seconds\n";
           std::cout << "  -j, --export-json <file>   Export DWARF info to JSON (default: radostrace_dwarf.json)\n";
           std::cout << "  -i, --import-json <file>   Import DWARF info from JSON file\n";
