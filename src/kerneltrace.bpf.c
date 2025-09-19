@@ -45,6 +45,7 @@ struct mds_trace_event {
     __u32 pid;                    // Process ID
     __u32 mds_rank;               // Target MDS rank
     __u32 result;                 // Operation result code
+    __u32 attempts;               // Number of send attempts
     __u8 got_unsafe_reply;        // 1 if received unsafe reply
     __u8 got_safe_reply;          // 1 if received safe reply
     __u8 is_write_op;             // 1 if this is a write operation
@@ -148,6 +149,7 @@ struct kernel_trace_event {
     __u32 acting_osds[CEPH_PG_MAX_SIZE];
     __u32 acting_size;
     __u32 pid;              // Process ID
+    __u32 attempts;         // Number of send attempts
     char object_name[CEPH_OID_INLINE_LEN];
     __u32 object_name_len;
     __u8 is_read;
@@ -231,12 +233,23 @@ int trace_send_request(struct pt_regs *ctx)
     // Initialize composite key
     key.client_id = client_id;
     key.tid = tid;
-    
+
+    // Check if this request already exists (retry case)
+    struct kernel_trace_event *existing_info = bpf_map_lookup_elem(&pending_requests, &key);
+    if (existing_info) {
+        // This is a retry - just increment the attempts counter
+        existing_info->attempts++;
+        bpf_printk("trace_send_request: Retry detected TID=%llu, attempts=%u\n", tid, existing_info->attempts);
+        return 0; // Exit early, don't re-initialize the event
+    }
+
+    // This is a new request - initialize the event
     info.tid = tid;
     info.client_id = client_id;
     info.start_time = bpf_ktime_get_ns();
     info.primary_osd = primary_osd;
     info.pid = bpf_get_current_pid_tgid() >> 32;
+    info.attempts = 1;  // First attempt
     
     // Read acting set from req->r_t.acting
     struct ceph_osd_request_target *target = &req->r_t;
@@ -410,7 +423,7 @@ cleanup:
 
 // MDS request submission hook - traces when request is prepared for sending (TID assigned)
 SEC("kprobe/__prepare_send_request")
-int trace_mds_submit_request(struct pt_regs *ctx)
+int trace_prepare_send_request(struct pt_regs *ctx)
 {
     bpf_printk("=== MDS PREPARE_SEND: Function called ===\n");
 
@@ -468,10 +481,20 @@ int trace_mds_submit_request(struct pt_regs *ctx)
         bpf_printk("MDS PREPARE_SEND: Failed to get MDS rank\n");
     }
 
-    // Initialize the event
+    // Initialize the key for lookup
     key.client_id = client_id;
     key.tid = tid;
 
+    // Check if this request already exists (retry case)
+    struct mds_trace_event *existing_event = bpf_map_lookup_elem(&pending_mds_requests, &key);
+    if (existing_event) {
+        // This is a retry - just increment the attempts counter
+        existing_event->attempts++;
+        bpf_printk("MDS PREPARE_SEND: Retry detected TID=%llu, attempts=%u\n", tid, existing_event->attempts);
+        return 0; // Exit early, don't re-initialize the event
+    }
+
+    // This is a new request - initialize the event
     event.tid = tid;
     event.client_id = client_id;
     event.submit_time = bpf_ktime_get_ns();
@@ -483,6 +506,7 @@ int trace_mds_submit_request(struct pt_regs *ctx)
     event.pid = bpf_get_current_pid_tgid() >> 32;
     event.mds_rank = mds_rank;
     event.result = 0;
+    event.attempts = 1;  // First attempt
     event.got_unsafe_reply = 0;
     event.got_safe_reply = 0;
     event.is_write_op = is_mds_write_op(op);
@@ -490,16 +514,10 @@ int trace_mds_submit_request(struct pt_regs *ctx)
     // Get operation name
     get_mds_op_name(op, event.op_name, CEPH_MDS_OP_NAME_MAX);
 
-    // Try to extract path from request
+    // Extract filename/directory name from dentry (r_path1/r_path2 are not set yet)
+    // TODO Path can get from ceph_mds_build_path. For now we just get the filename
     event.path[0] = '\0';
 
-    // Try to read directory path from path1
-    const char *path1;
-    if (bpf_core_read(&path1, sizeof(path1), &req->r_path1) == 0 && path1) {
-        bpf_core_read_str(event.path, CEPH_MDS_PATH_MAX, path1);
-    }
-
-    // Try to extract filename from dentry and append it
     struct dentry *dentry;
     const unsigned char *filename;
     __u32 filename_len = 0;
@@ -508,41 +526,22 @@ int trace_mds_submit_request(struct pt_regs *ctx)
         if (bpf_core_read(&filename, sizeof(filename), &dentry->d_name.name) == 0 && filename &&
             bpf_core_read(&filename_len, sizeof(filename_len), &dentry->d_name.len) == 0 && filename_len > 0) {
 
-            // Find the end of the current path
-            int path_len = 0;
-            for (int i = 0; i < CEPH_MDS_PATH_MAX - 1 && event.path[i] != '\0'; i++) {
-                path_len = i + 1;
+            // Limit filename length to our buffer size
+            if (filename_len >= CEPH_MDS_PATH_MAX) {
+                filename_len = CEPH_MDS_PATH_MAX - 1;
             }
 
-            // Add separator if needed
-            if (path_len > 0 && path_len < CEPH_MDS_PATH_MAX - 1) {
-                if (event.path[path_len - 1] != '/') {
-                    event.path[path_len] = '/';
-                    path_len++;
-                    event.path[path_len] = '\0';
-                }
+            // Read just the dentry name (filename or directory name)
+            if (bpf_core_read_str(event.path, filename_len + 1, filename) <= 0) {
+                event.path[0] = '\0';
             }
-
-            // Append filename if there's space
-            if (path_len < CEPH_MDS_PATH_MAX - 1) {
-                // Use a temporary buffer to read filename
-                char temp_filename[64] = {0};  // Small fixed-size buffer
-                if (filename_len > 63) filename_len = 63;
-
-                if (bpf_core_read_str(temp_filename, filename_len + 1, filename) > 0) {
-                    // Manually copy filename to avoid variable offset issues
-                    for (int i = 0; i < 63 && path_len + i < CEPH_MDS_PATH_MAX - 1 && temp_filename[i] != '\0'; i++) {
-                        event.path[path_len + i] = temp_filename[i];
-                        event.path[path_len + i + 1] = '\0';
-                    }
-                }
-            }
+            bpf_printk("MDS PREPARE_SEND: dentry name='%s'\n", event.path);
         }
     }
 
-    // Fallback to root if path is empty
+    // Fallback if no dentry name available
     if (event.path[0] == '\0') {
-        event.path[0] = '/';
+        event.path[0] = '?';
         event.path[1] = '\0';
     }
 
@@ -555,12 +554,22 @@ int trace_mds_submit_request(struct pt_regs *ctx)
 
 // MDS message dispatch hook - traces all MDS messages including replies
 SEC("kprobe/mds_dispatch")
-int trace_mds_handle_reply(struct pt_regs *ctx)
+int trace_mds_dispatch(struct pt_regs *ctx)
 {
-    bpf_printk("=== MDS DISPATCH: Called ===\n");
-
     struct ceph_connection *con = (struct ceph_connection *)PT_REGS_PARM1(ctx);
     struct ceph_msg *msg = (struct ceph_msg *)PT_REGS_PARM2(ctx);
+
+    // Check message type first - we only care about CEPH_MSG_CLIENT_REPLY (26)
+    __u16 msg_type;
+    if (bpf_core_read(&msg_type, sizeof(msg_type), &msg->hdr.type) != 0) {
+        return 0;
+    }
+
+    if (msg_type != 26) { // CEPH_MSG_CLIENT_REPLY
+        return 0; // Exit early if not a client reply
+    }
+
+    bpf_printk("=== MDS DISPATCH: CLIENT_REPLY message ===\n");
 
     struct mds_request_key key = {};
     struct mds_trace_event *event;

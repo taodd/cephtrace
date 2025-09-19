@@ -43,6 +43,7 @@ struct kernel_trace_event {
     __u32 acting_osds[CEPH_PG_MAX_SIZE];
     __u32 acting_size;
     __u32 pid;
+    __u32 attempts;         // Number of send attempts
     char object_name[CEPH_OID_INLINE_LEN];
     __u32 object_name_len;
     __u8 is_read;
@@ -69,6 +70,7 @@ struct mds_trace_event {
     __u32 pid;                    // Process ID
     __u32 mds_rank;               // Target MDS rank
     __u32 result;                 // Operation result code
+    __u32 attempts;               // Number of send attempts
     __u8 got_unsafe_reply;        // 1 if received unsafe reply
     __u8 got_safe_reply;          // 1 if received safe reply
     __u8 is_write_op;             // 1 if this is a write operation
@@ -186,9 +188,9 @@ static int handle_event(void *ctx, void *data, size_t data_sz)
     // Format ops array (now includes offset/length for extent operations)
     std::string ops_str = format_ops(event);
 
-    printf("%-8s %-8u %-10llu %-16llu %-8llu %-8u %-6s %-20s %-32s %-30s %-12llu\n",
+    printf("%-8s %-8u %-10llu %-16llu %-8llu %-8u %-6s %-20s %-32s %-8u %-30s %-12llu\n",
            ts, event->pid, event->client_id, event->tid, event->pool_id, event->pg_id, op_str, acting_set,
-           object_name, ops_str.c_str(), event->latency_us);
+           object_name, event->attempts, ops_str.c_str(), event->latency_us);
 
     return 0;
 }
@@ -240,10 +242,10 @@ static int handle_mds_event(void *ctx, void *data, size_t data_sz)
         display_path = truncated_path;
     }
 
-    // Output format: TIME PID CLIENT_ID TID MDS OP PATH UNSAFE_LAT SAFE_LAT RESULT
-    printf("%-8s %-8u %-10llu %-16llu %-3u %-8s %-32s %-10s %-10s %-6s\n",
+    // Output format: TIME PID CLIENT_ID TID MDS OP PATH ATTEMPTS UNSAFE_LAT SAFE_LAT RESULT
+    printf("%-8s %-8u %-10llu %-16llu %-3u %-8s %-32s %-8u %-10s %-10s %-6s\n",
            ts, event->pid, event->client_id, event->tid, event->mds_rank,
-           event->op_name, display_path, unsafe_lat, safe_lat, result_str);
+           event->op_name, display_path, event->attempts, unsafe_lat, safe_lat, result_str);
 
     return 0;
 }
@@ -346,11 +348,39 @@ int main(int argc, char **argv)
         goto cleanup;
     }
 
-    // Attach BPF programs
-    err = kerneltrace_bpf__attach(skel);
-    if (err) {
-        fprintf(stderr, "Failed to attach BPF skeleton: %s\n", strerror(-err));
-        goto cleanup;
+    // Attach BPF programs based on tracing mode
+    if (mode == MODE_OSD || mode == MODE_BOTH) {
+        // Attach OSD-related kprobes
+        skel->links.trace_send_request = bpf_program__attach(skel->progs.trace_send_request);
+        if (!skel->links.trace_send_request) {
+            fprintf(stderr, "Failed to attach send_request kprobe\n");
+            err = 1;
+            goto cleanup;
+        }
+
+        skel->links.trace_osd_dispatch = bpf_program__attach(skel->progs.trace_osd_dispatch);
+        if (!skel->links.trace_osd_dispatch) {
+            fprintf(stderr, "Failed to attach osd_dispatch kprobe\n");
+            err = 1;
+            goto cleanup;
+        }
+    }
+
+    if (mode == MODE_MDS || mode == MODE_BOTH) {
+        // Attach MDS-related kprobes
+        skel->links.trace_prepare_send_request = bpf_program__attach(skel->progs.trace_prepare_send_request);
+        if (!skel->links.trace_prepare_send_request) {
+            fprintf(stderr, "Failed to attach __prepare_send_request kprobe\n");
+            err = 1;
+            goto cleanup;
+        }
+
+        skel->links.trace_mds_dispatch = bpf_program__attach(skel->progs.trace_mds_dispatch);
+        if (!skel->links.trace_mds_dispatch) {
+            fprintf(stderr, "Failed to attach mds_dispatch kprobe\n");
+            err = 1;
+            goto cleanup;
+        }
     }
 
     // Create ring buffers based on tracing mode
@@ -375,20 +405,20 @@ int main(int argc, char **argv)
     // Print appropriate headers based on mode
     if (mode == MODE_OSD) {
         printf("Tracing Ceph kernel OSD requests... Press Ctrl+C to stop.\n");
-        printf("%-8s %-8s %-10s %-16s %-8s %-8s %-6s %-20s %-32s %-30s %-12s\n",
-               "TIME", "PID", "CLIENT_ID", "TID", "POOL", "PG", "OP", "ACTING_SET", "OBJECT", "OPS", "LATENCY(us)");
+        printf("%-8s %-8s %-10s %-16s %-8s %-8s %-6s %-20s %-32s %-8s %-30s %-12s\n",
+               "TIME", "PID", "CLIENT_ID", "TID", "POOL", "PG", "OP", "ACTING_SET", "OBJECT", "ATTEMPTS", "OPS", "LATENCY(us)");
     } else if (mode == MODE_MDS) {
         printf("Tracing Ceph kernel MDS requests... Press Ctrl+C to stop.\n");
-        printf("%-8s %-8s %-10s %-16s %-3s %-8s %-32s %-10s %-10s %-6s\n",
-               "TIME", "PID", "CLIENT_ID", "TID", "MDS", "OP", "PATH", "UNSAFE_LAT", "SAFE_LAT", "RESULT");
+        printf("%-8s %-8s %-10s %-16s %-3s %-8s %-32s %-8s %-10s %-10s %-6s\n",
+               "TIME", "PID", "CLIENT_ID", "TID", "MDS", "OP", "PATH", "ATTEMPTS", "UNSAFE_LAT", "SAFE_LAT", "RESULT");
     } else {
         printf("Tracing Ceph kernel OSD and MDS requests... Press Ctrl+C to stop.\n");
         printf("OSD Events:\n");
-        printf("%-8s %-8s %-10s %-16s %-8s %-8s %-6s %-20s %-32s %-30s %-12s\n",
-               "TIME", "PID", "CLIENT_ID", "TID", "POOL", "PG", "OP", "ACTING_SET", "OBJECT", "OPS", "LATENCY(us)");
+        printf("%-8s %-8s %-10s %-16s %-8s %-8s %-6s %-20s %-32s %-8s %-30s %-12s\n",
+               "TIME", "PID", "CLIENT_ID", "TID", "POOL", "PG", "OP", "ACTING_SET", "OBJECT", "ATTEMPTS", "OPS", "LATENCY(us)");
         printf("\nMDS Events:\n");
-        printf("%-8s %-8s %-10s %-16s %-3s %-8s %-32s %-10s %-10s %-6s\n",
-               "TIME", "PID", "CLIENT_ID", "TID", "MDS", "OP", "PATH", "UNSAFE_LAT", "SAFE_LAT", "RESULT");
+        printf("%-8s %-8s %-10s %-16s %-3s %-8s %-32s %-8s %-10s %-10s %-6s\n",
+               "TIME", "PID", "CLIENT_ID", "TID", "MDS", "OP", "PATH", "ATTEMPTS", "UNSAFE_LAT", "SAFE_LAT", "RESULT");
         printf("\n");
     }
 
