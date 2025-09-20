@@ -37,7 +37,8 @@ PROG_BPF_SRCS := $(addprefix $(OSDTRACE_SRC)/,$(addsuffix .bpf.c,$(PROG_OBJS)))
 # Include paths
 INCLUDES := -I$(OUTPUT) \
            -I$(LIBBPF_TOP)/include/uapi \
-           -I$(LIBBPF_SRC)
+           -I$(LIBBPF_SRC) \
+           -I$(abspath ./external/json/include)
 
 # Compiler flags
 CLANG_BPF_SYS_INCLUDES := $(shell $(CLANG) -v -E - </dev/null 2>&1 | \
