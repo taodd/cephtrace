@@ -15,6 +15,9 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <fstream>
+#include <dirent.h>
+#include <ctype.h>
 
 #include "osdtrace.skel.h"
 
@@ -25,6 +28,7 @@ extern "C" {
 
 #include "bpf_ceph_types.h"
 #include "dwarf_parser.h"
+#include "version_utils.h"
 
 #define MAX_CNT 100000ll
 #define MAX_OSD 4000
@@ -1011,6 +1015,13 @@ int main(int argc, char **argv) {
 
   if (parse_args(argc, argv) < 0) return 0;
 
+  if (check_library_deleted(process_id, "ceph-osd")) {
+     cerr << "Error: ceph-osd library mismatch detected!" << endl;
+     cerr << "The ceph package has been upgraded on disk, but one or more processes are still using the old version in memory." << endl;
+     cerr << "Please restart the affected processes to pick up the new version." << endl;
+     return 1;
+   }
+
   struct osdtrace_bpf *skel;
   int ret = 0;
   struct ring_buffer *rb;
@@ -1026,12 +1037,35 @@ int main(int argc, char **argv) {
 
   clog << "Start to parse ceph dwarf info" << endl;
 
-  std::string osd_path = "/usr/bin/ceph-osd";
+  std::string osd_path = find_executable_path("ceph-osd");
+  if (osd_path.empty()) {
+    std::cerr << "Error: Could not find ceph-osd executable" << std::endl;
+    return 1;
+  }
+
+  std::cout << "Tracing ceph-osd at: " << osd_path << std::endl;
+
+  // Check if any ceph-osd processes are running with old/deleted executables
+  if (check_executable_deleted(-1, "ceph-osd")) {
+    std::cerr << "Warning: Found ceph-osd processes running with deleted/old executables." << std::endl;
+    std::cerr << "This may indicate that ceph-osd was updated but processes haven't been restarted." << std::endl;
+    std::cerr << "Consider restarting ceph-osd services for accurate tracing." << std::endl;
+  }
+
   DwarfParser dwarfparser(osd_probes, probe_units);
   
   if (import_json) {
     // Import dwarf data from JSON file
-    if (!dwarfparser.import_from_json(json_input_file)) {
+    // Get version information for comparison
+    std::string version = get_package_version(osd_path);
+    if (version != "unknown") {
+      clog << "Current package version: " << version << endl;
+    } else {
+      clog << "Could not determine current package version for ceph-osd, exit" << endl;
+      return 1;
+    }
+    
+    if (!dwarfparser.import_from_json(json_input_file, version)) {
       cerr << "Failed to import dwarf data from " << json_input_file << endl;
       return 1;
     }
@@ -1044,7 +1078,15 @@ int main(int argc, char **argv) {
 
   // Export dwarf parsing results to JSON if requested
   if (export_json) {
-    dwarfparser.export_to_json(json_output_file); 
+    // Get version information from the ceph-osd binary
+    std::string version = get_package_version(osd_path);
+    if (version != "unknown") {
+      clog << "Detected package version: " << version << endl;
+    } else {
+      clog << "Could not determine package version for ceph-osd, using 'unknown'" << endl;
+    }
+    
+    dwarfparser.export_to_json(json_output_file, version);
     clog << "Dwarf parsing data exported to " << json_output_file << endl;
     return 0;
   }

@@ -29,7 +29,7 @@ LIBBPF_SRC := $(LIBBPF_TOP)/src
 LIBBPF_OBJ := $(abspath $(OUTPUT)/libbpf.a)
 
 # Common objects and includes
-COMMON_OBJS := $(OUTPUT)/dwarf_parser.o
+COMMON_OBJS := $(OUTPUT)/dwarf_parser.o $(OUTPUT)/version_utils.o
 PROG_OBJS := osdtrace radostrace
 PROG_SRCS := $(addprefix $(OSDTRACE_SRC)/,$(addsuffix .cc,$(PROG_OBJS)))
 PROG_BPF_SRCS := $(addprefix $(OSDTRACE_SRC)/,$(addsuffix .bpf.c,$(PROG_OBJS)))
@@ -127,6 +127,11 @@ $(OUTPUT)/%.o: $(OSDTRACE_SRC)/%.cc $(OSDTRACE_SRC)/*.h $(OUTPUT)/%.skel.h | $(O
 
 # Special rule for dwarf_parser.o since it doesn't need a skel.h
 $(OUTPUT)/dwarf_parser.o: $(OSDTRACE_SRC)/dwarf_parser.cc $(OSDTRACE_SRC)/*.h | $(OUTPUT) $(LIBBPF_OBJ)
+	$(call msg,CXX,$@)
+	$(Q)$(CXX) $(CXXFLAGS) -c -o $@ $<
+
+# Special rule for version_utils.o since it doesn't need a skel.h
+$(OUTPUT)/version_utils.o: $(OSDTRACE_SRC)/version_utils.cc $(OSDTRACE_SRC)/*.h | $(OUTPUT) $(LIBBPF_OBJ)
 	$(call msg,CXX,$@)
 	$(Q)$(CXX) $(CXXFLAGS) -c -o $@ $<
 
