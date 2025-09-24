@@ -176,5 +176,37 @@ osd 38 pg 20.0 subop_w size 17067 client 179589331 tid 24056 throttle_lat 0 recv
 osd 1 pg 164.2 subop_w size 780 client 174758496 tid 4640511 throttle_lat 0 recv_lat 4 dispatch_lat 2 queue_lat 160 osd_lat 25 bluestore_lat 2988 (prepare 31 aio_wait 0 (aio_size 0) seq_wait 7 kv_commit 2949) subop_lat 3301
 ```
 
+Each row represents one operation traced on the OSD, with detailed latency breakdown across different stages:
+
+### Operation Types
+- ```op_r```: **Read operation** from client to primary OSD
+- ```op_w```: **Write operation** from client to primary OSD
+- ```subop_w```: **Sub-write operation** from primary OSD to secondary OSDs (replication)
+
+### Latency Stages (using op_w as example)
+Taking the write operation: `osd 38 pg 20.16b op_w size 12288 client 179589331 tid 24057 throttle_lat 2 recv_lat 26 dispatch_lat 15 queue_lat 57 osd_lat 187 peers [(34, 8079), (40, 5065)] bluestore_lat 10639 (prepare 107 aio_wait 0 (aio_size 0) seq_wait 6 kv_commit 10525) op_lat 10966`
+
+#### Messenger Level (Network/Message Processing):
+- ```throttle_lat 2```: Flow control throttling time (2μs) - prevents message overload
+- ```recv_lat 26```: Message receive ande decode time (26μs) - network processing
+- ```dispatch_lat 15```: Message dispatch time (15μs) - internal dispatch from messenger to OSD Processing level
+
+#### OSD Processing Level:
+- ```queue_lat 57```: Time waiting in osd op shard queue (57μs) - queuing delay before handling
+- ```osd_lat 187```: OSD layer processing time (187μs) - client request verification and replication coordination
+- ```peers [(34, 8079), (40, 5065)]```: Time spent on waiting from secondary OSDs 34 and 40
+
+#### Storage Backend Level (BlueStore):
+- ```bluestore_lat 10639```: Total BlueStore processing time (10639μs)
+  - ```prepare 107```: Transaction preparation (107μs)
+  - ```aio_wait 0```: Async I/O wait time (0μs)
+  - ```seq_wait 6```: Sequencer wait time (6μs)
+  - ```kv_commit 10525```: Key-value store commit (10525μs) - metadata persistence
+
+#### Total:
+- ```op_lat 10966```: **End-to-end operation latency** (10966μs)
+
+All latencies are measured in **microseconds (μs)**.
+
 ## Kernel Requirements
 - The minimum kernel version required is v5.8
