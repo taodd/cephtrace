@@ -201,7 +201,7 @@ Taking the write operation: `osd 38 pg 20.16b op_w size 12288 client 179589331 t
   - ```prepare 107```: Transaction preparation (107μs)
   - ```aio_wait 0```: Async I/O wait time (0μs)
   - ```seq_wait 6```: Sequencer wait time (6μs)
-  - ```kv_commit 10525```: Key-value store commit (10525μs) - metadata persistence
+  - ```kv_commit 10525```: Key-value store commit (10525μs) - data and metadata persistence
 
 #### Total:
 - ```op_lat 10966```: **End-to-end operation latency** (10966μs)
