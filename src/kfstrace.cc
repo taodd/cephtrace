@@ -242,7 +242,7 @@ static int handle_mds_event(void *ctx, void *data, size_t data_sz)
         display_path = truncated_path;
     }
 
-    // Output format: TIME PID CLIENT_ID TID MDS OP PATH ATTEMPTS UNSAFE_LAT SAFE_LAT RESULT
+    // Output format: TIME PID CLIENT_ID TID MDS OP FILE ATTEMPTS UNSAFE_LAT SAFE_LAT RESULT
     printf("%-8s %-8u %-10llu %-16llu %-3u %-8s %-32s %-8u %-10s %-10s %-6s\n",
            ts, event->pid, event->client_id, event->tid, event->mds_rank,
            event->op_name, display_path, event->attempts, unsafe_lat, safe_lat, result_str);
@@ -403,7 +403,7 @@ int main(int argc, char **argv)
     } else if (mode == MODE_MDS) {
         printf("Tracing Ceph kernel MDS requests... Press Ctrl+C to stop.\n");
         printf("%-8s %-8s %-10s %-16s %-3s %-8s %-32s %-8s %-10s %-10s %-6s\n",
-               "TIME", "PID", "CLIENT_ID", "TID", "MDS", "OP", "PATH", "ATTEMPTS", "UNSAFE_LAT", "SAFE_LAT", "RESULT");
+               "TIME", "PID", "CLIENT_ID", "TID", "MDS", "OP", "FILE", "ATTEMPTS", "UNSAFE_LAT", "SAFE_LAT", "RESULT");
     } else {
         printf("Tracing Ceph kernel OSD and MDS requests... Press Ctrl+C to stop.\n");
     }
