@@ -256,17 +256,17 @@ static void print_usage(const char *prog)
     printf("\nOPTIONS:\n");
     printf("  -h, --help        Show this help message\n");
     printf("  -t, --timeout <s> Set execution timeout (default: no timeout)\n");
-    printf("  -m, --mode <mode> Tracing mode: osd, mds, or both (default: osd)\n");
+    printf("  -m, --mode <mode> Tracing mode: osd, mds, or all (default: mds)\n");
     printf("\nDescription:\n");
     printf("  Traces Ceph kernel client requests using kprobes.\n");
     printf("  OSD mode: Shows data requests to OSDs with latencies and operation details.\n");
     printf("  MDS mode: Shows metadata requests to MDS with two-phase reply timing.\n");
-    printf("  Both mode: Shows both OSD and MDS requests concurrently.\n");
+    printf("  All mode: Shows both OSD and MDS requests concurrently.\n");
     printf("\nExamples:\n");
-    printf("  sudo %s                # Trace OSD requests only\n", prog);
-    printf("  sudo %s -m mds         # Trace MDS requests only\n", prog);
-    printf("  sudo %s -m both        # Trace both OSD and MDS requests\n", prog);
-    printf("  sudo %s -t 30 -m both  # Trace both for 30 seconds\n", prog);
+    printf("  sudo %s                # Trace MDS requests only (default)\n", prog);
+    printf("  sudo %s -m osd         # Trace OSD requests only\n", prog);
+    printf("  sudo %s -m all         # Trace both OSD and MDS requests\n", prog);
+    printf("  sudo %s -t 30 -m all   # Trace both for 30 seconds\n", prog);
     printf("\nNote: Requires root privileges and kernel v5.8+\n");
 }
 
@@ -280,7 +280,7 @@ int main(int argc, char **argv)
     time_t start_time;
 
     // Tracing mode configuration
-    enum trace_mode { MODE_OSD, MODE_MDS, MODE_BOTH } mode = MODE_OSD;
+    enum trace_mode { MODE_OSD, MODE_MDS, MODE_ALL } mode = MODE_MDS;
 
     static const struct option long_options[] = {
         {"help", no_argument, NULL, 'h'},
@@ -308,10 +308,10 @@ int main(int argc, char **argv)
                 mode = MODE_OSD;
             } else if (strcmp(optarg, "mds") == 0) {
                 mode = MODE_MDS;
-            } else if (strcmp(optarg, "both") == 0) {
-                mode = MODE_BOTH;
+            } else if (strcmp(optarg, "all") == 0) {
+                mode = MODE_ALL;
             } else {
-                fprintf(stderr, "Invalid mode: %s (must be osd, mds, or both)\n", optarg);
+                fprintf(stderr, "Invalid mode: %s (must be osd, mds, or all)\n", optarg);
                 return 1;
             }
             break;
@@ -342,7 +342,7 @@ int main(int argc, char **argv)
     }
 
     // Attach BPF programs based on tracing mode
-    if (mode == MODE_OSD || mode == MODE_BOTH) {
+    if (mode == MODE_OSD || mode == MODE_ALL) {
         // Attach OSD-related kprobes
         skel->links.trace_send_request = bpf_program__attach(skel->progs.trace_send_request);
         if (!skel->links.trace_send_request) {
@@ -359,7 +359,7 @@ int main(int argc, char **argv)
         }
     }
 
-    if (mode == MODE_MDS || mode == MODE_BOTH) {
+    if (mode == MODE_MDS || mode == MODE_ALL) {
         // Attach MDS-related kprobes
         skel->links.trace_prepare_send_request = bpf_program__attach(skel->progs.trace_prepare_send_request);
         if (!skel->links.trace_prepare_send_request) {
@@ -377,7 +377,7 @@ int main(int argc, char **argv)
     }
 
     // Create ring buffers based on tracing mode
-    if (mode == MODE_OSD || mode == MODE_BOTH) {
+    if (mode == MODE_OSD || mode == MODE_ALL) {
         rb = ring_buffer__new(bpf_map__fd(skel->maps.rb), handle_event, NULL, NULL);
         if (!rb) {
             fprintf(stderr, "Failed to create OSD ring buffer\n");
@@ -386,7 +386,7 @@ int main(int argc, char **argv)
         }
     }
 
-    if (mode == MODE_MDS || mode == MODE_BOTH) {
+    if (mode == MODE_MDS || mode == MODE_ALL) {
         mds_rb = ring_buffer__new(bpf_map__fd(skel->maps.mds_rb), handle_mds_event, NULL, NULL);
         if (!mds_rb) {
             fprintf(stderr, "Failed to create MDS ring buffer\n");
@@ -413,7 +413,7 @@ int main(int argc, char **argv)
     
     // Poll for events
     while (!exiting) {
-        // Poll OSD ring buffer if in OSD or BOTH mode
+        // Poll OSD ring buffer if in OSD or ALL mode
         if (rb) {
             err = ring_buffer__poll(rb, 100 /* timeout in ms */);
             if (err == -EINTR) {
@@ -425,7 +425,7 @@ int main(int argc, char **argv)
             }
         }
 
-        // Poll MDS ring buffer if in MDS or BOTH mode
+        // Poll MDS ring buffer if in MDS or ALL mode
         if (mds_rb) {
             err = ring_buffer__poll(mds_rb, 100 /* timeout in ms */);
             if (err == -EINTR) {
