@@ -21,7 +21,7 @@
 #include <sstream>
 #include <vector>
 
-#include "kerneltrace.skel.h"
+#include "kfstrace.skel.h"
 #include "bpf_ceph_types.h"
 
 #define CEPH_PG_MAX_SIZE 8
@@ -257,7 +257,6 @@ static void print_usage(const char *prog)
     printf("  -h, --help        Show this help message\n");
     printf("  -t, --timeout <s> Set execution timeout (default: no timeout)\n");
     printf("  -m, --mode <mode> Tracing mode: osd, mds, or both (default: osd)\n");
-    printf("  -d, --details     Show detailed MDS operation info (MDS mode only)\n");
     printf("\nDescription:\n");
     printf("  Traces Ceph kernel client requests using kprobes.\n");
     printf("  OSD mode: Shows data requests to OSDs with latencies and operation details.\n");
@@ -267,14 +266,13 @@ static void print_usage(const char *prog)
     printf("  sudo %s                # Trace OSD requests only\n", prog);
     printf("  sudo %s -m mds         # Trace MDS requests only\n", prog);
     printf("  sudo %s -m both        # Trace both OSD and MDS requests\n", prog);
-    printf("  sudo %s -m mds -d      # Trace MDS with detailed output\n", prog);
     printf("  sudo %s -t 30 -m both  # Trace both for 30 seconds\n", prog);
     printf("\nNote: Requires root privileges and kernel v5.8+\n");
 }
 
 int main(int argc, char **argv)
 {
-    struct kerneltrace_bpf *skel = NULL;
+    struct kfstrace_bpf *skel = NULL;
     struct ring_buffer *rb = NULL;
     struct ring_buffer *mds_rb = NULL;
     int err = 0;
@@ -283,19 +281,17 @@ int main(int argc, char **argv)
 
     // Tracing mode configuration
     enum trace_mode { MODE_OSD, MODE_MDS, MODE_BOTH } mode = MODE_OSD;
-    bool detailed_output = false;
 
     static const struct option long_options[] = {
         {"help", no_argument, NULL, 'h'},
         {"timeout", required_argument, NULL, 't'},
         {"mode", required_argument, NULL, 'm'},
-        {"details", no_argument, NULL, 'd'},
         {NULL, 0, NULL, 0}
     };
 
     // Parse command line arguments
     int opt;
-    while ((opt = getopt_long(argc, argv, "ht:m:d", long_options, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "ht:m:", long_options, NULL)) != -1) {
         switch (opt) {
         case 'h':
             print_usage(argv[0]);
@@ -319,9 +315,6 @@ int main(int argc, char **argv)
                 return 1;
             }
             break;
-        case 'd':
-            detailed_output = true;
-            break;
         default:
             print_usage(argv[0]);
             return 1;
@@ -335,14 +328,14 @@ int main(int argc, char **argv)
     libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
 
     // Load BPF skeleton
-    skel = kerneltrace_bpf__open();
+    skel = kfstrace_bpf__open();
     if (!skel) {
         fprintf(stderr, "Failed to open BPF skeleton\n");
         return 1;
     }
 
     // Load BPF program
-    err = kerneltrace_bpf__load(skel);
+    err = kfstrace_bpf__load(skel);
     if (err) {
         fprintf(stderr, "Failed to load BPF skeleton: %s\n", strerror(-err));
         goto cleanup;
@@ -413,13 +406,6 @@ int main(int argc, char **argv)
                "TIME", "PID", "CLIENT_ID", "TID", "MDS", "OP", "PATH", "ATTEMPTS", "UNSAFE_LAT", "SAFE_LAT", "RESULT");
     } else {
         printf("Tracing Ceph kernel OSD and MDS requests... Press Ctrl+C to stop.\n");
-        printf("OSD Events:\n");
-        printf("%-8s %-8s %-10s %-16s %-8s %-8s %-6s %-20s %-32s %-8s %-30s %-12s\n",
-               "TIME", "PID", "CLIENT_ID", "TID", "POOL", "PG", "OP", "ACTING_SET", "OBJECT", "ATTEMPTS", "OPS", "LATENCY(us)");
-        printf("\nMDS Events:\n");
-        printf("%-8s %-8s %-10s %-16s %-3s %-8s %-32s %-8s %-10s %-10s %-6s\n",
-               "TIME", "PID", "CLIENT_ID", "TID", "MDS", "OP", "PATH", "ATTEMPTS", "UNSAFE_LAT", "SAFE_LAT", "RESULT");
-        printf("\n");
     }
 
     // Set up timeout if specified  
@@ -469,7 +455,7 @@ int main(int argc, char **argv)
 cleanup:
     ring_buffer__free(rb);
     ring_buffer__free(mds_rb);
-    kerneltrace_bpf__destroy(skel);
+    kfstrace_bpf__destroy(skel);
 
     return err != 0 ? 1 : 0;
 }

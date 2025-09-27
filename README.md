@@ -1,5 +1,5 @@
 # Cephtrace 
-```cephtrace``` is a project that delivers various ```eBPF``` based ceph tracing tools. These tools can be used to trace different ceph components dynamically, without the need to restart or reconfigure any of the ceph related services. Currently ```radostrace```, ```osdtrace```, and ```kerneltrace``` have been implemented.
+```cephtrace``` is a project that delivers various ```eBPF``` based ceph tracing tools. These tools can be used to trace different ceph components dynamically, without the need to restart or reconfigure any of the ceph related services. Currently ```radostrace```, ```osdtrace```, and ```kfstrace``` have been implemented.
 
 These tools can provide a great insight on the per-io based performance, and help to quickly identify any potential performance bottlenecks.
 
@@ -40,11 +40,9 @@ These are required debug packages for each tool:
 ```sudo apt-get install ceph-osd-dbgsym```
 
 ## Using JSON Export/Import for Easy Deployment
-
 To avoid the need to install debug symbols on every target machine, you can export the DWARF information to a JSON file on a machine with debug symbols installed, then import it on other machines with the same Ceph version.
 
 ### Step 1: Export DWARF Information (on a machine with debug symbols)
-
 First, export the DWARF information for your specific Ceph version:
 
 ```bash
@@ -55,7 +53,6 @@ sudo ./radostrace -j radostrace_dwarf.json
 This will create JSON files containing all the necessary DWARF information with version information embedded.
 
 ### Step 2: Import and Use on Target Machines
-
 On any machine with the same Ceph version (but without debug symbols), you can import the JSON file:
 
 ```bash
@@ -64,18 +61,15 @@ sudo ./radostrace -i radostrace_dwarf.json
 ```
 
 ### Version Compatibility
-
 The tools automatically check version compatibility when importing JSON files. If the target machine has a different Ceph version than what the JSON file was generated for, the tool will report an error and exit.
 
 ### Benefits
-
 - **No debug symbols required** on target machines
 - **Faster startup** (no DWARF parsing needed)
 - **Consistent results** across machines with the same Ceph version
 - **Easy deployment** in production environments
 
 ### Pre-generated JSON Files
-
 We provide pre-generated JSON files for Common Ceph versions in the `files/radostrace/` directory. These files are named with their corresponding version (e.g., `17.2.6-0ubuntu0.22.04.2_dwarf.json`).
 
 #### Example: Using a Pre-generated JSON File
@@ -91,7 +85,7 @@ sudo ./radostrace -i 17.2.6-0ubuntu0.22.04.2_dwarf.json
 ```
 
 ## Run radostrace
-```radostrace``` can trace any librados based ceph client, including vm with rbd volume attached, rgw, cinder, glance...
+`radostrace` can trace any librados based ceph client, including virtual machines using rbd backed volumes attached, rgw, cinder and glance.
 
 ### Basic Usage
 ```
@@ -104,9 +98,10 @@ sudo ./radostrace -i 17.2.6-0ubuntu0.22.04.2_dwarf.json
 :~$ sudo ./radostrace -t <seconds>      # Set execution timeout
 :~$ sudo ./radostrace -j <file>         # Export DWARF info to JSON file
 :~$ sudo ./radostrace -i <file>         # Import DWARF info from JSON file
+:~$ sudo ./radostrace -o <file>         # Export events data info to CSV (default: radostrace_events.csv)
 ```
 
-Below is an example for tracing a vm which is doing 4k random read on a rbd volume:
+Below is an example tracing output from a virtual machine performing 4k random read on a rbd volume:
 ```
      pid  client     tid  pool  pg     acting            w/r    size  latency     object[ops][offset,length]
    19015   34206  419357     2  1e     [1,11,121,77,0]     W        0     887     rbd_header.374de3730ad0[watch ]
@@ -135,48 +130,51 @@ Each row represent one IO sent from the client to the ceph cluster, below is the
 - ```object[ops][offset,length]```: the object name, detailed osd op name, op's offset and length
 
 ## Run osdtrace
+`osdtrace` can probe and trace OSD(s) directly on given nodes. This utility does not yet properly support using DWARF files, hence requires the debugging symbol packages being available on the target node.
+
+### Basic Usage ()
 ```
 :~$ sudo ./osdtrace -x
 ```
 
-## Run kerneltrace
-```kerneltrace``` can trace kernel-level Ceph client requests to OSDs, including requests from RBD, CephFS, and other kernel clients.
-
-### Basic Usage
-```
-:~$ sudo ./kerneltrace   # Trace all kernel Ceph client activity
-```
-
 ### Advanced Options
 ```
-:~$ sudo ./kerneltrace -t <seconds>      # Set execution timeout
-:~$ sudo ./kerneltrace -h               # Show help message
+:~$ sudo ./osdtrace -d <seconds>       # Set probe duration in seconds to calculate average latency
+:~$ sudo ./osdtrace -m <avg|max>       # Set operation latency collection mode
+:~$ sudo ./osdtrace -l <milliseconds>  # Set operation latency threshold to capture
+:~$ sudo ./osdtrace -o <od-id>         # Only probe a specific OSD
+:~$ sudo ./osdtrace -x                 # Set probe mode to Full OPs. See below for details.
+:~$ sudo ./osdtrace -b                 # Set probe mode to Bluestore. See below for details.
+:~$ sudo ./osdtrace -j <file>          # Export DWARF info to JSON file
+:~$ sudo ./osdtrace -i <file>          # Import DWARF info from JSON file
+:~$ sudo ./osdtrace -t <seconds>       # Set execution timeout in seconds
+:~$ sudo ./osdtrace -p <pid>           # Probe using a Process ID
+:~$ sudo ./osdtrace -h                 # Show this help message
 ```
 
-Below is an example output showing kernel client requests:
+Below is an example tracing output from an OSD node:
 ```
-TIME     COMM             PID      OP     PRIMARY  ACTING_SET           OBJECT                           TID              LATENCY   
-14:23:15 kworker/u8:2     1234     WRITE  0        [0,1,2]              rbd_data.1048a4b0dc51.000001   12345678901234   145 us
-14:23:15 ceph-mds         5678     READ   2        [2,3,4]              100000a3ef2.00000000             23456789012345   89 us  
-14:23:16 rbd              1234     READ   1        [1,0,3]              rbd_data.1048a4b0dc51.000002   34567890123456   234 us
+osd 1 pg 20.138 op_r size 8192 client 169954691 tid 150680 throttle_lat 2 recv_lat 11 dispatch_lat 12 queue_lat 41 osd_lat 35 bluestore_lat 231 op_lat 332
+osd 38 pg 20.80 op_r size 4096 client 169954691 tid 150732 throttle_lat 1 recv_lat 11 dispatch_lat 14 queue_lat 40 osd_lat 43 bluestore_lat 29 op_lat 139
+osd 1 pg 20.135 op_r size 4096 client 169954691 tid 150790 throttle_lat 2 recv_lat 13 dispatch_lat 15 queue_lat 81 osd_lat 47 bluestore_lat 27 op_lat 185
+osd 38 pg 20.14f op_r size 4096 client 169954691 tid 150847 throttle_lat 1 recv_lat 13 dispatch_lat 13 queue_lat 46 osd_lat 47 bluestore_lat 322 op_lat 442
+osd 1 pg 20.135 op_r size 4096 client 169954691 tid 150863 throttle_lat 2 recv_lat 14 dispatch_lat 14 queue_lat 56 osd_lat 41 bluestore_lat 336 op_lat 462
+osd 38 pg 20.14f op_r size 4096 client 169954691 tid 150884 throttle_lat 2 recv_lat 10 dispatch_lat 12 queue_lat 45 osd_lat 40 bluestore_lat 334 op_lat 443
+osd 38 pg 20.16b op_w size 12288 client 179589331 tid 24057 throttle_lat 2 recv_lat 26 dispatch_lat 15 queue_lat 57 osd_lat 187 peers [(34, 8079), (40, 5065)] bluestore_lat 10639 (prepare 107 aio_wait 0 (aio_size 0) seq_wait 6 kv_commit 10525) op_lat 10966
+osd 38 pg 20.0 subop_w size 17067 client 179589331 tid 24056 throttle_lat 0 recv_lat 56 dispatch_lat 12 queue_lat 42 osd_lat 50 bluestore_lat 11737 (prepare 68 aio_wait 0 (aio_size 0) seq_wait 8 kv_commit 11660) subop_lat 11943
+osd 38 pg 20.0 subop_w size 4779 client 179589331 tid 24058 throttle_lat 0 recv_lat 23 dispatch_lat 9 queue_lat 55 osd_lat 51 bluestore_lat 1842 (prepare 60 aio_wait 0 (aio_size 0) seq_wait 6 kv_commit 1775) subop_lat 2016
+osd 1 pg 20.183 subop_w size 4779 client 179589331 tid 24059 throttle_lat 2 recv_lat 21 dispatch_lat 15 queue_lat 47 osd_lat 77 bluestore_lat 10746 (prepare 83 aio_wait 0 (aio_size 0) seq_wait 9 kv_commit 10653) subop_lat 10951
+osd 1 pg 164.2 subop_w size 780 client 174758496 tid 4640437 throttle_lat 2 recv_lat 18 dispatch_lat 17 queue_lat 80 osd_lat 669 bluestore_lat 8961 (prepare 136 aio_wait 0 (aio_size 0) seq_wait 6 kv_commit 8818) subop_lat 9781
+osd 1 pg 164.2 subop_w size 782 client 174758496 tid 4640439 throttle_lat 1 recv_lat 18 dispatch_lat 12 queue_lat 63 osd_lat 72 bluestore_lat 8311 (prepare 56 aio_wait 0 (aio_size 0) seq_wait 9 kv_commit 8245) subop_lat 8531
+osd 1 pg 164.2 subop_w size 782 client 174758496 tid 4640440 throttle_lat 1 recv_lat 18 dispatch_lat 14 queue_lat 66 osd_lat 66 bluestore_lat 3773 (prepare 59 aio_wait 0 (aio_size 0) seq_wait 7 kv_commit 3707) subop_lat 4020
+osd 1 pg 164.2 subop_w size 782 client 174758496 tid 4640443 throttle_lat 1 recv_lat 15 dispatch_lat 16 queue_lat 59 osd_lat 75 bluestore_lat 1389 (prepare 60 aio_wait 0 (aio_size 0) seq_wait 8 kv_commit 1320) subop_lat 1603
+osd 1 pg 164.2 subop_w size 782 client 174758496 tid 4640489 throttle_lat 1 recv_lat 15 dispatch_lat 14 queue_lat 90 osd_lat 74 bluestore_lat 1127 (prepare 51 aio_wait 0 (aio_size 0) seq_wait 6 kv_commit 1069) subop_lat 1360
+osd 1 pg 164.2 subop_w size 782 client 174758496 tid 4640492 throttle_lat 2 recv_lat 13 dispatch_lat 14 queue_lat 64 osd_lat 59 bluestore_lat 1494 (prepare 47 aio_wait 0 (aio_size 0) seq_wait 6 kv_commit 1441) subop_lat 1685
+osd 1 pg 164.2 subop_w size 782 client 174758496 tid 4640500 throttle_lat 2 recv_lat 20 dispatch_lat 14 queue_lat 44 osd_lat 59 bluestore_lat 1323 (prepare 43 aio_wait 0 (aio_size 0) seq_wait 6 kv_commit 1273) subop_lat 1497
+osd 1 pg 164.2 subop_w size 782 client 174758496 tid 4640509 throttle_lat 1 recv_lat 16 dispatch_lat 15 queue_lat 48 osd_lat 85 bluestore_lat 2105 (prepare 63 aio_wait 0 (aio_size 0) seq_wait 8 kv_commit 2032) subop_lat 2351
+osd 1 pg 164.2 subop_w size 782 client 174758496 tid 4640510 throttle_lat 0 recv_lat 11 dispatch_lat 5 queue_lat 90 osd_lat 34 bluestore_lat 3039 (prepare 35 aio_wait 0 (aio_size 0) seq_wait 7 kv_commit 2996) subop_lat 3283
+osd 1 pg 164.2 subop_w size 780 client 174758496 tid 4640511 throttle_lat 0 recv_lat 4 dispatch_lat 2 queue_lat 160 osd_lat 25 bluestore_lat 2988 (prepare 31 aio_wait 0 (aio_size 0) seq_wait 7 kv_commit 2949) subop_lat 3301
 ```
-
-Each row represents one I/O request sent from the kernel to the Ceph cluster:
-- ```TIME```: Timestamp when response was received
-- ```COMM```: Process/thread name that initiated the request
-- ```PID```: Process ID
-- ```OP```: Operation type (READ/WRITE/RMW/OTHER)
-- ```PRIMARY```: Primary OSD ID where request was sent
-- ```ACTING_SET```: Complete acting set of OSDs for the placement group (e.g., [0,1,2])
-- ```OBJECT```: Target Ceph object name (e.g., rbd_data.1048a4b0dc51.000001)
-- ```TID```: Ceph transaction ID (unique request identifier)
-- ```LATENCY```: Round-trip latency in microseconds
-
-### Benefits of kerneltrace
-- **No debug symbols required**: Uses BTF/CO-RE for kernel structure access
-- **Comprehensive coverage**: Traces all kernel Ceph clients (RBD, CephFS, etc.)
-- **Kernel-level visibility**: Shows actual requests sent by the kernel module
-- **Acting set information**: Complete view of data placement and replication
 
 ## Kernel requirement
-- The minimum kernel version required is v5.8  
+- The minimum kernel version required is v5.8

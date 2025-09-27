@@ -133,7 +133,7 @@ $(OSDTRACE_SRC)/ceph_btf.h: | $(OUTPUT) $(BPFTOOL)
 		fi; \
 	fi
 
-# Build BPF objects and skeletons  
+# Build BPF objects and skeletons
 $(OUTPUT)/kfstrace.bpf.o: $(OSDTRACE_SRC)/kfstrace.bpf.c $(OSDTRACE_SRC)/ceph_btf.h $(LIBBPF_OBJ) | $(OUTPUT) $(BPFTOOL)
 	$(call msg,BPF,$@)
 	$(Q)$(CLANG) -g -O2 -target bpf $(CXXFLAGS) -c $< -o $(patsubst %.bpf.o,%.tmp.bpf.o,$@)
@@ -162,6 +162,7 @@ $(OUTPUT)/dwarf_parser.o: $(OSDTRACE_SRC)/dwarf_parser.cc $(OSDTRACE_SRC)/*.h | 
 $(OUTPUT)/version_utils.o: $(OSDTRACE_SRC)/version_utils.cc $(OSDTRACE_SRC)/*.h | $(OUTPUT) $(LIBBPF_OBJ)
 	$(call msg,CXX,$@)
 	$(Q)$(CXX) $(CXXFLAGS) -c -o $@ $<
+
 
 # Special rule for kfstrace.o since it doesn't need dwarf_parser
 $(OUTPUT)/kfstrace.o: $(OSDTRACE_SRC)/kfstrace.cc $(OSDTRACE_SRC)/bpf_ceph_types.h $(OUTPUT)/kfstrace.skel.h | $(OUTPUT) $(LIBBPF_OBJ)
