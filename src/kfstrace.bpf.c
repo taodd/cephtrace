@@ -7,13 +7,14 @@ char LICENSE[] SEC("license") = "Dual BSD/GPL";
 
 #define MAX_REQUESTS 1024
 #define CEPH_PG_MAX_SIZE 8
-#define CEPH_OID_INLINE_LEN 32
+#define CEPH_OID_INLINE_LEN 24
 #define CEPH_OSD_MAX_OPS 3
 
 // MDS tracing constants
 #define MAX_MDS_REQUESTS 1024
 #define CEPH_MDS_OP_NAME_MAX 32
-#define CEPH_MDS_PATH_MAX 128
+#define CEPH_MDS_PATH_MAX 64
+#define TASK_COMM_LEN 16
 
 // Use the cls_op from bpf_ceph_types.h (method_name[32])
 struct cls_op {
@@ -45,6 +46,7 @@ struct mds_trace_event {
     __u32 pid;                    // Process ID
     __u32 mds_rank;               // Target MDS rank
     __u32 result;                 // Operation result code
+    char comm[TASK_COMM_LEN];     // Process command name
     __u32 attempts;               // Number of send attempts
     __u8 got_unsafe_reply;        // 1 if received unsafe reply
     __u8 got_safe_reply;          // 1 if received safe reply
@@ -150,6 +152,7 @@ struct kernel_trace_event {
     __u32 acting_size;
     __u32 pid;              // Process ID
     __u32 attempts;         // Number of send attempts
+    char comm[TASK_COMM_LEN]; // Process command name
     char object_name[CEPH_OID_INLINE_LEN];
     __u32 object_name_len;
     __u8 is_read;
@@ -249,6 +252,7 @@ int trace_send_request(struct pt_regs *ctx)
     info.start_time = bpf_ktime_get_ns();
     info.primary_osd = primary_osd;
     info.pid = bpf_get_current_pid_tgid() >> 32;
+    bpf_get_current_comm(&info.comm, sizeof(info.comm));
     info.attempts = 1;  // First attempt
     
     // Read acting set from req->r_t.acting
@@ -504,6 +508,7 @@ int trace_prepare_send_request(struct pt_regs *ctx)
     event.safe_latency_us = 0;
     event.op = op;
     event.pid = bpf_get_current_pid_tgid() >> 32;
+    bpf_get_current_comm(&event.comm, sizeof(event.comm));
     event.mds_rank = mds_rank;
     event.result = 0;
     event.attempts = 1;  // First attempt
