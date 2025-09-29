@@ -88,6 +88,27 @@ static void sig_handler(int sig)
     exiting = true;
 }
 
+static bool check_ceph_module_loaded()
+{
+    FILE *fp = fopen("/proc/modules", "r");
+    if (!fp) {
+        return false;
+    }
+
+    char line[256];
+    bool found = false;
+
+    while (fgets(line, sizeof(line), fp)) {
+        if (strncmp(line, "ceph ", 5) == 0 || strncmp(line, "libceph ", 8) == 0) {
+            found = true;
+            break;
+        }
+    }
+
+    fclose(fp);
+    return found;
+}
+
 // Function to get OSD operation string, same as in radostrace
 const char * ceph_osd_op_str(int opc) {
     const char *op_str = NULL;
@@ -326,6 +347,20 @@ int main(int argc, char **argv)
 
     signal(SIGINT, sig_handler);
     signal(SIGTERM, sig_handler);
+
+    // Check if ceph module is loaded
+    if (!check_ceph_module_loaded()) {
+        fprintf(stderr, "Error: Ceph kernel module not loaded.\n");
+        fprintf(stderr, "This may be because:\n");
+        fprintf(stderr, "  1. CephFS filesystem is not mounted\n");
+        fprintf(stderr, "  2. RBD (Rados Block Device) is not in use\n");
+        fprintf(stderr, "  3. No Ceph kernel client is active\n");
+        fprintf(stderr, "\nTo fix this, try:\n");
+        fprintf(stderr, "  - Mount a CephFS filesystem: mount -t ceph <monitors>:/ /mnt/ceph\n");
+        fprintf(stderr, "  - Map an RBD device: rbd map <pool>/<image>\n");
+        fprintf(stderr, "  - Or manually load the module: sudo modprobe ceph\n");
+        return 1;
+    }
 
     // Set libbpf strict mode
     libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
