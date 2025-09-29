@@ -191,7 +191,7 @@ static int handle_event(void *ctx, void *data, size_t data_sz)
     // Format ops array (now includes offset/length for extent operations)
     std::string ops_str = format_ops(event);
 
-    printf("%-8s %-8u %-12s %-10llu %-16llu %-8llu %-8u %-6s %-20s %-32s %-8u %-30s %-12llu\n",
+    printf("%-8s %-8u %-12s %-10llu %-16llu %-8llu %-8u %-6s %-20s %-32s %-8u %-30s %lluμs\n",
            ts, event->pid, event->comm, event->client_id, event->tid, event->pool_id, event->pg_id, op_str, acting_set,
            object_name, event->attempts, ops_str.c_str(), event->latency_us);
 
