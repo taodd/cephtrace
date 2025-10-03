@@ -61,7 +61,8 @@ func_id_t func_id = {
     {"log_subop_stats", 140},
     {"ECBackend::submit_transaction", 150},
     {"BlueStore::_txc_calc_cost", 160},
-    {"ReplicatedBackend::repop_commit", 170}
+    {"ReplicatedBackend::repop_commit", 170},
+    {"OpRequest::mark_flag_point", 180}
 };
 
 std::map<std::string, int> func_progid = {
@@ -82,7 +83,8 @@ std::map<std::string, int> func_progid = {
     {"log_subop_stats", 14},
     {"ECBackend::submit_transaction", 15},
     {"BlueStore::_txc_calc_cost", 16},
-    {"ReplicatedBackend::repop_commit", 17}
+    {"ReplicatedBackend::repop_commit", 17},
+    {"OpRequest::mark_flag_point", 18}
 };
 
 DwarfParser::probes_t osd_probes = {
@@ -177,10 +179,15 @@ DwarfParser::probes_t osd_probes = {
     {"ECBackend::submit_transaction",
      {{"reqid", "name", "_num"}, {"reqid", "tid"}}},
 
-    {"ReplicatedBackend::repop_commit", 
+    {"ReplicatedBackend::repop_commit",
      {{"rm", "_M_ptr", "op", "px", "reqid", "name", "_num"},
       {"rm", "_M_ptr", "op", "px", "reqid", "tid"},
-      {"rm", "_M_ptr", "op", "px", "request", "data", "_len"}}}
+      {"rm", "_M_ptr", "op", "px", "request", "data", "_len"}}},
+
+    {"OpRequest::mark_flag_point",
+     {{"flag"},
+      {"this", "reqid", "name", "_num"},
+      {"this", "reqid", "tid"}}}
 };
 
 enum mode_e { MODE_AVG = 1, MODE_MAX, MODE_ALL };
