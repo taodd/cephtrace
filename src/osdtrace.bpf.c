@@ -876,61 +876,6 @@ int uprobe_mark_flag_point_string(struct pt_regs *ctx)
 }
 
 SEC("uprobe")
-int uprobe_mark_flag_point(struct pt_regs *ctx)
-{
-  bpf_printk("Entered into mark_flag_point\n");
-  int varid = 180;
-  // read flag from second parameter (uint8_t flag)
-  __u8 flag = PT_REGS_PARM2(ctx);
-  bpf_printk("flag is %d\n", flag);
-  if(!(flag & flag_delayed))
-    return 0;
-
-  struct op_k key;
-  memset(&key, 0, sizeof(key));
-  // read num
-  ++varid;
-  struct VarField *vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 num_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&key.owner, sizeof(key.owner), (void *)num_addr);
-  } else {
-    bpf_printk("uprobe_mark_flag_point got NULL vf at varid %d\n", varid);
-  }
-  // read tid
-  ++varid;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 tid_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&key.tid, sizeof(key.tid), (void *)tid_addr);
-  } else {
-    bpf_printk("uprobe_mark_flag_point got NULL vf at varid %d\n", varid);
-    return 0;
-  }
-  key.pid = get_pid();
-
-  struct op_v *vp = bpf_map_lookup_elem(&ops, &key);
-  if (vp == NULL)
-    return 0;
-
-  // read string pointer (const char *s) from third parameter
-  __u64 str_addr = PT_REGS_PARM3(ctx);
-
-  __u32 idx = vp->di.cnt;
-  if (idx >= 5)
-    return 0;
-
-  // read string until null terminator or max 32 bytes
-  bpf_probe_read_user_str(vp->di.delays[idx], 32, (void *)str_addr);
-  vp->di.cnt++;
-  return 0;
-}
-
-SEC("uprobe")
 int uprobe_log_latency(struct pt_regs *ctx)
 {
   bpf_printk("Entered into log_latency\n");
@@ -1184,3 +1129,57 @@ int uprobe_repop_commit(struct pt_regs *ctx)
 }
 
 
+SEC("uprobe")
+int uprobe_mark_flag_point(struct pt_regs *ctx)
+{
+  bpf_printk("Entered into mark_flag_point\n");
+  int varid = 180;
+  // read flag from second parameter (uint8_t flag)
+  __u8 flag = PT_REGS_PARM2(ctx);
+  bpf_printk("flag is %d\n", flag);
+  if(!(flag & flag_delayed))
+    return 0;
+
+  struct op_k key;
+  memset(&key, 0, sizeof(key));
+  // read num
+  ++varid;
+  struct VarField *vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL != vf) {
+    __u64 v = 0;
+    v = fetch_register(ctx, vf->varloc.reg);
+    __u64 num_addr = fetch_var_member_addr(v, vf);
+    bpf_probe_read_user(&key.owner, sizeof(key.owner), (void *)num_addr);
+  } else {
+    bpf_printk("uprobe_mark_flag_point got NULL vf at varid %d\n", varid);
+  }
+  // read tid
+  ++varid;
+  vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL != vf) {
+    __u64 v = 0;
+    v = fetch_register(ctx, vf->varloc.reg);
+    __u64 tid_addr = fetch_var_member_addr(v, vf);
+    bpf_probe_read_user(&key.tid, sizeof(key.tid), (void *)tid_addr);
+  } else {
+    bpf_printk("uprobe_mark_flag_point got NULL vf at varid %d\n", varid);
+    return 0;
+  }
+  key.pid = get_pid();
+
+  struct op_v *vp = bpf_map_lookup_elem(&ops, &key);
+  if (vp == NULL)
+    return 0;
+
+  // read string pointer (const char *s) from third parameter
+  __u64 str_addr = PT_REGS_PARM3(ctx);
+
+  __u32 idx = vp->di.cnt;
+  if (idx >= 5)
+    return 0;
+
+  // read string until null terminator or max 32 bytes
+  bpf_probe_read_user_str(vp->di.delays[idx], 32, (void *)str_addr);
+  vp->di.cnt++;
+  return 0;
+}
