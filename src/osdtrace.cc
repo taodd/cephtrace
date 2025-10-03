@@ -1129,6 +1129,8 @@ int main(int argc, char **argv) {
     attach_uprobe(skel, dwarfparser, osd_path, process_id, "ECBackend::submit_transaction");
 
     attach_uprobe(skel, dwarfparser, osd_path, process_id, "OpRequest::mark_flag_point_string");
+    
+    attach_uprobe(skel, dwarfparser, osd_path, process_id, "OpRequest::mark_flag_point");
 
     attach_uprobe(skel, dwarfparser, osd_path, process_id, "ReplicatedBackend::generate_subop");
 
