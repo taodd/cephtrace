@@ -336,19 +336,42 @@ int osd_pid_to_id(__u32 pid) {
   // First time, read from /proc/<pid>/cmdline
   char path_cmdline[50];
   char pname[200];
-  int id = 0;
+  int id = -1;
   memset(path_cmdline, 0, sizeof(path_cmdline));
+  memset(pname, 0, sizeof(pname));
   snprintf(path_cmdline, sizeof(path_cmdline), "/proc/%d/cmdline", pid);
   int fd = open(path_cmdline, O_RDONLY);
-  if (read(fd, pname, 200) >= 0) {
-    int start = 41;
-    while (pname[start] != 0 && start < 200) {
-      id *= 10;
-      id += pname[start] - '0';
-      ++start;
+  if (fd >= 0 && read(fd, pname, 199) > 0) {
+    // Find "--id" or "-i" followed by OSD ID in the cmdline
+    // cmdline has null-separated arguments
+    for (int i = 0; i < 195; ++i) {
+      // Check for "--id\0"
+      if (pname[i] == '-' && pname[i+1] == '-' && pname[i+2] == 'i' && pname[i+3] == 'd' && pname[i+4] == '\0') {
+        // Found "--id\0", OSD ID starts after the null byte
+        int start = i + 5;
+        id = 0;
+        while (start < 200 && pname[start] >= '0' && pname[start] <= '9') {
+          id *= 10;
+          id += pname[start] - '0';
+          ++start;
+        }
+        break;
+      }
+      // Check for "-i\0"
+      else if (pname[i] == '-' && pname[i+1] == 'i' && pname[i+2] == '\0') {
+        // Found "-i\0", OSD ID starts after the null byte
+        int start = i + 3;
+        id = 0;
+        while (start < 200 && pname[start] >= '0' && pname[start] <= '9') {
+          id *= 10;
+          id += pname[start] - '0';
+          ++start;
+        }
+        break;
+      }
     }
+    close(fd);
   }
-  close(fd);
   return id;
 }
 
