@@ -488,7 +488,8 @@ static int handle_function(Dwarf_Die *die, void *data) {
 
   if (nscopes > 1) {
     string scopename = special_inlined_function_scope(funcname);
-    if (dwarf_tag(&scopes[1]) == DW_TAG_class_type) {
+    if (dwarf_tag(&scopes[1]) == DW_TAG_class_type || 
+                    dwarf_tag(&scopes[1]) == DW_TAG_structure_type) {
       scopename = dwarf_diename(&scopes[1]);
     }
     if (!scopename.empty()) {
