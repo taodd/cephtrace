@@ -203,10 +203,10 @@ enum mode_e mode = MODE_ALL;
 enum probe_mode_e {
     OP_SINGLE_PROBE = 1,
     OP_FULL_PROBE = 2,
-    BLUESTORE_PROBE = 3
+    BLUESTORE_PROBE = 4
 };
 
-enum probe_mode_e probe_mode = OP_SINGLE_PROBE;
+int probe_mode = OP_SINGLE_PROBE;
 
 static __u64 bootstamp = 0;
 
@@ -956,34 +956,36 @@ void handle_bluestore(struct bluestore_lat_v *val, int osd_id) {
 static int handle_event(void *ctx, void *data, size_t size) {
   int osd_id = -1;
   int pid = 0;
-  if (probe_mode == OP_SINGLE_PROBE) {
+
+  // Determine event type based on size
+  bool is_bluestore_event = (size == sizeof(struct bluestore_lat_v));
+  bool is_op_event = (size == sizeof(struct op_v));
+
+  if (is_op_event && (probe_mode & (OP_SINGLE_PROBE | OP_FULL_PROBE))) {
     struct op_v *val = (struct op_v *)data;
     pid = val->pid;
     osd_id = osd_pid_to_id(pid);
-    if (probe_osdid == -1 || probe_osdid == osd_id)
-      handle_single(val, osd_id);
-  } else if (probe_mode == OP_FULL_PROBE){
-    struct op_v *val = (struct op_v *)data;
-    pid = val->pid;
-    osd_id = osd_pid_to_id(pid);
-    if (probe_osdid == -1 || probe_osdid == osd_id)
-    {
-      if (mode == MODE_AVG) {
-	clog << "avg mode needs to be refined" << endl;
-        //handle_avg(val, osd_id);
-      } else if (mode == MODE_ALL){
-        handle_full(val, osd_id);
+
+    if (probe_osdid == -1 || probe_osdid == osd_id) {
+      if (probe_mode == OP_SINGLE_PROBE) {
+        handle_single(val, osd_id);
+      } else if (probe_mode & OP_FULL_PROBE) {
+        if (mode == MODE_AVG) {
+          clog << "avg mode needs to be refined" << endl;
+          //handle_avg(val, osd_id);
+        } else if (mode == MODE_ALL){
+          handle_full(val, osd_id);
+        }
       }
     }
-    //print_full(val, osd_id);
-  } else if (probe_mode == BLUESTORE_PROBE) {
+  } else if (is_bluestore_event && (probe_mode & BLUESTORE_PROBE)) {
     struct bluestore_lat_v *val = (struct bluestore_lat_v *) data;
     pid = val->pid;
     osd_id = osd_pid_to_id(pid);
     if (probe_osdid == -1 || probe_osdid == osd_id)
       handle_bluestore(val, osd_id);
   }
-  
+
   if (!exists(osd_id)) {
     osds[num_osd] = osd_id;
     pids[num_osd++] = pid;
@@ -1024,10 +1026,10 @@ int parse_args(int argc, char **argv) {
         threshold = stoi(optarg);
         break;
       case 'x':
-        probe_mode = OP_FULL_PROBE;
+        probe_mode |= OP_FULL_PROBE;
         break;
       case 'b':
-        probe_mode = BLUESTORE_PROBE;
+        probe_mode |= BLUESTORE_PROBE;
         break;
       case 'o':
         probe_osdid = stoi(optarg);
@@ -1267,15 +1269,17 @@ int main(int argc, char **argv) {
   //Start to load the probes
   if (probe_mode == OP_SINGLE_PROBE) {
     attach_uprobe(skel, dwarfparser, osd_path, process_id, "PrimaryLogPG::log_op_stats", 2);
-  } else if (probe_mode == OP_FULL_PROBE) {
+  }
+
+  if (probe_mode & OP_FULL_PROBE) {
     attach_uprobe(skel, dwarfparser, osd_path, process_id, "OSD::dequeue_op");
 
     attach_uprobe(skel, dwarfparser, osd_path, process_id, "PrimaryLogPG::execute_ctx");
-    
+
     attach_uprobe(skel, dwarfparser, osd_path, process_id, "ECBackend::submit_transaction");
 
     attach_uprobe(skel, dwarfparser, osd_path, process_id, "OpRequest::mark_flag_point_string");
-    
+
     attach_uprobe(skel, dwarfparser, osd_path, process_id, "OpRequest::mark_flag_point");
 
     attach_uprobe(skel, dwarfparser, osd_path, process_id, "ReplicatedBackend::generate_subop");
@@ -1291,9 +1295,11 @@ int main(int argc, char **argv) {
     attach_uprobe(skel, dwarfparser, osd_path, process_id, "PrimaryLogPG::log_op_stats");
 
     attach_uprobe(skel, dwarfparser, osd_path, process_id, "ReplicatedBackend::repop_commit");
-    
+
     attach_uprobe(skel, dwarfparser, osd_path, process_id, "OSD::enqueue_op");
-  } else if (probe_mode == BLUESTORE_PROBE) {
+  }
+
+  if (probe_mode & BLUESTORE_PROBE) {
     attach_uprobe(skel, dwarfparser, osd_path, process_id, "BlueStore::log_latency");
     attach_uprobe(skel, dwarfparser, osd_path, process_id, "BlueStore::log_latency_fn");
   }
