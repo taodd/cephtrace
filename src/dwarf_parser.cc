@@ -445,7 +445,9 @@ bool DwarfParser::filter_cu(string unitname) {
 }
 
 std::string special_inlined_function_scope(const char *funcname){
-  if (strcmp(funcname, "log_latency") == 0) 
+  if (strcmp(funcname, "log_latency") == 0)
+    return "BlueStore";
+  if (strcmp(funcname, "log_latency_fn") == 0)
     return "BlueStore";
   return "";
 }

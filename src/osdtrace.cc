@@ -62,7 +62,8 @@ func_id_t func_id = {
     {"ECBackend::submit_transaction", 150},
     {"BlueStore::_txc_calc_cost", 160},
     {"ReplicatedBackend::repop_commit", 170},
-    {"OpRequest::mark_flag_point", 180}
+    {"OpRequest::mark_flag_point", 180},
+    {"BlueStore::log_latency_fn", 190}
 };
 
 std::map<std::string, int> func_progid = {
@@ -84,7 +85,8 @@ std::map<std::string, int> func_progid = {
     {"ECBackend::submit_transaction", 15},
     {"BlueStore::_txc_calc_cost", 16},
     {"ReplicatedBackend::repop_commit", 17},
-    {"OpRequest::mark_flag_point", 18}
+    {"OpRequest::mark_flag_point", 18},
+    {"BlueStore::log_latency_fn", 19}
 };
 
 DwarfParser::probes_t osd_probes = {
@@ -168,6 +170,10 @@ DwarfParser::probes_t osd_probes = {
       //{"s", "_M_local_buf"}}}, // when size < 15
     
     {"BlueStore::log_latency",
+     {{"idx"},
+      {"l", "__r"}}},
+
+    {"BlueStore::log_latency_fn",
      {{"idx"},
       {"l", "__r"}}},
 
@@ -1289,6 +1295,7 @@ int main(int argc, char **argv) {
     attach_uprobe(skel, dwarfparser, osd_path, process_id, "OSD::enqueue_op");
   } else if (probe_mode == BLUESTORE_PROBE) {
     attach_uprobe(skel, dwarfparser, osd_path, process_id, "BlueStore::log_latency");
+    attach_uprobe(skel, dwarfparser, osd_path, process_id, "BlueStore::log_latency_fn");
   }
 
   bootstamp = get_bootstamp();
