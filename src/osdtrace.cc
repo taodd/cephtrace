@@ -813,21 +813,137 @@ void handle_avg(struct op_v *val, int osd_id) {
 }
 
 void handle_bluestore(struct bluestore_lat_v *val, int osd_id) {
+    __u64 lat_us = val->lat / 1000;
     switch(val->idx) {
+      // Update op processing state latencies
+      case l_bluestore_state_prepare_lat:
+          printf("state_prepare_lat %lld\n", lat_us);
+          break;
+      case l_bluestore_state_aio_wait_lat:
+          printf("state_aio_wait_lat %lld\n", lat_us);
+          break;
+      case l_bluestore_state_io_done_lat:
+          printf("state_io_done_lat %lld\n", lat_us);
+          break;
+      case l_bluestore_state_kv_queued_lat:
+          printf("state_kv_queued_lat %lld\n", lat_us);
+          break;
+      case l_bluestore_state_kv_committing_lat:
+          printf("state_kv_committing_lat %lld\n", lat_us);
+          break;
+      case l_bluestore_state_kv_done_lat:
+          printf("state_kv_done_lat %lld\n", lat_us);
+          break;
+      case l_bluestore_state_finishing_lat:
+          printf("state_finishing_lat %lld\n", lat_us);
+          break;
+      case l_bluestore_state_done_lat:
+          printf("state_done_lat %lld\n", lat_us);
+          break;
+      case l_bluestore_state_deferred_queued_lat:
+          printf("state_deferred_queued_lat %lld\n", lat_us);
+          break;
+      case l_bluestore_state_deferred_aio_wait_lat:
+          printf("state_deferred_aio_wait_lat %lld\n", lat_us);
+          break;
+      case l_bluestore_state_deferred_cleanup_lat:
+          printf("state_deferred_cleanup_lat %lld\n", lat_us);
+          break;
+      case l_bluestore_commit_lat:
+          printf("commit_lat %lld\n", lat_us);
+          break;
+
+      // Update Transaction stats
+      case l_bluestore_throttle_lat:
+          printf("throttle_lat %lld\n", lat_us);
+          break;
+      case l_bluestore_submit_lat:
+          printf("submit_lat %lld\n", lat_us);
+          break;
+
+      // Read op stats
+      case l_bluestore_read_onode_meta_lat:
+          printf("read_onode_meta_lat %lld\n", lat_us);
+          break;
+      case l_bluestore_read_wait_aio_lat:
+          printf("read_wait_aio_lat %lld\n", lat_us);
+          break;
+      case l_bluestore_csum_lat:
+          printf("csum_lat %lld\n", lat_us);
+          break;
+      case l_bluestore_read_lat:
+          printf("read_lat %lld\n", lat_us);
+          break;
+
+      // kv_thread latencies
       case l_bluestore_kv_flush_lat:
-	  printf("kv_flush_lat %lld ", val->lat/1000);
-	  break;
+          printf("kv_flush_lat %lld\n", lat_us);
+          break;
       case l_bluestore_kv_commit_lat:
-	  printf("kv_commit_lat %lld ", val->lat/1000);
-	  break;
+          printf("kv_commit_lat %lld\n", lat_us);
+          break;
       case l_bluestore_kv_sync_lat:
-	  printf("kv_sync_lat is %lld\n", val->lat/1000);
-	  break;
+          printf("kv_sync_lat %lld\n", lat_us);
+          break;
+      case l_bluestore_kv_final_lat:
+          printf("kv_final_lat %lld\n", lat_us);
+          break;
+
+      // Write op stats
+      case l_bluestore_write_lat:
+          printf("write_lat %lld\n", lat_us);
+          break;
+
+      // Compression stats
+      case l_bluestore_compress_lat:
+          printf("compress_lat %lld\n", lat_us);
+          break;
+      case l_bluestore_decompress_lat:
+          printf("decompress_lat %lld\n", lat_us);
+          break;
+
+      // Other client ops latencies
+      case l_bluestore_omap_seek_to_first_lat:
+          printf("omap_seek_to_first_lat %lld\n", lat_us);
+          break;
+      case l_bluestore_omap_upper_bound_lat:
+          printf("omap_upper_bound_lat %lld\n", lat_us);
+          break;
+      case l_bluestore_omap_lower_bound_lat:
+          printf("omap_lower_bound_lat %lld\n", lat_us);
+          break;
+      case l_bluestore_omap_next_lat:
+          printf("omap_next_lat %lld\n", lat_us);
+          break;
+      case l_bluestore_omap_get_keys_lat:
+          printf("omap_get_keys_lat %lld\n", lat_us);
+          break;
+      case l_bluestore_omap_get_values_lat:
+          printf("omap_get_values_lat %lld\n", lat_us);
+          break;
+      case l_bluestore_omap_clear_lat:
+          printf("omap_clear_lat %lld\n", lat_us);
+          break;
+      case l_bluestore_clist_lat:
+          printf("clist_lat %lld\n", lat_us);
+          break;
+      case l_bluestore_remove_lat:
+          printf("remove_lat %lld\n", lat_us);
+          break;
+      case l_bluestore_truncate_lat:
+          printf("truncate_lat %lld\n", lat_us);
+          break;
+
+      // Allocation stats
+      case l_bluestore_allocator_lat:
+          printf("allocator_lat %lld\n", lat_us);
+          break;
+
       default:
-	  //printf("Bluestore lat Not captured yet: %lld\n", val->lat);
-	  break;
+          // Check if this is beyond l_bluestore_last (might be from newer ceph version)
+          printf("unknown_bluestore_lat idx=%d lat=%lld\n", val->idx, lat_us);
+          break;
     }
-    //printf("idx is %d, lat is %lld\n", val->idx, val->lat);
 }
 
 static int handle_event(void *ctx, void *data, size_t size) {
