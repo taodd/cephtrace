@@ -814,6 +814,7 @@ void handle_avg(struct op_v *val, int osd_id) {
 
 void handle_bluestore(struct bluestore_lat_v *val, int osd_id) {
     __u64 lat_us = val->lat / 1000;
+    printf("osd %d ", osd_id);
     switch(val->idx) {
       // Update op processing state latencies
       case l_bluestore_state_prepare_lat:
