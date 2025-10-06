@@ -896,11 +896,6 @@ void handle_bluestore(struct bluestore_lat_v *val, int osd_id) {
           printf("kv_final_lat %lld\n", lat_us);
           break;
 
-      // Write op stats
-      case l_bluestore_write_lat:
-          printf("write_lat %lld\n", lat_us);
-          break;
-
       // Compression stats
       case l_bluestore_compress_lat:
           printf("compress_lat %lld\n", lat_us);
@@ -939,11 +934,6 @@ void handle_bluestore(struct bluestore_lat_v *val, int osd_id) {
           break;
       case l_bluestore_truncate_lat:
           printf("truncate_lat %lld\n", lat_us);
-          break;
-
-      // Allocation stats
-      case l_bluestore_allocator_lat:
-          printf("allocator_lat %lld\n", lat_us);
           break;
 
       default:
