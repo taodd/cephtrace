@@ -197,7 +197,7 @@ def analyze(op_type: OpType, data: list = [], slow_threshold: int = 1000, show_i
                 if show_in_ms:
                     bavg = bavg / 1000
                 final_results[osd]["Bluestore Distribution"][f"Average {metric}"] = f"{round(bavg, rounding_precision)} {unit}"
-                final_results[osd]["Bluestore Distribution"][f"Max {metric}"] = f"{max(values)}"
+                final_results[osd]["Bluestore Distribution"][f"Max {metric}"] = f"{max(values)} {unit}"
 
     return final_results
 
