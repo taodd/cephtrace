@@ -188,7 +188,7 @@ def analyze(op_type: OpType, data: list = [], slow_threshold: int = 1000, show_i
         final_results[osd][f"Maximum contributing factor of slow {mode}"] = info[f"slow {mode} data distribution"]
 
         for thresh in generic_thresholds:
-            final_results[osd][f"Latency > {thresh} {unit}"] = info[f"generic threshold {thresh} count"]
+            final_results[osd][f"Latency > {thresh} us"] = info[f"generic threshold {thresh} count"]
 
         if breakdown_bluestore:
             final_results[osd]["Bluestore Distribution"] = {}
@@ -227,8 +227,8 @@ def main(args) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("osdtrace_file", help="Path to osdtrace output file")
-    parser.add_argument("-o", "--ops-latency", help="Analyze ops latency in osdtrace", action="store_true", default=True)
-    parser.add_argument("-s", "--subops-latency", help="Analyze subops latency in osdtrace", action="store_true", default=True)
+    parser.add_argument("-o", "--ops-latency", help="Analyze ops latency in osdtrace", action="store_true", default=False)
+    parser.add_argument("-s", "--subops-latency", help="Analyze subops latency in osdtrace", action="store_true", default=False)
     parser.add_argument("-m", "--show-in-ms", help="Use milliseconds for analysis output (default is microseconds)", action="store_true")
     parser.add_argument("-b", "--breakdown-bluestore", help="Show analysis of bluestore operations", action="store_true")
     parser.add_argument("--ops-thresholds", help="Comma separated values of generic threshold values in microseconds", default="100,1000", type=str)
@@ -237,5 +237,8 @@ if __name__ == "__main__":
     parser.add_argument("--slow-subops-threshold", help="Number of microseconds above which the sub-operation is considered slow", default=1000, type=int)
     args = parser.parse_args()
 
-    main(args)
+    if not args.ops_latency and not args.subops_latency:
+        print("You need to specify if you want to analyze ops latency, subops latency or both, Check the help message for flags needed.")
+    else:
+        main(args)
 
