@@ -146,7 +146,7 @@ def analyze(op_type: OpType, data: list = [], slow_threshold: int = 1000, show_i
                         highest_metric = metric
 
             results[osd][f"slow {mode} data"].append(final_lat)
-            results[osd][f"slow {mode} data distribution"][highest_metric] = results[osd][f"slow {mode} data distribution"].get(highest_metric, 0) + 1
+            results[osd][f"slow {mode} data distribution"][f"{highest_metric} count"] = results[osd][f"slow {mode} data distribution"].get(highest_metric, 0) + 1
 
         if breakdown_bluestore:
             bluestore_metrics = trace.get("bluestore_details", {})
