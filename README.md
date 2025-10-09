@@ -188,7 +188,7 @@ Taking the write operation: `osd 38 pg 20.16b op_w size 12288 client 179589331 t
 
 #### Messenger Level (Network/Message Processing):
 - ```throttle_lat 2```: Flow control throttling time (2μs) - prevents message overload
-- ```recv_lat 26```: Message receive ande decode time (26μs) - network processing
+- ```recv_lat 26```: Message receive time (26μs) from first to last byte - network processing
 - ```dispatch_lat 15```: Message dispatch time (15μs) - internal dispatch from messenger to OSD Processing level
 
 #### OSD Processing Level:
