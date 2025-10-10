@@ -4,18 +4,15 @@ import re
 import json
 import statistics
 from enum import Enum
-
-class OpType(Enum):
-    OP = "op"
-    SUBOP = "subop"
+import numpy as np
 
 
 pattern_size = re.compile(r"size (\d+)")
 pattern_peers = re.compile(r"peers \[(.*?)\]")
-pattern_ops_lat = re.compile(
+pattern_lat = re.compile(
     r"osd\s+(?P<osd>\d+)\s+"
     r"pg\s+(?P<pg>\S+)\s+"
-    r"(?P<op>\S+)\s+"
+    r"(?P<op>(?:sub)?op_[wr])\s+"
     r"size\s+(?P<size>\d+)\s+"
     r"client\s+(?P<client>\d+)\s+"
     r"tid\s+(?P<tid>\d+)\s+"
@@ -24,28 +21,15 @@ pattern_ops_lat = re.compile(
     r"dispatch_lat\s+(?P<dispatch_lat>\d+)\s+"
     r"queue_lat\s+(?P<queue_lat>\d+)\s+"
     r"osd_lat\s+(?P<osd_lat>\d+)\s+"
-    r"peers\s+(?P<peers>\[.*?\])\s+"
-    r"bluestore_lat\s+(?P<bluestore_lat>\d+)\s+\((?P<bluestore_details>.*)\)\s+"
-    r"op_lat\s+(?P<op_lat>\d+)"
-)
-pattern_subop_lat = re.compile(
-    r"osd\s+(?P<osd>\d+)\s+"
-    r"pg\s+(?P<pg>\S+)\s+"
-    r"(?P<op>\S+)\s+"
-    r"size\s+(?P<size>\d+)\s+"
-    r"client\s+(?P<client>\d+)\s+"
-    r"tid\s+(?P<tid>\d+)\s+"
-    r"throttle_lat\s+(?P<throttle_lat>\d+)\s+"
-    r"recv_lat\s+(?P<recv_lat>\d+)\s+"
-    r"dispatch_lat\s+(?P<dispatch_lat>\d+)\s+"
-    r"queue_lat\s+(?P<queue_lat>\d+)\s+"
-    r"osd_lat\s+(?P<osd_lat>\d+)\s+"
-    r"bluestore_lat\s+(?P<bluestore_lat>\d+)\s+\((?P<bluestore_details>.*)\)\s+"
-    r"subop_lat\s+(?P<subop_lat>\d+)"
+    r"(?:peers\s+(?P<peers>\[.*?\])\s+)?"   # peers are only in write ops
+    r"bluestore_lat\s+(?P<bluestore_lat>\d+)"
+    r"(?:\s*\((?P<bluestore_details>.*?)\))?"  # bluestore latencies are only in write
+    r"(?:\s+)?"
+    r"(?P<lat_type>(?:sub)?op_lat)\s+(?P<lat>\d+)"
 )
 
 
-def parse_line(line: str = "") -> list:
+def parse_line_sp(line: str = "") -> list:
     size_match = pattern_size.search(line)
     peers_match = pattern_peers.search(line)
     if not size_match or not peers_match:
@@ -59,161 +43,118 @@ def parse_line(line: str = "") -> list:
     return entries
 
 
-def parse_line_ops_lat(line: str = "") -> list:
-    m = pattern_ops_lat.search(line)
+def parse_line(line: str = "") -> list:
+    m = pattern_lat.search(line)
     if not m:
         return []
 
     data = m.groupdict()
 
-    peers = re.findall(r"\((\d+),\s*(\d+)\)", data["peers"])
-    data["peers"] = [(int(a), int(b)) for a, b in peers]
+    # Parse peers if present
+    if data.get("peers"):
+        peers = re.findall(r"\((\d+),\s*(\d+)\)", data["peers"])
+        data["peers"] = [(int(a), int(b)) for a, b in peers]
+    else:
+        data["peers"] = []
 
-    details = re.findall(r"(\w+)\s+(\d+)", data["bluestore_details"])
-    data["bluestore_details"] = {k: int(v) for k, v in details}
+    # Parse bluestore details into dict
+    if data.get("bluestore_details"):
+        details = re.findall(r"(\w+)\s+(\d+)", data["bluestore_details"])
+        data["bluestore_details"] = {k: int(v) for k, v in details}
+    else:
+        data["bluestore_details"] = {}
 
+    # Convert all relevant numeric fields
     for key in [
-        "osd", "size", "client", "tid", "throttle_lat", "recv_lat",
-        "dispatch_lat", "queue_lat", "osd_lat", "bluestore_lat", "op_lat"
+        "osd", "size", "client", "tid", "throttle_lat",
+        "recv_lat", "dispatch_lat", "queue_lat",
+        "osd_lat", "bluestore_lat", "lat"
     ]:
         data[key] = int(data[key])
 
     return [data]
 
 
-def parse_line_subop_lat(line: str = "") -> list:
-    m = pattern_subop_lat.search(line)
-    if not m:
-        return []
-
-    data = m.groupdict()
-
-    details = re.findall(r"(\w+)\s+(\d+)", data["bluestore_details"])
-    data["bluestore_details"] = {k: int(v) for k, v in details}
-
-    for key in [
-        "osd", "size", "client", "tid", "throttle_lat", "recv_lat",
-        "dispatch_lat", "queue_lat", "osd_lat", "bluestore_lat", "subop_lat"
-    ]:
-        data[key] = int(data[key])
-
-    return [data]
-
-
-def parse_file(file: str, op_type: OpType) -> list:
+def parse_file(file: str) -> list:
     all_entries = []
-    handler = parse_line_ops_lat if op_type == OpType.OP else parse_line_subop_lat
     with open(file, 'r') as f:
         for line in f:
-            entries = handler(line)
+            entries = parse_line(line)
             all_entries.extend(entries)
     return all_entries
 
 
+def format_percentile_value_display(width: int, value: float) -> str:
+    formatted_value = f"{value:.2f}"
+    leading_spaces = " " * (width - len(formatted_value))
+    return f"{leading_spaces}{formatted_value}"
 
-def analyze(op_type: OpType, data: list = [], slow_threshold: int = 1000, show_in_ms: bool = False, generic_thresholds: str = "100,1000", breakdown_bluestore: bool = False) -> dict:
+
+def analyze(
+    data: list = [],
+    show_in_ms: bool = False,
+    breakdown_bluestore: bool = False,
+    single_osd: int = -1,
+) -> None:
     results = {}
-    final_results = {}
-    unit = "ms" if show_in_ms else "us"
-    rounding_precision = 2
-    mode = op_type.value
-    generic_thresholds = generic_thresholds.split(",")
+    unit = "msec" if show_in_ms else "usec"
 
+    # aggregate data over each operation type, grouped by osd so we can print all data for a given osd at once
     for trace in data:
         osd = trace["osd"]
         if osd not in results:
             results[osd] = {
-                f"{mode} data": [],
-                f"slow {mode} data": [],
-                f"slow {mode} data distribution": {},
+                f"{op_type}_data": [] for op_type in ["op_r", "op_w", "subop_r", "subop_w"]
             }
-            for thresh in generic_thresholds:
-                results[osd][f"generic threshold {thresh}"] = []
-            final_results[f"osd.{osd}"] = {}
 
-        final_lat = trace[f"{mode}_lat"]
-        for thresh in generic_thresholds:
-            if final_lat > int(thresh):
-                results[osd][f"generic threshold {thresh} count"] = results[osd].get(f"generic threshold {thresh} count", 0) + 1
-
-        if final_lat > slow_threshold:
-            highest_metric_value = -1
-            highest_metric = None
-            for metric, value in trace.items():
-                if metric.endswith("_lat") and metric != f"{mode}_lat":
-                    if value > highest_metric_value:
-                        highest_metric_value = value
-                        highest_metric = metric
-
-            results[osd][f"slow {mode} data"].append(final_lat)
-            results[osd][f"slow {mode} data distribution"][f"{highest_metric} count"] = results[osd][f"slow {mode} data distribution"].get(f"{highest_metric} count", 0) + 1
-
-        if breakdown_bluestore:
-            bluestore_metrics = trace.get("bluestore_details", {})
-            if f"{mode} bluestore data" not in results[osd]:
-                results[osd][f"{mode} bluestore data"] = {key: [] for key in bluestore_metrics.keys()}
-
-            for metric, value in bluestore_metrics.items():
-                results[osd][f"{mode} bluestore data"][metric].append(value)
-
-        results[osd][f"{mode} data"].append(final_lat)
-
+        results[osd][f"{trace['op']}_data"].append(trace["lat"])
 
     for osdid, info in results.items():
-        osd = f"osd.{osdid}"
-        avg = statistics.mean(info[f"{mode} data"])
-        stdev = statistics.stdev(info[f"{mode} data"])
-        median = statistics.median(info[f"{mode} data"])
-        ops_subops_count= len(info[f"{mode} data"])
-        slow_ops_subops_count = len(info[f"slow {mode} data"])
-        max_lat = max(info[f"{mode} data"])
-        min_lat = min(info[f"{mode} data"])
+        print(f"osd.{osdid}:")
+        for op_type in ["op_r", "op_w", "subop_r", "subop_w"]:
+            lat_data = info[f"{op_type}_data"]
+            if not lat_data:
+                continue
 
-        if show_in_ms:
-            avg = avg / 1000
-            stdev = stdev / 1000
-            median = median / 1000
-            max_lat = max_lat / 1000
-            min_lat = min_lat / 1000
-            rounding_precision = 5
+            avg = statistics.mean(lat_data)
+            stdev = statistics.stdev(lat_data)
+            max_lat = max(lat_data)
+            min_lat = min(lat_data)
 
-        final_results[osd]["Average Latency"] = f"{round(avg, rounding_precision)} {unit}"
-        final_results[osd]["Standard Deviation of Latencies"] = f"{round(stdev, rounding_precision)} {unit}"
-        final_results[osd]["Median Latency"] = f"{median} {unit}"
-        final_results[osd]["Max Latency"] = f"{max_lat} {unit}"
-        final_results[osd]["Min Latency"] = f"{min_lat} {unit}"
-        final_results[osd][f"Total number of {mode}"] = ops_subops_count
-        final_results[osd][f"Percantage of slow {mode}"] = f"{round((slow_ops_subops_count / ops_subops_count) * 100, 2)} %"
-        final_results[osd][f"Total number of slow {mode}"] = slow_ops_subops_count
-        final_results[osd][f"Maximum contributing factor of slow {mode}"] = info[f"slow {mode} data distribution"]
+            if show_in_ms:
+                avg = avg / 1000
+                stdev = stdev / 1000
+                max_lat = max_lat / 1000
+                min_lat = min_lat / 1000
+                lat_data = [x / 1000 for x in lat_data] 
 
-        for thresh in generic_thresholds:
-            final_results[osd][f"Latency > {thresh} us"] = info[f"generic threshold {thresh} count"]
+            percentile_thresholds = [1, 5] + [i*10 for i in range(1,10)] + [95, 99, 99.5, 99.9]
+            percentiles = np.percentile(lat_data, percentile_thresholds)
+            print(f"  {op_type} latency ({unit}): min={min_lat}, max={max_lat}, avg={avg:.2f}, stdev={stdev:.2f}, samples={len(lat_data)}")
+            print(f"  lat percentiles ({unit}):")
+            num_percentile_per_line = 3
+            num_percentile_lines = len(percentile_thresholds) // num_percentile_per_line
+            percentile_display_width = len(str(f"{percentiles[-1]:.2f}"))
+            for pt in range(num_percentile_lines + 1):
+                pline = ""
+                for sub_pt in range(num_percentile_per_line):
+                    idx = (pt * num_percentile_per_line) + sub_pt
+                    if idx < len(percentile_thresholds):
+                        value = format_percentile_value_display(percentile_display_width, percentiles[idx])
+                        percentile_threshold = f"{percentile_thresholds[idx]:.2f}"
+                        leading_space = " " if len(percentile_threshold) == 4 else ""
+                        pline += f" {leading_space}{percentile_threshold}th=[{value}],"
+                if pline:
+                    if pt == num_percentile_lines - 1:
+                        pline = pline[:-1]
+                    print(f"  | {pline}")
 
-        if breakdown_bluestore:
-            final_results[osd]["Bluestore Distribution"] = {}
-            for metric, values in info[f"{mode} bluestore data"].items():
-                bavg = statistics.mean(values)
-                if show_in_ms:
-                    bavg = bavg / 1000
-                final_results[osd]["Bluestore Distribution"][f"Average {metric}"] = f"{round(bavg, rounding_precision)} {unit}"
-                final_results[osd]["Bluestore Distribution"][f"Max {metric}"] = f"{max(values)} {unit}"
-
-    return final_results
+            print()
 
 
 def main(args) -> None:
-    if args.ops_latency:
-        print(f"Analyzing latencies of main operations with a slow threshold of {args.slow_ops_threshold} μs...")
-        parsed_data = parse_file(args.osdtrace_file, OpType.OP)
-        results = analyze(OpType.OP, parsed_data, args.slow_ops_threshold, args.show_in_ms, args.ops_thresholds, args.breakdown_bluestore)
-        print(json.dumps(results, indent=4))
-
-    if args.subops_latency:
-        print(f"Analyzing latencies of sub operations with a slow threshold of {args.slow_subops_threshold} μs...")
-        parsed_data = parse_file(args.osdtrace_file, OpType.SUBOP)
-        results = analyze(OpType.SUBOP, parsed_data, args.slow_subops_threshold, args.show_in_ms, args.subops_thresholds, args.breakdown_bluestore)
-        print(json.dumps(results, indent=4))
+    parsed_data = parse_file(args.osdtrace_file)
+    analyze(parsed_data, args.show_in_ms, args.breakdown_bluestore, args.osd)
 
     # all_entries = parse_file(args.osdtrace_file, parse_line)
 
@@ -225,20 +166,12 @@ def main(args) -> None:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("osdtrace_file", help="Path to osdtrace output file")
-    parser.add_argument("-o", "--ops-latency", help="Analyze ops latency in osdtrace", action="store_true", default=False)
-    parser.add_argument("-s", "--subops-latency", help="Analyze subops latency in osdtrace", action="store_true", default=False)
+    parser.add_argument("-o", "--osd", help="ID of a single OSD to analyze", default=-1, type=int)
     parser.add_argument("-m", "--show-in-ms", help="Use milliseconds for analysis output (default is microseconds)", action="store_true")
     parser.add_argument("-b", "--breakdown-bluestore", help="Show analysis of bluestore operations", action="store_true")
-    parser.add_argument("--ops-thresholds", help="Comma separated values of generic threshold values in microseconds", default="100,1000", type=str)
-    parser.add_argument("--subops-thresholds", help="Comma separated values of generic threshold values in microseconds", default="100,1000", type=str)
-    parser.add_argument("--slow-ops-threshold", help="Number of microseconds above which the operation is considered slow", default=1000, type=int)
-    parser.add_argument("--slow-subops-threshold", help="Number of microseconds above which the sub-operation is considered slow", default=1000, type=int)
+    parser.add_argument("-j", "--json", help="Print output in json format", action="store_true")
     args = parser.parse_args()
 
-    if not args.ops_latency and not args.subops_latency:
-        print("You need to specify if you want to analyze ops latency, subops latency or both, Check the help message for flags needed.")
-    else:
-        main(args)
-
+    main(args)
