@@ -1,3 +1,4 @@
 version=4
-opts=filenamemangle=s/.+\/v?(\d\S*)\.tar\.gz/cephtrace-$1\.tar\.gz/ \
-  https://github.com/taodd/cephtrace/tags .*/v?(\d\S*)\.tar\.gz
+opts="searchmode=plain" \
+  https://api.github.com/repos/taodd/cephtrace/releases/latest \
+  https://github.com/taodd/cephtrace/releases/download/v?(\d+(?:\.\d+)*)/cephtrace-(?:\d+(?:\.\d+)*).tar.gz
