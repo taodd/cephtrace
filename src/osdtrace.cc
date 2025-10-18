@@ -1170,13 +1170,6 @@ int main(int argc, char **argv) {
 
   if (parse_args(argc, argv) < 0) return 0;
 
-  if (check_library_deleted(process_id, "ceph-osd")) {
-     cerr << "Error: ceph-osd library mismatch detected!" << endl;
-     cerr << "The ceph package has been upgraded on disk, but one or more processes are still using the old version in memory." << endl;
-     cerr << "Please restart the affected processes to pick up the new version." << endl;
-     return 1;
-   }
-
   struct osdtrace_bpf *skel;
   int ret = 0;
   struct ring_buffer *rb;
