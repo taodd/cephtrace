@@ -348,7 +348,7 @@ int osd_pid_to_id(__u32 pid) {
   snprintf(path_cmdline, sizeof(path_cmdline), "/proc/%d/cmdline", pid);
   int fd = open(path_cmdline, O_RDONLY);
   if (fd >= 0 && read(fd, pname, 199) > 0) {
-    // Find "--id" or "-i" followed by OSD ID in the cmdline
+    // Find "--id" or "-i" or "-n osd.<id>" followed by OSD ID in the cmdline
     // cmdline has null-separated arguments
     for (int i = 0; i < 195; ++i) {
       // Check for "--id\0"
@@ -374,6 +374,22 @@ int osd_pid_to_id(__u32 pid) {
           ++start;
         }
         break;
+      }
+      // Check for "-n\0" followed by "osd.<id>\0"
+      else if (pname[i] == '-' && pname[i+1] == 'n' && pname[i+2] == '\0') {
+        // Found "-n\0", check if next argument starts with "osd."
+        int start = i + 3;
+        if (start + 4 < 200 && pname[start] == 'o' && pname[start+1] == 's' && pname[start+2] == 'd' && pname[start+3] == '.') {
+          // Found "osd.", extract ID between "osd." and '\0'
+          start += 4; // Move past "osd."
+          id = 0;
+          while (start < 200 && pname[start] >= '0' && pname[start] <= '9') {
+            id *= 10;
+            id += pname[start] - '0';
+            ++start;
+          }
+          break;
+        }
       }
     }
     close(fd);
