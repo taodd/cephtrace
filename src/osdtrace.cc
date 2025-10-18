@@ -1004,11 +1004,24 @@ std::string json_input_file;
 std::string json_output_file;
 bool import_json = false;
 bool export_json = false;
+bool skip_version_check = false;
 int process_id = -1;  // Default to -1
 int parse_args(int argc, char **argv) {
+  static struct option long_options[] = {
+    {"skip-version-check", no_argument, 0, 0},
+    {0, 0, 0, 0}
+  };
+
+  int option_index = 0;
   char opt;
-  while ((opt = getopt(argc, argv, ":d:m:t:o:xbj:i:l:p:")) != -1) {
+  while ((opt = getopt_long(argc, argv, ":d:m:t:o:xbj:i:l:p:", long_options, &option_index)) != -1) {
     switch (opt) {
+      case 0:
+        // Handle long options
+        if (strcmp(long_options[option_index].name, "skip-version-check") == 0) {
+          skip_version_check = true;
+        }
+        break;
       case 'd':
         period = optarg[0] - '0';
         break;
@@ -1056,18 +1069,19 @@ int parse_args(int argc, char **argv) {
         break;
       case '?':
       case 'h':
-        std::cout << "Usage: " << argv[0] << "[-d <seconds>] [-m <avg|max>] [-l <milliseconds>] [-o <osd-id>] [-x] [-b] [-j] [-i <filename>] [-t <seconds>] [-p <pid>]\n";
-        std::cout << "  -d <seconds>       Set probe duration in seconds to calculate average latency\n";
-        std::cout << "  -m <avg|max>       Set operation latency collection mode\n";
-        std::cout << "  -l <milliseconds>  Set operation latency threshold to capture\n";
-        std::cout << "  -o <osd-id>        Only probe a specific OSD\n";
-        std::cout << "  -x                 Set probe mode to Full OPs. See below for details\n";
-        std::cout << "  -b                 Set probe mode to Bluestore. See below for details\n";
-        std::cout << "  -j                 Export DWARF info to JSON file\n";
-        std::cout << "  -i <filename>      Import DWARF info from JSON file\n";
-        std::cout << "  -t <seconds>       Set execution timeout in seconds\n";
-        std::cout << "  -p <pid>           Probe using a Process ID\n";
-        std::cout << "  -h                 Show this help message\n";
+        std::cout << "Usage: " << argv[0] << "[-d <seconds>] [-m <avg|max>] [-l <milliseconds>] [-o <osd-id>] [-x] [-b] [-j] [-i <filename>] [-t <seconds>] [-p <pid>] [--skip-version-check]\n";
+        std::cout << "  -d <seconds>              Set probe duration in seconds to calculate average latency\n";
+        std::cout << "  -m <avg|max>              Set operation latency collection mode\n";
+        std::cout << "  -l <milliseconds>         Set operation latency threshold to capture\n";
+        std::cout << "  -o <osd-id>               Only probe a specific OSD\n";
+        std::cout << "  -x                        Set probe mode to Full OPs. See below for details\n";
+        std::cout << "  -b                        Set probe mode to Bluestore. See below for details\n";
+        std::cout << "  -j                        Export DWARF info to JSON file\n";
+        std::cout << "  -i <filename>             Import DWARF info from JSON file\n";
+        std::cout << "  -t <seconds>              Set execution timeout in seconds\n";
+        std::cout << "  -p <pid>                  Probe using a Process ID (Mandatory for tracing containerized processes)\n";
+        std::cout << "  --skip-version-check      Skip version check when importing DWARF JSON (useful for containers)\n";
+        std::cout << "  -h                        Show this help message\n";
         std::cout << "----------------------------------------------------------------------------------------------------------------------------------------\n";
         std::cout << "                                                SUPPORTED PROBE MODE DETAILS\n";
         std::cout << "----------------------------------------------------------------------------------------------------------------------------------------\n";
@@ -1185,10 +1199,35 @@ int main(int argc, char **argv) {
 
   clog << "Start to parse ceph dwarf info" << endl;
 
-  std::string osd_path = find_executable_path("ceph-osd");
-  if (osd_path.empty()) {
-    std::cerr << "Error: Could not find ceph-osd executable" << std::endl;
-    return 1;
+  std::string osd_path;
+
+  if (process_id != -1) {
+    // PID specified - read executable path from /proc/<pid>/exe
+    std::string exe_link = "/proc/" + std::to_string(process_id) + "/exe";
+    char exe_path[PATH_MAX];
+    ssize_t len = readlink(exe_link.c_str(), exe_path, sizeof(exe_path) - 1);
+
+    if (len != -1) {
+      exe_path[len] = '\0';
+      std::string target(exe_path);
+      // Remove "(deleted)" suffix if present
+      size_t deleted_pos = target.find(" (deleted)");
+      if (deleted_pos != std::string::npos) {
+        target = target.substr(0, deleted_pos);
+      }
+      osd_path = target;
+      clog << "Reading executable from process " << process_id << ": " << osd_path << endl;
+    } else {
+      std::cerr << "Error: Could not read /proc/" << process_id << "/exe" << std::endl;
+      return 1;
+    }
+  } else {
+    // No PID specified - search for ceph-osd on the system
+    osd_path = find_executable_path("ceph-osd");
+    if (osd_path.empty()) {
+      std::cerr << "Error: Could not find ceph-osd executable" << std::endl;
+      return 1;
+    }
   }
 
   std::cout << "Tracing ceph-osd at: " << osd_path << std::endl;
@@ -1204,15 +1243,21 @@ int main(int argc, char **argv) {
   
   if (import_json) {
     // Import dwarf data from JSON file
-    // Get version information for comparison
-    std::string version = get_package_version(osd_path);
-    if (version != "unknown") {
-      clog << "Current package version: " << version << endl;
+    std::string version = "";
+
+    if (skip_version_check) {
+      clog << "Skipping version check as requested" << endl;
     } else {
-      clog << "Could not determine current package version for ceph-osd, exit" << endl;
-      return 1;
+      // Get version information for comparison
+      version = get_package_version(osd_path);
+      if (version != "unknown") {
+        clog << "Current package version: " << version << endl;
+      } else {
+        clog << "Could not determine current package version for ceph-osd, exit" << endl;
+        return 1;
+      }
     }
-    
+
     if (!dwarfparser.import_from_json(json_input_file, version)) {
       cerr << "Failed to import dwarf data from " << json_input_file << endl;
       return 1;
