@@ -1128,9 +1128,9 @@ int attach_uprobe(struct osdtrace_bpf *skel,
       funcname = funcname + "_v" + std::to_string(v); 
   int pid = func_progid[funcname];
   struct bpf_link *ulink = bpf_program__attach_uprobe(
-      *skel->skeleton->progs[pid].prog, 
+      *skel->skeleton->progs[pid].prog,
       false /* not uretprobe */,
-      -1,  // Pass the process_id parameter here
+      process_id,
       pid_path.c_str(), func_addr);
   if (!ulink) {
     cerr << "Failed to attach uprobe to " << funcname << endl;
@@ -1154,7 +1154,7 @@ int attach_retuprobe(struct osdtrace_bpf *skel,
   struct bpf_link *ulink = bpf_program__attach_uprobe(
       *skel->skeleton->progs[pid].prog, 
       true /* uretprobe */,
-      -1,
+      process_id,
       path.c_str(), func_addr);
   if (!ulink) {
     cerr << "Failed to attach uretprobe to " << funcname << endl;
