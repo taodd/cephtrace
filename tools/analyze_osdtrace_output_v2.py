@@ -5,9 +5,29 @@ import json
 import statistics
 from enum import Enum
 from math import ceil
+from textwrap import dedent, indent
 
 OP_TYPES= ["op_r", "op_w", "subop_r", "subop_w"]
 BLUESTORE_OP_TYPES = ["prepare", "aio_wait", "aio_size", "seq_wait", "kv_commit"]
+EPILOGUE_HELP = dedent('''
+To run the tool, you need to have a osdtrace file,
+
+    ./analyze_osdtrace_output.py osdtrace.out
+
+The flags of show_ms, osd and field apply to all methods.
+
+    Prints statistical analysis but for kv_commit latencies
+        ./analyze_osdtrace_output.py osdtrace.out -f kv_commit
+
+    Prints statistical analysis but for kv_commit latencies and osd 22
+        ./analyze_osdtrace_output.py osdtrace.out -f kv_commit -o 22
+
+    Prints sorted lines for kv_commit latencies
+        ./analyze_osdtrace_output.py osdtrace.out -s -f kv_commit
+''')
+
+class CustomFormatter(argparse.ArgumentDefaultsHelpFormatter, argparse.RawDescriptionHelpFormatter):
+    pass
 
 pattern_size = re.compile(r"size (\d+)")
 pattern_peers = re.compile(r"peers \[(.*?)\]")
@@ -238,17 +258,13 @@ def main(args) -> None:
     else:
         analyze(parsed_data, args.show_in_ms, args.field, args.osd)
 
-    # all_entries = parse_file(args.osdtrace_file, parse_line)
-
-    # # sort by latency
-    # all_entries.sort(key=lambda x: x[2])
-
-    # for size, pid, lat in all_entries:
-    #     print(f"{size} {pid} {lat}")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser = argparse.ArgumentParser(
+        formatter_class=CustomFormatter,
+        epilog=EPILOGUE_HELP,
+    )
     parser.add_argument("osdtrace_file", help="Path to osdtrace output file")
     parser.add_argument("-o", "--osd", help="ID of a single OSD to analyze", default=-1, type=int)
     parser.add_argument("-m", "--show-in-ms", help="Use milliseconds for analysis output (default is microseconds)", action="store_true")
