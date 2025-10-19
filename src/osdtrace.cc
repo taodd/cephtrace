@@ -1196,9 +1196,18 @@ int attach_retuprobe(struct osdtrace_bpf *skel,
 }
 
 int main(int argc, char **argv) {
-  signal(SIGINT, signal_handler); 
+  signal(SIGINT, signal_handler);
 
   if (parse_args(argc, argv) < 0) return 0;
+
+  // Validate process_id if specified
+  if (process_id != -1) {
+    std::string proc_path = "/proc/" + std::to_string(process_id);
+    if (access(proc_path.c_str(), F_OK) != 0) {
+      std::cerr << "Error: Process ID " << process_id << " does not exist" << std::endl;
+      return 1;
+    }
+  }
 
   struct osdtrace_bpf *skel;
   int ret = 0;

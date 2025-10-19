@@ -459,6 +459,15 @@ int main(int argc, char **argv) {
       }
   }
 
+  // Validate process_id if specified
+  if (process_id != -1) {
+    std::string proc_path = "/proc/" + std::to_string(process_id);
+    if (access(proc_path.c_str(), F_OK) != 0) {
+      std::cerr << "Error: Process ID " << process_id << " does not exist" << std::endl;
+      return 1;
+    }
+  }
+
   /* Set up timeout if provided */
   if (timeout > 0) {
       signal(SIGALRM, timeout_handler);
