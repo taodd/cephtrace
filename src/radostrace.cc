@@ -148,16 +148,21 @@ int attach_uprobe(struct radostrace_bpf *skel,
 		   int process_id = -1,
 		   int v = 0) {
 
+  std::string pid_path = path;
+  if (process_id != -1) {
+    pid_path = "/proc/" + std::to_string(process_id) + "/root" + path;
+  }
+
   auto &func2pc = dp.mod_func2pc[path];
   size_t func_addr = func2pc[funcname];
   if (v > 0)
-      funcname = funcname + "_v" + std::to_string(v); 
+      funcname = funcname + "_v" + std::to_string(v);
   int prog_id = func_progid[funcname];
   struct bpf_link *ulink = bpf_program__attach_uprobe(
-      *skel->skeleton->progs[prog_id].prog, 
+      *skel->skeleton->progs[prog_id].prog,
       false /* not uretprobe */,
       process_id,  // Use the specified process ID
-      path.c_str(), func_addr);
+      pid_path.c_str(), func_addr);
   if (!ulink) {
     cerr << "Failed to attach uprobe to " << funcname << endl;
     return -errno;
@@ -177,16 +182,22 @@ int attach_retuprobe(struct radostrace_bpf *skel,
 		   std::string funcname,
 		   int process_id = -1,
 		   int v = 0) {
+
+  std::string pid_path = path;
+  if (process_id != -1) {
+    pid_path = "/proc/" + std::to_string(process_id) + "/root" + path;
+  }
+
   auto &func2pc = dp.mod_func2pc[path];
   size_t func_addr = func2pc[funcname];
   if (v > 0)
-      funcname = funcname + "_v" + std::to_string(v); 
+      funcname = funcname + "_v" + std::to_string(v);
   int prog_id = func_progid[funcname];
   struct bpf_link *ulink = bpf_program__attach_uprobe(
-      *skel->skeleton->progs[prog_id].prog, 
+      *skel->skeleton->progs[prog_id].prog,
       true /* uretprobe */,
       process_id,  // Use the specified process ID
-      path.c_str(), func_addr);
+      pid_path.c_str(), func_addr);
   if (!ulink) {
     cerr << "Failed to attach uretprobe to " << funcname << endl;
     return -errno;
