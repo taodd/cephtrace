@@ -183,16 +183,23 @@ bool check_library_deleted(int process_id, const std::string& lib_name) {
 
 std::string find_library_path(const std::string& lib_name, int pid) {
     int old_root_fd = -1;
+    int old_cwd_fd = -1;
     bool did_chroot = false;
     std::string result;
 
     // If PID is specified, chroot to the process's root
     if (pid != -1) {
-        // Save current root directory
+        // Save current working directory and root directory
+        old_cwd_fd = open(".", O_RDONLY | O_DIRECTORY);
         old_root_fd = open("/", O_RDONLY | O_DIRECTORY);
-        if (old_root_fd < 0) {
-            std::cerr << "Warning: Failed to open current root directory: " << strerror(errno) << std::endl;
+
+        if (old_root_fd < 0 || old_cwd_fd < 0) {
+            std::cerr << "Warning: Failed to save current directories: " << strerror(errno) << std::endl;
             std::cerr << "Falling back to host filesystem search" << std::endl;
+            if (old_root_fd >= 0) close(old_root_fd);
+            if (old_cwd_fd >= 0) close(old_cwd_fd);
+            old_root_fd = -1;
+            old_cwd_fd = -1;
             // Fall through to normal search
         } else {
             // Chroot to process's root filesystem
@@ -208,7 +215,9 @@ std::string find_library_path(const std::string& lib_name, int pid) {
                 std::cerr << "This usually requires root privileges or CAP_SYS_CHROOT capability" << std::endl;
                 std::cerr << "Falling back to host filesystem search" << std::endl;
                 close(old_root_fd);
+                close(old_cwd_fd);
                 old_root_fd = -1;
+                old_cwd_fd = -1;
             }
         }
     }
@@ -274,19 +283,29 @@ std::string find_library_path(const std::string& lib_name, int pid) {
     }
 
 cleanup:
-    // Restore original root if we chrooted
+    // Restore original root and working directory if we chrooted
     if (did_chroot && old_root_fd >= 0) {
+        // First restore the root filesystem
         if (fchdir(old_root_fd) != 0) {
             std::cerr << "Error: Failed to fchdir back to original root: " << strerror(errno) << std::endl;
         }
         if (chroot(".") != 0) {
             std::cerr << "Error: Failed to chroot back to original root: " << strerror(errno) << std::endl;
         }
-        std::clog << "Restored original root filesystem" << std::endl;
+        // Then restore the original working directory
+        if (old_cwd_fd >= 0) {
+            if (fchdir(old_cwd_fd) != 0) {
+                std::cerr << "Error: Failed to restore original working directory: " << strerror(errno) << std::endl;
+            }
+        }
+        std::clog << "Restored original root filesystem and working directory" << std::endl;
     }
 
     if (old_root_fd >= 0) {
         close(old_root_fd);
+    }
+    if (old_cwd_fd >= 0) {
+        close(old_cwd_fd);
     }
 
     return result;
