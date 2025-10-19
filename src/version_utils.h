@@ -40,9 +40,13 @@ bool check_library_deleted(int process_id, const std::string& lib_name);
  * common library directories if that fails.
  *
  * @param lib_name The name of the library to find (e.g., "librbd.so.1")
+ * @param pid The process ID to search libraries for. If specified (not -1),
+ *            temporarily chroots to /proc/<pid>/root to find the library
+ *            in the process's filesystem (useful for containerized processes).
+ *            Requires CAP_SYS_CHROOT capability.
  * @return The full path to the library, or empty string if not found
  */
-std::string find_library_path(const std::string& lib_name);
+std::string find_library_path(const std::string& lib_name, int pid = -1);
 
 /**
  * Find the path to an executable by name.

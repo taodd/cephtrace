@@ -4,10 +4,14 @@
 #include <dirent.h>
 #include <ctype.h>
 #include <cstdio>
+#include <cstring>
+#include <cerrno>
 #include <vector>
 #include <dlfcn.h>
 #include <link.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <sys/stat.h>
 
 std::string get_package_version(const std::string& library_path) {
     // Extract the library name from the path
@@ -177,7 +181,38 @@ bool check_library_deleted(int process_id, const std::string& lib_name) {
     return false;
 }
 
-std::string find_library_path(const std::string& lib_name) {
+std::string find_library_path(const std::string& lib_name, int pid) {
+    int old_root_fd = -1;
+    bool did_chroot = false;
+    std::string result;
+
+    // If PID is specified, chroot to the process's root
+    if (pid != -1) {
+        // Save current root directory
+        old_root_fd = open("/", O_RDONLY | O_DIRECTORY);
+        if (old_root_fd < 0) {
+            std::cerr << "Warning: Failed to open current root directory: " << strerror(errno) << std::endl;
+            std::cerr << "Falling back to host filesystem search" << std::endl;
+            // Fall through to normal search
+        } else {
+            // Chroot to process's root filesystem
+            std::string proc_root = "/proc/" + std::to_string(pid) + "/root";
+            if (chroot(proc_root.c_str()) == 0) {
+                did_chroot = true;
+                if (chdir("/") != 0) {
+                    std::cerr << "Warning: Failed to chdir to new root: " << strerror(errno) << std::endl;
+                }
+                std::clog << "Chrooted to " << proc_root << " to search for " << lib_name << std::endl;
+            } else {
+                std::cerr << "Warning: chroot to " << proc_root << " failed: " << strerror(errno) << std::endl;
+                std::cerr << "This usually requires root privileges or CAP_SYS_CHROOT capability" << std::endl;
+                std::cerr << "Falling back to host filesystem search" << std::endl;
+                close(old_root_fd);
+                old_root_fd = -1;
+            }
+        }
+    }
+
     // First try to find the library using dlopen
     void* handle = dlopen(lib_name.c_str(), RTLD_LAZY | RTLD_NOLOAD);
     if (!handle) {
@@ -193,46 +228,66 @@ std::string find_library_path(const std::string& lib_name) {
             dlclose(handle);
             if (!path.empty() && path != lib_name) {
                 std::clog << "Found library " << lib_name << " at: " << path << std::endl;
-                return path;
+                result = path;
+                goto cleanup;
             }
         }
         dlclose(handle);
     }
 
     // Fallback: search in common library directories
-    std::vector<std::string> search_dirs = {
-        "/lib",
-        "/lib64",
-        "/usr/lib",
-        "/usr/lib64",
-        "/lib/x86_64-linux-gnu",
-        "/usr/lib/x86_64-linux-gnu",
-        "/usr/lib/x86_64-linux-gnu/ceph",
-        "/usr/local/lib"
-    };
+    {
+        std::vector<std::string> search_dirs = {
+            "/lib",
+            "/lib64",
+            "/usr/lib",
+            "/usr/lib64",
+            "/lib/x86_64-linux-gnu",
+            "/usr/lib/x86_64-linux-gnu",
+            "/usr/lib/x86_64-linux-gnu/ceph",
+            "/usr/local/lib"
+        };
 
-    // Try different possible filenames for the library
-    std::vector<std::string> possible_names;
-    if (lib_name.find(".so") == std::string::npos) {
-        // If no .so extension, try common patterns
-        possible_names.push_back("lib" + lib_name + ".so");
-        possible_names.push_back("lib" + lib_name + ".so.1");
-        possible_names.push_back("lib" + lib_name + ".so.2");
-    } else {
-        possible_names.push_back(lib_name);
-    }
+        // Try different possible filenames for the library
+        std::vector<std::string> possible_names;
+        if (lib_name.find(".so") == std::string::npos) {
+            // If no .so extension, try common patterns
+            possible_names.push_back("lib" + lib_name + ".so");
+            possible_names.push_back("lib" + lib_name + ".so.1");
+            possible_names.push_back("lib" + lib_name + ".so.2");
+        } else {
+            possible_names.push_back(lib_name);
+        }
 
-    for (const auto& dir : search_dirs) {
-        for (const auto& name : possible_names) {
-            std::string full_path = dir + "/" + name;
-            if (access(full_path.c_str(), F_OK) == 0) {
-                std::clog << "Found library " << lib_name << " at: " << full_path << std::endl;
-                return full_path;
+        for (const auto& dir : search_dirs) {
+            for (const auto& name : possible_names) {
+                std::string full_path = dir + "/" + name;
+                if (access(full_path.c_str(), F_OK) == 0) {
+                    std::clog << "Found library " << lib_name << " at: " << full_path << std::endl;
+                    result = full_path;
+                    goto cleanup;
+                }
             }
         }
     }
 
-    return "";
+cleanup:
+    // Restore original root if we chrooted
+    if (did_chroot && old_root_fd >= 0) {
+        if (fchdir(old_root_fd) != 0) {
+            std::cerr << "Error: Failed to fchdir back to original root: " << strerror(errno) << std::endl;
+        }
+        if (chroot(".") != 0) {
+            std::cerr << "Error: Failed to chroot back to original root: " << strerror(errno) << std::endl;
+        }
+        std::clog << "Restored original root filesystem" << std::endl;
+    }
+
+    if (old_root_fd >= 0) {
+        close(old_root_fd);
+    }
+
+    return result;
 }
 
 std::string find_executable_path(const std::string& exe_name) {

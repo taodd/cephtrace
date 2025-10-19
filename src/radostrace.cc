@@ -474,11 +474,11 @@ int main(int argc, char **argv) {
   struct ring_buffer *rb;
 
   DwarfParser dwarfparser(rados_probes, probe_units);
-  
+
   // Use the new function to find library paths dynamically
-  std::string librbd_path = find_library_path("librbd.so.1");
-  std::string librados_path = find_library_path("librados.so.2");
-  std::string libceph_common_path = find_library_path("libceph-common.so.2");
+  std::string librbd_path = find_library_path("librbd.so.1", process_id);
+  std::string librados_path = find_library_path("librados.so.2", process_id);
+  std::string libceph_common_path = find_library_path("libceph-common.so.2", process_id);
 
   if(librbd_path.empty() || librados_path.empty() || libceph_common_path.empty()) {
     cerr << "Error: Could not find one or more required Ceph libraries:" << endl;
