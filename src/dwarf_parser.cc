@@ -171,7 +171,7 @@ void DwarfParser::traverse_module(Dwfl_Module *mod, Dwarf *dw, bool want_type) {
     Dwarf_Die *die;
     die = dwarf_offdie(dw, off + cuhl, &die_mem);
     string cu_name = dwarf_diename(die) ?: "<unknown>";
-    cout << "preprocess_module cu name " << cu_name << endl;
+    //cout << "preprocess_module cu name " << cu_name << endl;
     /* Skip partial units. */
     if (dwarf_tag(die) == DW_TAG_compile_unit) {
        	iterate_types_in_cu(mcu, die);
@@ -731,9 +731,9 @@ static int handle_module(Dwfl_Module *dwflmod, void **userdata,
       assert(dp->cfi_debug == NULL || dp->cfi_debug_bias == 0);
 
       string cu_name = dwarf_diename(&cu_die) ?: "<unknown>";
-      cout << "handle_module cu name " << cu_name << endl;
+      //cout << "handle_module cu name " << cu_name << endl;
       if (dp->filter_cu(cu_name) || cu_name == "<artificial>") {
-        cout << "cu name " << cu_name << endl;
+        //cout << "cu name " << cu_name << endl;
         dp->cur_cu = &cu_die;
         dwarf_getfuncs(&cu_die, (int (*)(Dwarf_Die *, void *))handle_function,
                        dp, 0);
