@@ -240,8 +240,10 @@ std::string find_library_path(const std::string& lib_name, int pid) {
         std::vector<std::string> search_dirs = {
             "/lib",
             "/lib64",
+            "/lib64/ceph",
             "/usr/lib",
             "/usr/lib64",
+            "/usr/lib64/ceph",
             "/lib/x86_64-linux-gnu",
             "/usr/lib/x86_64-linux-gnu",
             "/usr/lib/x86_64-linux-gnu/ceph",
