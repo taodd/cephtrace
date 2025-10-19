@@ -397,6 +397,7 @@ int main(int argc, char **argv) {
   int timeout = -1;
   bool export_json = false;
   bool import_json = false;
+  bool skip_version_check = false;
   std::string json_output_file = "radostrace_dwarf.json";
   std::string json_input_file;
   int process_id = -1;  // Default to -1 (all processes)
@@ -443,13 +444,16 @@ int main(int argc, char **argv) {
               std::cerr << "Error: -p/--pid requires a process ID argument\n";
               return 1;
           }
+      } else if (arg == "--skip-version-check") {
+          skip_version_check = true;
       } else if (arg == "-h" || arg == "--help") {
-          std::cout << "Usage: " << argv[0] << " [-t <timeout seconds>] [-j [filename]] [-i <filename>] [-o [filename]] [-p <pid>]\n";
+          std::cout << "Usage: " << argv[0] << " [-t <timeout seconds>] [-j [filename]] [-i <filename>] [-o [filename]] [-p <pid>] [--skip-version-check]\n";
           std::cout << "  -t, --timeout <seconds>    Set execution timeout in seconds\n";
           std::cout << "  -j, --export-json <file>   Export DWARF info to JSON (default: radostrace_dwarf.json)\n";
           std::cout << "  -i, --import-json <file>   Import DWARF info from JSON file\n";
           std::cout << "  -o, --output <file>        Export events data info to CSV (default: radostrace_events.csv)\n";
-          std::cout << "  -p, --pid <pid>            Attach uprobes only to the specified process ID\n";
+          std::cout << "  -p, --pid <pid>            Attach uprobes only to the specified process ID (Mandatory for container based process tracing)\n";
+          std::cout << "  --skip-version-check       Skip version check when importing DWARF JSON (currently needed for containers)\n";
           std::cout << "  -h, --help                 Show this help message\n";
           return 0;
       }
@@ -495,16 +499,22 @@ int main(int argc, char **argv) {
 
   if (import_json) {
       clog << "Importing DWARF info from " << json_input_file << endl;
-      
-      // Get version information from the primary library (librados) for comparison
-      std::string version = get_package_version(librados_path);
-      if (version != "unknown") {
-          clog << "Current package version: " << version << endl;
+
+      std::string version = "";
+
+      if (skip_version_check) {
+          clog << "Skipping version check as requested" << endl;
       } else {
-          clog << "Could not determine current package version for librados2, exit" << endl;
-          return 1;
+          // Get version information from the primary library (librados) for comparison
+          version = get_package_version(librados_path);
+          if (version != "unknown") {
+              clog << "Current package version: " << version << endl;
+          } else {
+              clog << "Could not determine current package version for librados2, exit" << endl;
+              return 1;
+          }
       }
-      
+
       if (!dwarfparser.import_from_json(json_input_file, version)) {
           cerr << "Failed to import DWARF info from " << json_input_file << endl;
           return 1;

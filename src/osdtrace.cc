@@ -1096,7 +1096,7 @@ int parse_args(int argc, char **argv) {
         std::cout << "  -i <filename>             Import DWARF info from JSON file\n";
         std::cout << "  -t <seconds>              Set execution timeout in seconds\n";
         std::cout << "  -p <pid>                  Probe using a Process ID (Mandatory for tracing containerized processes)\n";
-        std::cout << "  --skip-version-check      Skip version check when importing DWARF JSON (useful for containers)\n";
+        std::cout << "  --skip-version-check      Skip version check when importing DWARF JSON (currently needed for containers)\n";
         std::cout << "  -h                        Show this help message\n";
         std::cout << "----------------------------------------------------------------------------------------------------------------------------------------\n";
         std::cout << "                                                SUPPORTED PROBE MODE DETAILS\n";
