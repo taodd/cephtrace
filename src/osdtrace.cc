@@ -1242,6 +1242,13 @@ int main(int argc, char **argv) {
       }
       osd_path = target;
       clog << "Reading executable from process " << process_id << ": " << osd_path << endl;
+
+      // Validate that the process is actually running ceph-osd
+      if (osd_path.find("ceph-osd") == std::string::npos) {
+        std::cerr << "Error: Process ID " << process_id << " is not running ceph-osd" << std::endl;
+        std::cerr << "Process is running: " << osd_path << std::endl;
+        return 1;
+      }
     } else {
       std::cerr << "Error: Could not read /proc/" << process_id << "/exe" << std::endl;
       return 1;
