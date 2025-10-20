@@ -4,61 +4,61 @@ import re
 from collections import defaultdict
 
 def parse_args():
-    if len(sys.argv) != 5:
-        print("Usage: ./analyze_osd_latency.py <log_file> <osd_tree_file> <pid> <latency_threshold in microsecond>")
+    if len(sys.argv) < 3:
+        print("Usage: ./analyze_radostrace_output.sh <log_file> <osd_tree_file> [latency_threshold_in_microseconds]")
+        print("  latency_threshold defaults to 100000 microseconds (100ms) if not specified")
         sys.exit(1)
-    
+
     log_file = sys.argv[1]
     osd_tree_file = sys.argv[2]
-    pid = sys.argv[3]
-    
-    try:
-        latency_threshold = int(sys.argv[4])
-    except ValueError:
-        print("Error: latency_threshold must be an integer")
-        sys.exit(1)
-    
-    return log_file, osd_tree_file, pid, latency_threshold
 
-def parse_log_file(log_file, pid, threshold):
+    # Default threshold is 100ms = 100000 microseconds
+    latency_threshold = 100000
+
+    if len(sys.argv) >= 4:
+        try:
+            latency_threshold = int(sys.argv[3])
+        except ValueError:
+            print("Error: latency_threshold must be an integer")
+            sys.exit(1)
+
+    return log_file, osd_tree_file, latency_threshold
+
+def parse_log_file(log_file, threshold):
     osd_counts = defaultdict(int)
     osd_entries = []  # Store each entry's OSD list for subsequent passes
-    
+
     with open(log_file, 'r') as f:
         for line in f:
             # Skip empty lines
             if not line.strip():
                 continue
-                
+
             parts = line.split()
-            
+
             # Check if line has enough columns
             if len(parts) < 9:
                 continue
-                
-            # Check PID match
-            if parts[0] != pid:
-                continue
-                
+
             # Parse latency (9th column, 0-based index 8)
             try:
                 latency = int(parts[8])
             except (ValueError, IndexError):
                 continue
-                
+
             # Check latency threshold
             if latency < threshold:
                 continue
-                
+
             # Parse OSD list (6th column, index 5)
             osd_list_str = parts[5]
             osd_list = re.findall(r'\d+', osd_list_str)
             osd_entries.append(osd_list)
-            
+
             # Count each OSD
             for osd in osd_list:
                 osd_counts[osd] += 1
-                
+
     return osd_counts, osd_entries
 
 def parse_osd_tree(osd_tree_file):
@@ -85,82 +85,93 @@ def parse_osd_tree(osd_tree_file):
                         
     return osd_to_host
 
+def count_osds_in_entries(entries):
+    """Count occurrences of each OSD in the given entries."""
+    counts = defaultdict(int)
+    for entry in entries:
+        for osd in entry:
+            counts[osd] += 1
+    return counts
+
+def print_summary(problematic_osds, total_operations):
+    """Print final summary of all problematic OSDs."""
+    if not problematic_osds:
+        print("\nNo problematic OSDs identified.")
+        return
+
+    print("\n" + "=" * 70)
+    print("=== SUMMARY: Problematic OSDs Identified ===")
+    print("=" * 70)
+    print("{:<6} {:<10} {:<8} {:<20} {:<10}".format("Rank", "OSD", "Count", "Host", "Iteration"))
+    print("-" * 70)
+
+    for rank, (osd, count, host, iteration) in enumerate(problematic_osds, start=1):
+        print("{:<6} {:<10} {:<8} {:<20} {:<10}".format(
+            rank,
+            f"osd.{osd}",
+            count,
+            host,
+            iteration
+        ))
+
+    print("-" * 70)
+    print(f"Total problematic OSDs identified: {len(problematic_osds)}")
+    print(f"Total high-latency operations analyzed: {total_operations}")
+    print("=" * 70)
+
 def print_results(osd_counts, osd_entries, osd_to_host):
     if not osd_counts:
         print("No matching entries found with the given criteria.")
         return
-        
-    # First pass - all OSDs
-    print("\n[Primary Analysis] All OSDs:")
-    print("{:<8} {:<8} {:<20}".format("OSD", "Count", "Host"))
-    print("-" * 40)
-    
-    # Sort OSDs by count in descending order
-    sorted_osds = sorted(osd_counts.items(), key=lambda x: x[1], reverse=True)
-    
-    for osd, count in sorted_osds:
-        host = osd_to_host.get(osd, "Unknown")
-        print("{:<8} {:<8} {:<20}".format(f"osd.{osd}", count, host))
-    
-    # Second pass - exclude entries containing the top OSD from first pass
-    if sorted_osds:
-        top_osd_1 = sorted_osds[0][0]
-        secondary_counts = defaultdict(int)
-        secondary_entries = []
-        
-        for entry in osd_entries:
-            if top_osd_1 not in entry:
-                secondary_entries.append(entry)
-                for osd in entry:
-                    secondary_counts[osd] += 1
-        
-        if secondary_counts:
-            print("\n[Secondary Analysis] Excluding entries with top OSD (osd.{})".format(top_osd_1))
-            print("{:<8} {:<8} {:<20}".format("OSD", "Count", "Host"))
-            print("-" * 40)
-            
-            # Sort secondary OSDs by count
-            sorted_secondary = sorted(secondary_counts.items(), key=lambda x: x[1], reverse=True)
-            
-            for osd, count in sorted_secondary:
-                host = osd_to_host.get(osd, "Unknown")
-                print("{:<8} {:<8} {:<20}".format(f"osd.{osd}", count, host))
-            
-            # Third pass - exclude entries containing both top OSDs from first and second passes
-            if sorted_secondary:
-                top_osd_2 = sorted_secondary[0][0]
-                third_counts = defaultdict(int)
-                
-                for entry in secondary_entries:
-                    if top_osd_2 not in entry:
-                        for osd in entry:
-                            third_counts[osd] += 1
-                
-                if third_counts:
-                    print("\n[Third Analysis] Excluding entries with top 2 OSDs (osd.{} and osd.{})".format(top_osd_1, top_osd_2))
-                    print("{:<8} {:<8} {:<20}".format("OSD", "Count", "Host"))
-                    print("-" * 40)
-                    
-                    # Sort third OSDs by count
-                    sorted_third = sorted(third_counts.items(), key=lambda x: x[1], reverse=True)
-                    
-                    for osd, count in sorted_third:
-                        host = osd_to_host.get(osd, "Unknown")
-                        print("{:<8} {:<8} {:<20}".format(f"osd.{osd}", count, host))
-                else:
-                    print("\nNo third OSDs found after excluding entries containing the top 2 OSDs.")
-        else:
-            print("\nNo secondary OSDs found after excluding entries containing the top OSD.")
+
+    total_operations = len(osd_entries)
+    problematic_osds = []  # List of (osd, count, host, iteration)
+    excluded_osds = set()
+    remaining_entries = osd_entries
+    iteration = 1
+
+    print("\n" + "=" * 70)
+    print("Starting iterative analysis to identify problematic OSDs...")
+    print("=" * 70)
+
+    while True:
+        # Count OSDs in remaining entries
+        current_counts = count_osds_in_entries(remaining_entries)
+
+        if not current_counts:
+            print(f"\n[Iteration {iteration}] No more high-latency operations found.")
+            break
+
+        # Find top OSD
+        top_osd = max(current_counts.items(), key=lambda x: x[1])[0]
+        count = current_counts[top_osd]
+        host = osd_to_host.get(top_osd, "Unknown")
+
+        # Record it
+        problematic_osds.append((top_osd, count, host, iteration))
+        print(f"[Iteration {iteration}] Top OSD: osd.{top_osd} ({count} occurrences on {host})")
+
+        # Exclude entries containing this OSD
+        excluded_osds.add(top_osd)
+        remaining_entries = [entry for entry in remaining_entries if top_osd not in entry]
+        iteration += 1
+
+    # Print final summary
+    print_summary(problematic_osds, total_operations)
 
 def main():
-    log_file, osd_tree_file, pid, latency_threshold = parse_args()
-    
+    log_file, osd_tree_file, latency_threshold = parse_args()
+
+    print(f"Analyzing log file: {log_file}")
+    print(f"OSD tree file: {osd_tree_file}")
+    print(f"Latency threshold: {latency_threshold} microseconds ({latency_threshold/1000:.1f} ms)")
+
     # Parse the log file to get OSD counts and all entries
-    osd_counts, osd_entries = parse_log_file(log_file, pid, latency_threshold)
-    
+    osd_counts, osd_entries = parse_log_file(log_file, latency_threshold)
+
     # Parse the OSD tree file to get OSD to host mapping
     osd_to_host = parse_osd_tree(osd_tree_file)
-    
+
     # Print the results
     print_results(osd_counts, osd_entries, osd_to_host)
 
