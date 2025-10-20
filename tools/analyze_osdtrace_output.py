@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 import argparse
 import re
-import json
 import statistics
-from enum import Enum
 from math import ceil
-from textwrap import dedent, indent
+from textwrap import dedent
 
 OP_TYPES= ["op_r", "op_w", "subop_r", "subop_w"]
-BLUESTORE_OP_TYPES = ["prepare", "aio_wait", "aio_size", "seq_wait", "kv_commit"]
+BLUESTORE_OP_TYPES = {"prepare", "aio_wait", "aio_size", "seq_wait", "kv_commit"}
 EPILOGUE_HELP = dedent('''
 To run the tool, you need to have a osdtrace file,
 
@@ -29,8 +27,7 @@ The flags of show_ms, osd and field apply to all methods.
 class CustomFormatter(argparse.ArgumentDefaultsHelpFormatter, argparse.RawDescriptionHelpFormatter):
     pass
 
-pattern_size = re.compile(r"size (\d+)")
-pattern_peers = re.compile(r"peers \[(.*?)\]")
+
 pattern_lat = re.compile(
     r"osd\s+(?P<osd>\d+)\s+"
     r"pg\s+(?P<pg>\S+)\s+"
@@ -49,20 +46,6 @@ pattern_lat = re.compile(
     r"(?:\s+)?"
     r"(?P<lat_type>(?:sub)?op_lat)\s+(?P<lat>\d+)"
 )
-
-
-def parse_line_sp(line: str = "") -> list:
-    size_match = pattern_size.search(line)
-    peers_match = pattern_peers.search(line)
-    if not size_match or not peers_match:
-        return []
-
-    size = int(size_match.group(1))
-    peers_raw = peers_match.group(1)
-    # extract tuples like (4, 631)
-    peers = re.findall(r"\((\d+),\s*(\d+)\)", peers_raw)
-    entries = [(size, int(pid), int(lat)) for pid, lat in peers]
-    return entries
 
 
 def parse_line(line: str = "") -> list:
@@ -270,7 +253,6 @@ if __name__ == "__main__":
     parser.add_argument("-m", "--show-in-ms", help="Use milliseconds for analysis output (default is microseconds)", action="store_true")
     parser.add_argument("-s", "--sort", help="Sort osdtrace log lines by latency value as specified by '--field'", action="store_true")
     parser.add_argument("-f", "--field", help="Latency field to analyze of each operation type, by default only the final latencies are analyzed", default="lat")
-    parser.add_argument("-j", "--json", help="Print output in json format", action="store_true")
     args = parser.parse_args()
 
     main(args)
