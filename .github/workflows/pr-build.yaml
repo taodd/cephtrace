@@ -1,0 +1,22 @@
+name: Build on Pull Request
+
+on:
+  push:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code and submodules
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive  # fetch submodules
+
+      - name: Ensure submodules are updated
+        run: git submodule update --init --recursive
+
+      - name: Run Makefile build
+        run: make all
