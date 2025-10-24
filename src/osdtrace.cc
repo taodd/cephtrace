@@ -210,7 +210,7 @@ int probe_mode = OP_SINGLE_PROBE;
 
 static __u64 bootstamp = 0;
 
-int threshold = 0; //in millisecond
+__u64 threshold = 0; //in millisecond
 int timeout = -1; //in seconds
 int probe_osdid = -1;
 
@@ -513,7 +513,7 @@ void print_lat_dist(std::vector<__u64> v, int l) {
 void print_srl(int osd) {
   auto wvecs = osd_wsrl[osd];
   auto rvecs = osd_rsrl[osd];
-  int idx = 0;
+  size_t idx = 0;
   printf("OSD %d\n", osd);
   printf("@write:\n");
   for (auto wv: wvecs) {
@@ -569,7 +569,7 @@ void print_op_r(osd_op_t &op, int osd_id) {
 	  op.queue_lat, op.osd_lat,
 	  op.bs_lat, 
 	  op.op_lat);
-  for (int i = 0; i < op.delayed_cnt; ++i) {
+  for (__u32 i = 0; i < op.delayed_cnt; ++i) {
     printf("[delayed%d %s ]", i+1, op.delayed_strs[i].c_str());
   }
   if (op.delayed_cnt > 0)
@@ -593,7 +593,7 @@ void print_subop_w(osd_op_t &op, int osd_id) {
 	  op.queue_lat, op.osd_lat,
 	  op.bs_lat, op.bs_prepare_lat, op.bs_aio_wait_lat, op.aio_size, op.bs_pg_seq_lat, op.bs_kv_commit_lat, 
 	  op.op_lat);
-  for (int i = 0; i < op.delayed_cnt; ++i) {
+  for (__u32 i = 0; i < op.delayed_cnt; ++i) {
     printf("[delayed%d %s ]", i+1, op.delayed_strs[i].c_str());
   }
   if (op.delayed_cnt > 0)
@@ -618,7 +618,7 @@ void print_op_w(osd_op_t &op, int osd_id) {
 	  op.queue_lat, op.osd_lat,  op.peers[0].peer, op.peers[0].latency, op.peers[1].peer, op.peers[1].latency, 
 	  op.bs_lat, op.bs_prepare_lat, op.bs_aio_wait_lat, op.aio_size, op.bs_pg_seq_lat, op.bs_kv_commit_lat, 
 	  op.op_lat);
-  for (int i = 0; i < op.delayed_cnt; ++i) {
+  for (__u32 i = 0; i < op.delayed_cnt; ++i) {
     printf("[delayed%d %s ]", i+1, op.delayed_strs[i].c_str());
   }
   if (op.delayed_cnt > 0)
@@ -640,8 +640,7 @@ void timeout_handler(int signum) {
 }
 
 osd_op_t generate_op(op_v *val) {
-  osd_op_t op;
-  memset(&op, 0, sizeof(osd_op_t));
+  osd_op_t op = osd_op_t();
 
   op.type = val->op_type;
 
@@ -679,7 +678,7 @@ osd_op_t generate_op(op_v *val) {
     op.delayed_strs.push_back(std::string(val->di.delays[i]));
   }
   if (op.type == MSG_OSD_OP) {
-    op.peers.push_back(peer_lat(val->pi.peer1, (val->pi.recv_stamp1 - val->pi.sent_stamp)/1000)); 
+    op.peers.push_back(peer_lat(val->pi.peer1, (val->pi.recv_stamp1 - val->pi.sent_stamp)/1000));
     op.peers.push_back(peer_lat(val->pi.peer2, (val->pi.recv_stamp2 - val->pi.sent_stamp)/1000)); 
   }
   //bluestore level
@@ -687,7 +686,7 @@ osd_op_t generate_op(op_v *val) {
   op.bs_prepare_lat = (val->aio_submit_stamp - val->queue_transaction_stamp)/1000;
   op.bs_aio_wait_lat = (val->aio_done_stamp - val->aio_submit_stamp)/1000;
   op.bs_pg_seq_lat = (val->kv_submit_stamp - val->aio_done_stamp)/1000;
-  op.bs_kv_commit_lat = (val->kv_committed_stamp - val->kv_submit_stamp)/1000; 
+  op.bs_kv_commit_lat = (val->kv_committed_stamp - val->kv_submit_stamp)/1000;
   if (op.wb > 0)
     op.bs_lat = (val->kv_committed_stamp - val->queue_transaction_stamp)/1000;
   else if (op.rb > 0)
@@ -699,10 +698,10 @@ osd_op_t generate_op(op_v *val) {
 }
 
 void handle_full(struct op_v *val, int osd_id) {
-    //if (val->wb == 0) 
+    //if (val->wb == 0)
       //return;
     osd_op_t op = generate_op(val);
-    if (op.op_lat/(1000) < threshold) 
+    if (op.op_lat/(1000) < threshold)
       return;
     if (op.wb == 0) {
       print_op_r(op, osd_id);
@@ -718,7 +717,7 @@ void handle_full(struct op_v *val, int osd_id) {
 void handle_avg(struct op_v *val, int osd_id) {
 
   __u64 recv_stamp = val->recv_stamp;
-  if (val->throttle_stamp < val->recv_stamp) { 
+  if (val->throttle_stamp < val->recv_stamp) {
       //Due to recv_stamp bug https://tracker.ceph.com/issues/52739
       //Releases older than 16.2.7, the recv_stamp is not accurate at all
       //Hence we'll use the throttle_stamp as the recv_stamp, which will only lose 1-3 microseconds
@@ -970,6 +969,7 @@ void handle_bluestore(struct bluestore_lat_v *val, int osd_id) {
 }
 
 static int handle_event(void *ctx, void *data, size_t size) {
+  (void)ctx;
   int osd_id = -1;
   int pid = 0;
 
