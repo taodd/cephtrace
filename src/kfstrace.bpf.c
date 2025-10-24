@@ -191,12 +191,24 @@ struct {
     __uint(max_entries, 256 * 1024);
 } mds_rb SEC(".maps");
 
+// Helper function to initialize kernel trace event in map (avoids stack overflow)
+static __always_inline void initialize_kernel_trace_event(struct request_key *key) {
+    struct kernel_trace_event zero_event = {};
+    bpf_map_update_elem(&pending_requests, key, &zero_event, BPF_ANY);
+}
+
+// Helper function to initialize MDS trace event in map (avoids stack overflow)
+static __always_inline void initialize_mds_trace_event(struct mds_request_key *key) {
+    struct mds_trace_event zero_event = {};
+    bpf_map_update_elem(&pending_mds_requests, key, &zero_event, BPF_ANY);
+}
+
 SEC("kprobe/send_request")
 int trace_send_request(struct pt_regs *ctx)
 {
     struct ceph_osd_request *req = (struct ceph_osd_request *)PT_REGS_PARM1(ctx);
-    struct kernel_trace_event info = {};
     struct request_key key = {};
+    struct kernel_trace_event *info;
     __u64 tid;
     __u32 primary_osd;
     
@@ -246,113 +258,121 @@ int trace_send_request(struct pt_regs *ctx)
         return 0; // Exit early, don't re-initialize the event
     }
 
-    // This is a new request - initialize the event
-    info.tid = tid;
-    info.client_id = client_id;
-    info.start_time = bpf_ktime_get_ns();
-    info.primary_osd = primary_osd;
-    info.pid = bpf_get_current_pid_tgid() >> 32;
-    bpf_get_current_comm(&info.comm, sizeof(info.comm));
-    info.attempts = 1;  // First attempt
+    // This is a new request - initialize in map, then get pointer to populate
+    initialize_kernel_trace_event(&key);
+
+    info = bpf_map_lookup_elem(&pending_requests, &key);
+    if (!info) {
+        return 0; // Map operation failed
+    }
+
+    // Populate the event via pointer (avoids stack overflow)
+    info->tid = tid;
+    info->client_id = client_id;
+    info->start_time = bpf_ktime_get_ns();
+    info->primary_osd = primary_osd;
+    info->pid = bpf_get_current_pid_tgid() >> 32;
+    bpf_get_current_comm(&info->comm, sizeof(info->comm));
+    info->attempts = 1;  // First attempt
     
     // Read acting set from req->r_t.acting
     struct ceph_osd_request_target *target = &req->r_t;
-    
+
     // Read acting set size first
-    if (bpf_core_read(&info.acting_size, sizeof(info.acting_size), &target->acting.size) == 0) {
-        if (info.acting_size > CEPH_PG_MAX_SIZE)
-            info.acting_size = CEPH_PG_MAX_SIZE;
-        
+    if (bpf_core_read(&info->acting_size, sizeof(info->acting_size), &target->acting.size) == 0) {
+        if (info->acting_size > CEPH_PG_MAX_SIZE)
+            info->acting_size = CEPH_PG_MAX_SIZE;
+
         // Copy acting OSDs array directly
-        bpf_core_read(&info.acting_osds, sizeof(int) * info.acting_size, &target->acting.osds);
+        bpf_core_read(&info->acting_osds, sizeof(int) * info->acting_size, &target->acting.osds);
     }
-    
+
     // Read target object ID fields directly
     int name_len;
     if (bpf_core_read(&name_len, sizeof(name_len), &target->target_oid.name_len) == 0) {
-        info.object_name_len = name_len;
-        if (info.object_name_len > CEPH_OID_INLINE_LEN - 1)
-            info.object_name_len = CEPH_OID_INLINE_LEN - 1;
-        
+        info->object_name_len = name_len;
+        if (info->object_name_len > CEPH_OID_INLINE_LEN - 1)
+            info->object_name_len = CEPH_OID_INLINE_LEN - 1;
+
         // Try to read the inline name first (most common case)
-        bpf_core_read_str(info.object_name, info.object_name_len + 1, &target->target_oid.inline_name);
+        bpf_core_read_str(info->object_name, info->object_name_len + 1, &target->target_oid.inline_name);
     }
-    
+
     // Read pool and PG information from target->spgid.pgid (calculated PG)
     struct ceph_spg spgid;
     if (bpf_core_read(&spgid, sizeof(spgid), &target->spgid) == 0) {
-        info.pool_id = spgid.pgid.pool;
-        info.pg_id = spgid.pgid.seed;  // This should be the calculated PG ID
-        bpf_printk("trace_send_request: pool_id=%llu, pg_id=%u\n", info.pool_id, info.pg_id);
+        info->pool_id = spgid.pgid.pool;
+        info->pg_id = spgid.pgid.seed;  // This should be the calculated PG ID
+        bpf_printk("trace_send_request: pool_id=%llu, pg_id=%u\n", info->pool_id, info->pg_id);
     }
 
     // Read flags from target and determine read/write based on CEPH_OSD_FLAG_WRITE
     __u32 flags;
     if (bpf_core_read(&flags, sizeof(flags), &target->flags) == 0) {
-        info.is_write = (flags & CEPH_OSD_FLAG_WRITE) ? 1 : 0;
-        info.is_read = !info.is_write;  // If not write, then it's read
-        bpf_printk("trace_send_request: flags=0x%x, is_write=%u, is_read=%u\n", flags, info.is_write, info.is_read);
+        info->is_write = (flags & CEPH_OSD_FLAG_WRITE) ? 1 : 0;
+        info->is_read = !info->is_write;  // If not write, then it's read
+        bpf_printk("trace_send_request: flags=0x%x, is_write=%u, is_read=%u\n", flags, info->is_write, info->is_read);
     }
     
     // Read all operations from the r_ops array
     __u32 r_num_ops;
     if (bpf_core_read(&r_num_ops, sizeof(r_num_ops), &req->r_num_ops) == 0 && r_num_ops > 0) {
-        info.ops_size = r_num_ops > CEPH_OSD_MAX_OPS ? CEPH_OSD_MAX_OPS : r_num_ops;
-        info.offset = 0;
-        info.length = 0;
-        
+        info->ops_size = r_num_ops > CEPH_OSD_MAX_OPS ? CEPH_OSD_MAX_OPS : r_num_ops;
+        info->offset = 0;
+        info->length = 0;
+
         // Extract all operation types
-        for (int i = 0; i < info.ops_size && i < CEPH_OSD_MAX_OPS; i++) {
+        for (int i = 0; i < info->ops_size && i < CEPH_OSD_MAX_OPS; i++) {
             __u16 op_type;
             if (bpf_core_read(&op_type, sizeof(op_type), &req->r_ops[i].op) == 0) {
-                info.ops[i] = op_type;
-                
-                
+                info->ops[i] = op_type;
+
+
                 // Extract offset and length for extent operations (from first extent op only)
-                if (ceph_osd_op_extent(op_type) && info.offset == 0 && info.length == 0) {
-                    bpf_core_read(&info.offset, sizeof(info.offset), &req->r_ops[i].extent.offset);
-                    bpf_core_read(&info.length, sizeof(info.length), &req->r_ops[i].extent.length);
-                    bpf_printk("trace_send_request: offset=%llu, length=%llu\n", info.offset, info.length);
+                if (ceph_osd_op_extent(op_type) && info->offset == 0 && info->length == 0) {
+                    bpf_core_read(&info->offset, sizeof(info->offset), &req->r_ops[i].extent.offset);
+                    bpf_core_read(&info->length, sizeof(info->length), &req->r_ops[i].extent.length);
+                    bpf_printk("trace_send_request: offset=%llu, length=%llu\n", info->offset, info->length);
                 } else if (ceph_osd_op_call(op_type)) {
                     // Extract class name and method name for call operations
                     const char *class_name = NULL;
                     const char *method_name = NULL;
                     __u8 class_len = 0;
                     __u8 method_len = 0;
-                    
+
                     // Read class name pointer and length
                     if (bpf_core_read(&class_name, sizeof(class_name), &req->r_ops[i].cls.class_name) == 0 &&
                         bpf_core_read(&class_len, sizeof(class_len), &req->r_ops[i].cls.class_len) == 0 &&
                         class_name != NULL && class_len > 0) {
-                        
+
                         // Limit class name length to our buffer size
-                        if (class_len >= sizeof(info.cls_ops[i].cls_name)) {
-                            class_len = sizeof(info.cls_ops[i].cls_name) - 1;
+                        if (class_len >= sizeof(info->cls_ops[i].cls_name)) {
+                            class_len = sizeof(info->cls_ops[i].cls_name) - 1;
                         }
-                        bpf_core_read_str(info.cls_ops[i].cls_name, class_len + 1, class_name);
+                        bpf_core_read_str(info->cls_ops[i].cls_name, class_len + 1, class_name);
                     } else {
-                        info.cls_ops[i].cls_name[0] = '\0';
+                        info->cls_ops[i].cls_name[0] = '\0';
                     }
-                    
+
                     // Read method name pointer and length
                     if (bpf_core_read(&method_name, sizeof(method_name), &req->r_ops[i].cls.method_name) == 0 &&
                         bpf_core_read(&method_len, sizeof(method_len), &req->r_ops[i].cls.method_len) == 0 &&
                         method_name != NULL && method_len > 0) {
-                        
-                        // Limit method name length to our buffer size  
-                        if (method_len >= sizeof(info.cls_ops[i].method_name)) {
-                            method_len = sizeof(info.cls_ops[i].method_name) - 1;
+
+                        // Limit method name length to our buffer size
+                        if (method_len >= sizeof(info->cls_ops[i].method_name)) {
+                            method_len = sizeof(info->cls_ops[i].method_name) - 1;
                         }
-                        bpf_core_read_str(info.cls_ops[i].method_name, method_len + 1, method_name);
+                        bpf_core_read_str(info->cls_ops[i].method_name, method_len + 1, method_name);
                     } else {
-                        info.cls_ops[i].method_name[0] = '\0';
+                        info->cls_ops[i].method_name[0] = '\0';
                     }
                 }
             }
         }
     }
-    
-    bpf_map_update_elem(&pending_requests, &key, &info, BPF_ANY);
+
+    // Data is already in map, no need to update
     bpf_printk("trace_send_request: stored key client_id=%llu tid=%llu\n", key.client_id, key.tid);
     
     return 0;
@@ -440,8 +460,8 @@ int trace_prepare_send_request(struct pt_regs *ctx)
         return 0;
     }
 
-    struct mds_trace_event event = {};
     struct mds_request_key key = {};
+    struct mds_trace_event *event;
     __u64 tid;
     __u32 op;
     __u32 mds_rank;
@@ -498,30 +518,38 @@ int trace_prepare_send_request(struct pt_regs *ctx)
         return 0; // Exit early, don't re-initialize the event
     }
 
-    // This is a new request - initialize the event
-    event.tid = tid;
-    event.client_id = client_id;
-    event.submit_time = bpf_ktime_get_ns();
-    event.unsafe_reply_time = 0;
-    event.safe_reply_time = 0;
-    event.unsafe_latency_us = 0;
-    event.safe_latency_us = 0;
-    event.op = op;
-    event.pid = bpf_get_current_pid_tgid() >> 32;
-    bpf_get_current_comm(&event.comm, sizeof(event.comm));
-    event.mds_rank = mds_rank;
-    event.result = 0;
-    event.attempts = 1;  // First attempt
-    event.got_unsafe_reply = 0;
-    event.got_safe_reply = 0;
-    event.is_write_op = is_mds_write_op(op);
+    // This is a new request - initialize in map, then get pointer to populate
+    initialize_mds_trace_event(&key);
+
+    event = bpf_map_lookup_elem(&pending_mds_requests, &key);
+    if (!event) {
+        return 0; // Map operation failed
+    }
+
+    // Populate the event via pointer (avoids stack overflow)
+    event->tid = tid;
+    event->client_id = client_id;
+    event->submit_time = bpf_ktime_get_ns();
+    event->unsafe_reply_time = 0;
+    event->safe_reply_time = 0;
+    event->unsafe_latency_us = 0;
+    event->safe_latency_us = 0;
+    event->op = op;
+    event->pid = bpf_get_current_pid_tgid() >> 32;
+    bpf_get_current_comm(&event->comm, sizeof(event->comm));
+    event->mds_rank = mds_rank;
+    event->result = 0;
+    event->attempts = 1;  // First attempt
+    event->got_unsafe_reply = 0;
+    event->got_safe_reply = 0;
+    event->is_write_op = is_mds_write_op(op);
 
     // Get operation name
-    get_mds_op_name(op, event.op_name, CEPH_MDS_OP_NAME_MAX);
+    get_mds_op_name(op, event->op_name, CEPH_MDS_OP_NAME_MAX);
 
     // Extract filename/directory name from dentry (r_path1/r_path2 are not set yet)
     // TODO Path can get from ceph_mds_build_path. For now we just get the filename
-    event.path[0] = '\0';
+    event->path[0] = '\0';
 
     struct dentry *dentry;
     const unsigned char *filename;
@@ -537,21 +565,20 @@ int trace_prepare_send_request(struct pt_regs *ctx)
             }
 
             // Read just the dentry name (filename or directory name)
-            if (bpf_core_read_str(event.path, filename_len + 1, filename) <= 0) {
-                event.path[0] = '\0';
+            if (bpf_core_read_str(event->path, filename_len + 1, filename) <= 0) {
+                event->path[0] = '\0';
             }
-            bpf_printk("MDS PREPARE_SEND: dentry name='%s'\n", event.path);
+            bpf_printk("MDS PREPARE_SEND: dentry name='%s'\n", event->path);
         }
     }
 
     // Fallback if no dentry name available
-    if (event.path[0] == '\0') {
-        event.path[0] = '?';
-        event.path[1] = '\0';
+    if (event->path[0] == '\0') {
+        event->path[0] = '?';
+        event->path[1] = '\0';
     }
 
-    // Store the pending request
-    bpf_map_update_elem(&pending_mds_requests, &key, &event, BPF_ANY);
+    // Data is already in map, no need to update
     bpf_printk("MDS PREPARE_SEND: Stored TID=%llu CLIENT_ID=%llu\n", tid, client_id);
 
     return 0;
