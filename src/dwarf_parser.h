@@ -60,7 +60,6 @@ class DwarfParser {
 
   ~DwarfParser();
   void add_module(std::string);
-  void print_die(Dwarf_Die *);
   bool die_has_loclist(Dwarf_Die *);
   bool has_loclist();
   Dwarf_Die *resolve_typedecl(Dwarf_Die *);

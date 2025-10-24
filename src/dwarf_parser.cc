@@ -356,7 +356,7 @@ void DwarfParser::translate_fields(Dwarf_Die *vardie, Dwarf_Die *typedie,
                                    Dwarf_Addr pc, vector<string> fields,
                                    vector<Field> &res) {
   int i = 1;
-  for (auto x : res) {
+  for (auto &x : res) {
     x.pointer = false;
     x.offset = 0;
   }
@@ -454,6 +454,7 @@ std::string special_inlined_function_scope(const char *funcname){
 
 // implement the callback function handle_attr
 static int handle_attr(Dwarf_Attribute *attr, void *data) {
+  (void)data;
   unsigned int code = dwarf_whatattr(attr);
   unsigned int form = dwarf_whatform(attr);
   // print code name and form name
@@ -660,8 +661,10 @@ Dwfl *DwarfParser::create_dwfl(int fd, const char *fname) {
   }
 
   static const Dwfl_Callbacks callbacks = {
+      .find_elf = dwfl_linux_proc_find_elf,
       .find_debuginfo = dwfl_standard_find_debuginfo,
-      .section_address = dwfl_offline_section_address};
+      .section_address = dwfl_offline_section_address,
+      .debuginfo_path = nullptr};
 
   dwfl = dwfl_begin(&callbacks);
 
@@ -681,6 +684,9 @@ Dwfl *DwarfParser::create_dwfl(int fd, const char *fname) {
 
 static int preprocess_module(Dwfl_Module *dwflmod, void **userdata,
                          const char *name, Dwarf_Addr base, void *arg) {
+  (void)userdata;
+  (void)name;
+  (void)base;
 
   DwarfParser *dp = (DwarfParser *)arg;
   assert(dwflmod != NULL && dp != NULL);
@@ -703,6 +709,10 @@ static int preprocess_module(Dwfl_Module *dwflmod, void **userdata,
 
 static int handle_module(Dwfl_Module *dwflmod, void **userdata,
                          const char *name, Dwarf_Addr base, void *arg) {
+  (void)userdata;
+  (void)name;
+  (void)base;
+
   DwarfParser *dp = (DwarfParser *)arg;
   assert(dwflmod != NULL && dp != NULL);
 
@@ -778,39 +788,13 @@ void DwarfParser::add_module(string path) {
   dwfls.push_back(dwfl);
 }
 
-void DwarfParser::print_die(Dwarf_Die *die) {
-  // printf("DIE information:\n");
-  // printf("  Offset: %llu\n", static_cast<unsigned long
-  // long>(dwarf_dieoffset(die))); printf("  Tag: %s\n",
-  // dwarf_tag_string(dwarf_tag(die))); printf("  Name: %s\n",
-  // dwarf_diename(die));
-
-  /*TODO print attribute
-  Dwarf_Attribute attr;
-  Dwarf_Attribute *attr_result = nullptr;
-  while ((attr_result = dwarf_attr_integrate(die, attr_result ? attr.code + 1 :
-  0, &attr)) != nullptr) { const char *attr_name = dwarf_attr_string(attr.code);
-      printf("  Attribute: %s\n", attr_name);
-
-      Dwarf_Word value;
-      if (dwarf_formudata(&attr, &value) == 0) {
-          printf("    Value: %llu\n", static_cast<unsigned long long>(value));
-      } else {
-          const char *str_value = dwarf_formstring(&attr);
-          if (str_value) {
-              printf("    Value: %s\n", str_value);
-          }
-      }
-  }*/
-}
-
 DwarfParser::DwarfParser(probes_t ps, vector<string> pus)
-    : cur_mod(NULL),
+    : probe_units(pus),
+      probes(ps),
+      cur_mod(NULL),
       cur_cu(NULL),
       cfi_debug(NULL),
-      cfi_eh(NULL),
-      probes(ps),
-      probe_units(pus) {
+      cfi_eh(NULL) {
 }
 
 DwarfParser::~DwarfParser() {}
