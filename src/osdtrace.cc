@@ -1269,6 +1269,7 @@ int main(int argc, char **argv) {
     std::cerr << "Warning: Found ceph-osd processes running with deleted/old executables." << std::endl;
     std::cerr << "This may indicate that ceph-osd was updated but processes haven't been restarted." << std::endl;
     std::cerr << "Consider restarting ceph-osd services for accurate tracing." << std::endl;
+    return 1;
   }
 
   DwarfParser dwarfparser(osd_probes, probe_units);
