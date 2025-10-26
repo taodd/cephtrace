@@ -453,7 +453,6 @@ int trace_prepare_send_request(struct pt_regs *ctx)
 
     struct ceph_mds_session *session = (struct ceph_mds_session *)PT_REGS_PARM1(ctx);
     struct ceph_mds_request *req = (struct ceph_mds_request *)PT_REGS_PARM2(ctx);
-    bool drop_cap_releases = (bool)PT_REGS_PARM3(ctx);
 
     if (!req) {
         bpf_printk("MDS PREPARE_SEND: req is NULL\n");

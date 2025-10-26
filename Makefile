@@ -43,7 +43,7 @@ INCLUDES := -I$(OUTPUT) \
 # Compiler flags
 CLANG_BPF_SYS_INCLUDES := $(shell $(CLANG) -v -E - </dev/null 2>&1 | \
     sed -n '/<...> search starts here:/,/End of search list./{ s| \(/.*\)|-idirafter \1|p }')
-CXXFLAGS := -g -O2 -D__TARGET_ARCH_$(ARCH) $(INCLUDES) $(CLANG_BPF_SYS_INCLUDES)
+CXXFLAGS := -g -O2 -Wall -Wextra -Wno-unused-function -Wno-address-of-packed-member -D__TARGET_ARCH_$(ARCH) $(INCLUDES) $(CLANG_BPF_SYS_INCLUDES)
 LIBS := $(LIBBPF_OBJ) -lelf -ldw -lz -ldl
 
 # Build verbosity control
@@ -154,7 +154,7 @@ $(OUTPUT)/%.o: $(OSDTRACE_SRC)/%.cc $(OSDTRACE_SRC)/*.h $(OUTPUT)/%.skel.h | $(O
 	$(Q)$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 # Special rule for dwarf_parser.o since it doesn't need a skel.h
-$(OUTPUT)/dwarf_parser.o: $(OSDTRACE_SRC)/dwarf_parser.cc $(OSDTRACE_SRC)/*.h | $(OUTPUT) $(LIBBPF_OBJ)
+$(OUTPUT)/dwarf_parser.o: $(OSDTRACE_SRC)/dwarf_parser.cc $(OUTPUT)/osdtrace.skel.h $(OSDTRACE_SRC)/*.h | $(OUTPUT) $(LIBBPF_OBJ)
 	$(call msg,CXX,$@)
 	$(Q)$(CXX) $(CXXFLAGS) -c -o $@ $<
 
