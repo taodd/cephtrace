@@ -5,7 +5,7 @@ These tools can provide a great insight on the per-io based performance, and hel
 
 > 💡 **New to CephTrace?** Ubuntu users can try it immediately with our [Quick Start](#-quick-start-ubuntu-only) (no installation needed), or [build from source](#️-build-from-source) for other systems.
 
-## 🚀 Quick Start (Ubuntu Only)
+## 🚀 Quick Start 
 
 **Try CephTrace in 30 seconds - no installation, no debug symbols, no compilation!**
 
@@ -59,9 +59,53 @@ wget https://raw.githubusercontent.com/taodd/cephtrace/main/files/osdtrace/17.2.
 sudo ./osdtrace -i 17.2.6-0ubuntu0.22.04.2_dwarf.json -x
 ```
 
-> 📋 **Available DWARF Files:** Check the `files/radostrace/` and `files/osdtrace/` directories for your specific Ceph version
+> 📋 **Available DWARF Files:** Check the `files/ubuntu/radostrace/` and `files/ubuntu/osdtrace/` directories for your specific Ceph version
 > 🐧 **Ubuntu Support:** Currently available for Ubuntu 20.04, 22.04, and 24.04
 > ⚡ **Zero Dependencies:** No need to install debug symbols or build dependencies
+
+### Tracing Processes in cephadm deployed CentOS Stream Containers
+
+When tracing Ceph processes running inside CentOS Stream containers, you need to specify the process ID and skip version checking since the binary runs on the host while the traced process runs in the container.
+
+#### radostrace for CentOS Stream Containers
+
+```bash
+# Download radostrace binary
+wget https://github.com/taodd/cephtrace/releases/latest/download/radostrace
+chmod +x radostrace
+
+# Download DWARF file for CentOS Stream 9 (Ceph 19.2.3)
+wget https://raw.githubusercontent.com/taodd/cephtrace/main/files/centos-stream/radostrace/rados-2:19.2.3-0.el9_dwarf.json
+
+# Find the process ID of the ceph client process on the host
+# Note: Use the actual ceph client process ID, not the container process ID
+ps aux | grep <client process name>
+
+# Trace the process with -p flag and --skip-version-check
+sudo ./radostrace -i rados-2:19.2.3-0.el9_dwarf.json -p <PID> --skip-version-check
+```
+
+#### osdtrace for CentOS Stream Containers
+
+```bash
+# Download osdtrace binary
+wget https://github.com/taodd/cephtrace/releases/latest/download/osdtrace
+chmod +x osdtrace
+
+# Download DWARF file for CentOS Stream 9 (Ceph 19.2.3)
+wget https://raw.githubusercontent.com/taodd/cephtrace/main/files/centos-stream/osdtrace/osd-2:19.2.3-0.el9_dwarf.json
+
+# Find the ceph-osd process ID on the host
+# Note: Use the actual ceph-osd process ID, not the container process ID
+ps aux | grep ceph-osd
+
+# Trace the OSD process with -p flag and --skip-version-check
+sudo ./osdtrace -i osd-2:19.2.3-0.el9_dwarf.json -p <PID> --skip-version-check -x
+```
+
+> 📦 **CentOS Stream Support:** Currently only version 19.2.3's DWARF JSON file is pre-generated for CentOS Stream. We plan to cover more versions in the future.
+> 🔧 **Other Versions:** If you need to trace a different Ceph version, you can generate your own DWARF JSON file by following the [Dwarf json file](#dwarf-json-file) section on a CentOS Stream machine with the target Ceph package version and debug symbols installed.
+> ⚠️ **Important:** When tracing containerized processes, use the actual ceph/ceph-osd process ID from the host, not the container process ID.
 
 ---
 
@@ -135,7 +179,7 @@ The tools automatically check version compatibility when importing JSON files. I
 - **Easy deployment** in production environments
 
 ### Pre-generated JSON Files
-We provide pre-generated JSON files for Common Ceph versions in the `files/radostrace and files/osdtrace` directory. These files are named with their corresponding version (e.g., `17.2.6-0ubuntu0.22.04.2_dwarf.json`).
+We provide pre-generated JSON files for common Ceph versions in the `files/ubuntu/radostrace`, `files/ubuntu/osdtrace`, `files/centos-stream/radostrace`, and `files/centos-stream/osdtrace` directories. These files are named with their corresponding version (e.g., `17.2.6-0ubuntu0.22.04.2_dwarf.json` for Ubuntu, `rados-2:19.2.3-0.el9_dwarf.json` for CentOS Stream).
 
 ## Radostrace output
 Below is an example tracing output from a virtual machine performing 4k random read on a rbd volume:
