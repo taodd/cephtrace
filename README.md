@@ -1,5 +1,5 @@
 # Cephtrace
-```cephtrace``` is a project that delivers various ```eBPF``` based ceph tracing tools. These tools can be used to trace different ceph components dynamically, without the need to restart or reconfigure any of the ceph related services. Currently ```radostrace``` and ```osdtrace``` have been implemented.
+```cephtrace``` is a project that delivers various ```eBPF``` based ceph tracing tools. These tools can be used to trace different ceph components dynamically, without the need to restart or reconfigure any of the ceph related services. Currently ```radostrace```, ```osdtrace```, and ```kfstrace``` have been implemented.
 
 These tools can provide a great insight on the per-io based performance, and help to quickly identify any potential performance bottlenecks.
 
@@ -59,9 +59,33 @@ wget https://raw.githubusercontent.com/taodd/cephtrace/main/files/osdtrace/17.2.
 sudo ./osdtrace -i 17.2.6-0ubuntu0.22.04.2_dwarf.json -x
 ```
 
+### kfstrace
+**kfstrace** traces Ceph kernel client requests using kprobes, showing data operations (OSD) and/or metadata operations (MDS) with detailed latency information. Run it on machines using CephFS or kernel-based RBD clients:
+- CephFS clients (kernel mounts)
+- Kernel RBD clients
+- Any system using the Ceph kernel client module
+
+```bash
+# Download kfstrace binary
+wget https://github.com/taodd/cephtrace/releases/latest/download/kfstrace
+chmod +x kfstrace
+
+# Trace MDS requests only (default mode)
+sudo ./kfstrace
+
+# Trace OSD requests only
+sudo ./kfstrace -m osd
+
+# Trace both OSD and MDS requests
+sudo ./kfstrace -m all
+
+# Trace for 30 seconds with both modes
+sudo ./kfstrace -t 30 -m all
+```
+
 > 📋 **Available DWARF Files:** Check the `files/ubuntu/radostrace/` and `files/ubuntu/osdtrace/` directories for your specific Ceph version
 > 🐧 **Ubuntu Support:** Currently available for Ubuntu 20.04, 22.04, and 24.04
-> ⚡ **Zero Dependencies:** No need to install debug symbols or build dependencies
+> ⚡ **Zero Dependencies:** No need to install debug symbols or build dependencies (kfstrace doesn't require DWARF files)
 
 ### Tracing Processes in cephadm deployed CentOS Stream Containers
 
@@ -251,6 +275,84 @@ Taking the write operation: `osd 38 pg 20.16b op_w size 12288 client 179589331 t
 - ```op_lat 10966```: **End-to-end operation latency** (10966μs)
 
 All latencies are measured in **microseconds (μs)**.
+
+## kfstrace output
+
+**kfstrace** has two modes with different output formats: OSD mode (for data operations) and MDS mode (for metadata operations).
+
+### OSD Mode Output
+Below is an example tracing output from a CephFS client performing data operations:
+```
+TIME     PID      COMMAND      CLIENT_ID  TID              POOL     PG       OP     ACTING_SET           OBJECT                           ATTEMPTS OPS                            LATENCY(us)
+14:23:45 1234     fio          4321       1234567          1        2a       READ   [0,1,2]              rbd_data.12345.000000001         1        [read(0,4096)]                 456μs
+14:23:45 1234     fio          4321       1234568          1        2a       WRITE  [0,1,2]              rbd_data.12345.000000001         1        [write(4096,8192)]             1234μs
+14:23:46 5678     dd           4322       1234569          2        3b       READ   [3,4,5]              rbd_data.67890.000000010         1        [read(0,131072)]               892μs
+```
+
+Each row represents one kernel client data operation sent to OSDs:
+
+#### Column Descriptions:
+- ```TIME```: Timestamp when the operation completed (HH:MM:SS)
+- ```PID```: Process ID of the kernel client
+- ```COMMAND```: Process command name (truncated to 12 chars)
+- ```CLIENT_ID```: Ceph client global ID, a unique number identifying the client
+- ```TID```: Transaction ID (operation ID)
+- ```POOL```: Pool ID the operation is sent to
+- ```PG```: Placement Group ID (pool.pg format)
+- ```OP```: Operation type
+  - ```READ```: Read operation
+  - ```WRITE```: Write operation
+  - ```RMW```: Read-Modify-Write operation
+  - ```OTHER```: Other operation types
+- ```ACTING_SET```: The OSD acting set this operation is sent to [primary,replica1,replica2,...]
+- ```OBJECT```: Object name
+- ```ATTEMPTS```: Number of send attempts for this operation
+- ```OPS```: Detailed OSD operations with offset/length for extent operations
+  - Format: ```[op1(offset,length),op2,...]```
+  - Examples: ```[read(0,4096)]```, ```[write(4096,8192)]```, ```[call(rbd.parent_get)]```
+- ```LATENCY(us)```: End-to-end operation latency in microseconds
+
+### MDS Mode Output
+Below is an example tracing output from a CephFS client performing metadata operations:
+```
+TIME     PID      COMMAND      CLIENT_ID  TID              MDS OP       FILE                             ATTEMPTS UNSAFE_LAT SAFE_LAT   RESULT
+14:25:10 9012     ls           4323       9876543          0   lookup   /home/user/documents             1        -          234μs      OK
+14:25:10 9012     ls           4323       9876544          0   readdir  /home/user/documents             1        -          456μs      OK
+14:25:11 3456     touch        4324       9876545          0   create   /home/user/newfile.txt           1        512μs      1.2ms      OK
+14:25:12 7890     vim          4325       9876546          1   setattr  /home/user/document.txt          1        -          345μs      OK
+```
+
+Each row represents one kernel client metadata operation sent to MDS:
+
+#### Column Descriptions:
+- ```TIME```: Timestamp when the operation completed (HH:MM:SS)
+- ```PID```: Process ID of the kernel client
+- ```COMMAND```: Process command name (truncated to 12 chars)
+- ```CLIENT_ID```: Ceph client global ID
+- ```TID```: Transaction ID (operation ID)
+- ```MDS```: Target MDS rank number
+- ```OP```: MDS operation type
+  - Common operations: ```lookup```, ```getattr```, ```readdir```, ```open```, ```create```, ```setattr```, ```unlink```, ```rename```
+- ```FILE```: Request path (truncated to 32 chars, ending with "..." if too long)
+- ```ATTEMPTS```: Number of send attempts for this operation
+- ```UNSAFE_LAT```: Time from submission to unsafe reply (fast acknowledgment)
+  - Shows "-" for read-only operations that don't have unsafe replies
+  - For write operations, indicates when the MDS has received and processed the request
+- ```SAFE_LAT```: Time from submission to safe reply (durable acknowledgment)
+  - This is the total end-to-end latency
+  - For write operations, indicates when changes are persisted to the journal
+- ```RESULT```: Operation result
+  - ```OK```: Successful completion (return code 0)
+  - ```ERR```: Error occurred (non-zero return code)
+
+#### Understanding MDS Two-Phase Replies:
+For write operations (create, setattr, unlink, etc.), MDS uses a two-phase reply protocol:
+1. **Unsafe Reply**: Fast acknowledgment that the MDS has received and processed the request
+2. **Safe Reply**: Confirmation that changes are durably committed to the journal
+
+Read-only operations (lookup, getattr, readdir) only have safe replies, so ```UNSAFE_LAT``` shows "-".
+
+All latencies are measured in **microseconds (μs)** or **milliseconds (ms)** depending on magnitude.
 
 ## Kernel Requirements
 - The minimum kernel version required is v5.8
