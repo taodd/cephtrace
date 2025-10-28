@@ -8,10 +8,13 @@
       "BlueStore::_txc_state_proc": 13598976,
       "BlueStore::_wctx_finish": 13620336,
       "BlueStore::log_latency": 13962064,
+      "BlueStore::log_latency_fn": 13962704,
       "BlueStore::queue_transactions": 13666848,
       "ECBackend::submit_transaction": 11869840,
       "OSD::dequeue_op": 7329824,
       "OSD::enqueue_op": 7441168,
+      "OpRequest::mark_flag_point": 18455824,
+      "OpRequest::mark_flag_point_string": 18455968,
       "PrimaryLogPG::execute_ctx": 9011168,
       "PrimaryLogPG::log_op_stats": 8541328,
       "ReplicatedBackend::do_repop_reply": 11561504,
@@ -245,6 +248,40 @@
         ]
       },
       "BlueStore::log_latency": {
+        "var_fields": [
+          {
+            "location": {
+              "reg": 1,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 2,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": true
+              }
+            ]
+          }
+        ]
+      },
+      "BlueStore::log_latency_fn": {
         "var_fields": [
           {
             "location": {
@@ -650,6 +687,170 @@
               {
                 "offset": 208,
                 "pointer": true
+              }
+            ]
+          }
+        ]
+      },
+      "OpRequest::mark_flag_point": {
+        "var_fields": [
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 5,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 232,
+                "pointer": true
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 8,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 5,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 232,
+                "pointer": true
+              },
+              {
+                "offset": 16,
+                "pointer": false
+              }
+            ]
+          }
+        ]
+      },
+      "OpRequest::mark_flag_point_string": {
+        "var_fields": [
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 5,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 232,
+                "pointer": true
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 8,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 5,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 232,
+                "pointer": true
+              },
+              {
+                "offset": 16,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 1,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 8,
+                "pointer": true
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 1,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": true
+              },
+              {
+                "offset": 0,
+                "pointer": false
               }
             ]
           }
