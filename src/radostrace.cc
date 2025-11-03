@@ -559,6 +559,8 @@ int main(int argc, char **argv) {
           }
           
           dwarfparser.export_to_json(json_output_file, version);
+          clog << "Dwarf parsing data exported to " << json_output_file << endl;
+          return 0;
       }
   }
 
