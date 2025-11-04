@@ -14,7 +14,7 @@ trace any librados based Ceph client
 SYNOPSIS
 ========
 
-| **radostrace** [-t <seconds>] [-j [filename]] [-i <filename>] [-o [filename]] [-p <pid>]
+| **radostrace** [-t <seconds>] [-j [filename]] [-i <filename>] [-o [filename]] [-p <pid>] -h
 
 
 DESCRIPTION

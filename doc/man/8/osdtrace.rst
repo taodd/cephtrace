@@ -14,7 +14,7 @@ probe and trace OSD(s) on given nodes
 SYNOPSIS
 ========
 
-| **osdtrace** [-t <seconds>] [-j [filename]] [-i <filename>] [-o [filename]] [-p <pid>]
+| **osdtrace** [-t <seconds>] [-j [filename]] [-i <filename>] [-o [filename]] [-p <pid>] -h
 
 
 DESCRIPTION
