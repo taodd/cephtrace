@@ -31,7 +31,7 @@ chmod +x radostrace
 dpkg -l | grep librados
 
 # Download corresponding DWARF file (example for Ceph 17.2.6-0ubuntu0.22.04.2)
-wget https://raw.githubusercontent.com/taodd/cephtrace/main/files/radostrace/17.2.6-0ubuntu0.22.04.2_dwarf.json
+wget https://raw.githubusercontent.com/taodd/cephtrace/main/files/ubuntu/radostrace/17.2.6-0ubuntu0.22.04.2_dwarf.json
 ```
 
 ### Step 3: Start Tracing Immediately
