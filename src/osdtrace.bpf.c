@@ -386,6 +386,7 @@ int uprobe_submit_transaction(struct pt_regs *ctx) {
 // BlueStore::queue_transactions
 SEC("uprobe")
 int uprobe_queue_transactions(struct pt_regs *ctx) {
+  (void)ctx;
   bpf_printk("Entered into uprobe_queue_transactions\n");
   __u64 ptid = bpf_get_current_pid_tgid();
   struct op_k *key = bpf_map_lookup_elem(&ptid_opk, &ptid);
@@ -410,6 +411,7 @@ int uprobe_queue_transactions(struct pt_regs *ctx) {
 // BlueStore::_do_write
 SEC("uprobe")
 int uprobe_do_write(struct pt_regs *ctx) {
+  (void)ctx;
   bpf_printk("Entered into uprobe_do_write\n");
   __u64 ptid = bpf_get_current_pid_tgid();
   struct op_k *key = bpf_map_lookup_elem(&ptid_opk, &ptid);
@@ -604,7 +606,7 @@ int uprobe_log_op_stats(struct pt_regs *ctx) {
         "uprobe_log_op_stats, no previous op info, owner %lld, tid %lld\n",
         key.owner, key.tid);
   }
-end:
+
   bpf_map_delete_elem(&ops, &key);
   return 0;
 }

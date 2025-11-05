@@ -221,6 +221,8 @@ int digitnum(int x) {
 }
 
 static int handle_event(void *ctx, void *data, size_t size) {
+    (void)ctx;
+    (void)size;
     struct client_op_v * op_v = (struct client_op_v *)data;
     std::stringstream ss;
     ss << std::hex << op_v->m_seed;
@@ -282,7 +284,7 @@ static int handle_event(void *ctx, void *data, size_t size) {
     std::stringstream ops_list;
     bool print_offset_length = false;
     ops_list << "[";
-    for (int i = 0; i < op_v->ops_size; ++i) {
+    for (__u32 i = 0; i < op_v->ops_size; ++i) {
         if (i) ops_list << " ";
         if (ceph_osd_op_extent(op_v->ops[i])) {
             ops_list << ceph_osd_op_str(op_v->ops[i]);

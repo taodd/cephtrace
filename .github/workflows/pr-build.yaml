@@ -16,7 +16,9 @@ jobs:
           submodules: recursive  # fetch submodules
 
       - name: Ensure submodules are updated
-        run: git submodule update --init --recursive
+        run: |
+            sudo apt-get install g++ clang libelf-dev libc6-dev-i386 libdw-dev
+            git submodule update --init --recursive
 
       - name: Run Makefile build
         run: make all

@@ -85,6 +85,7 @@ static volatile bool exiting = false;
 
 static void sig_handler(int sig)
 {
+    (void)sig;
     exiting = true;
 }
 
@@ -157,12 +158,13 @@ static std::string format_ops(const kernel_trace_event* event)
 
 static int handle_event(void *ctx, void *data, size_t data_sz)
 {
+    (void)ctx;
     const struct kernel_trace_event *event = (const struct kernel_trace_event *)data;
     struct tm *tm;
     char ts[32];
     char acting_set[256] = "";
     time_t t;
-    int pos = 0;
+    size_t pos = 0;
 
     if (data_sz < sizeof(*event)) {
         fprintf(stderr, "Invalid event size: %zu (expected >= %zu)\n", data_sz, sizeof(*event));
@@ -179,9 +181,9 @@ static int handle_event(void *ctx, void *data, size_t data_sz)
         for (unsigned int i = 0; i < event->acting_size && i < CEPH_PG_MAX_SIZE; i++) {
             if (i > 0)
                 pos += snprintf(acting_set + pos, sizeof(acting_set) - pos, ",");
-            pos += snprintf(acting_set + pos, sizeof(acting_set) - pos, "%u", 
+            pos += snprintf(acting_set + pos, sizeof(acting_set) - pos, "%u",
                            event->acting_osds[i]);
-            if (pos >= sizeof(acting_set) - 1) break;
+            if (pos >= sizeof(acting_set)) break;
         }
         snprintf(acting_set + pos, sizeof(acting_set) - pos, "]");
     } else {
@@ -221,6 +223,7 @@ static int handle_event(void *ctx, void *data, size_t data_sz)
 
 static int handle_mds_event(void *ctx, void *data, size_t data_sz)
 {
+    (void)ctx;
     const struct mds_trace_event *event = (const struct mds_trace_event *)data;
     struct tm *tm;
     char ts[32];
