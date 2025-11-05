@@ -1,12 +1,22 @@
 #!/usr/bin/env python3
+"""
+Analyzes rados trace output to identify problematic OSDs involved in
+high-latency operations.
+"""
 import sys
 import re
 from collections import defaultdict
 
+
 def parse_args():
+    """
+    Parses CLI arguments: log file, osd tree file, and latency threshold.
+    """
     if len(sys.argv) < 3:
-        print("Usage: ./analyze_radostrace_output.sh <log_file> <osd_tree_file> [latency_threshold_in_microseconds]")
-        print("  latency_threshold defaults to 100000 microseconds (100ms) if not specified")
+        print("Usage: ./analyze_radostrace_output.sh <log_file> "
+              "<osd_tree_file> [latency_threshold_in_microseconds]")
+        print("  latency_threshold defaults to 100000 microseconds (100ms) "
+              "if not specified")
         sys.exit(1)
 
     log_file = sys.argv[1]
@@ -24,12 +34,18 @@ def parse_args():
 
     return log_file, osd_tree_file, latency_threshold
 
+
 def parse_log_file(log_file, threshold):
+    """
+    Parses the log file, filtering entries above the latency threshold.
+    Returns counts of high-latency occurrences per OSD and a list of OSD lists
+    (one for each high-latency entry).
+    """
     osd_counts = defaultdict(int)
     osd_entries = []  # Store each entry's OSD list for subsequent passes
 
-    with open(log_file, 'r') as f:
-        for line in f:
+    with open(log_file, 'r', encoding='utf-8') as file_handle:
+        for line in file_handle:
             # Skip empty lines
             if not line.strip():
                 continue
@@ -61,20 +77,26 @@ def parse_log_file(log_file, threshold):
 
     return osd_counts, osd_entries
 
+
 def parse_osd_tree(osd_tree_file):
+    """
+    Parses the OSD tree file (output of `ceph osd tree`) to map OSD IDs to
+    host names.
+    """
     osd_to_host = {}
     current_host = None
-    
-    with open(osd_tree_file, 'r') as f:
-        for line in f:
+
+    with open(osd_tree_file, 'r', encoding='utf-8') as file_handle:
+        for line in file_handle:
             # Skip empty lines and summary lines
-            if not line.strip() or line.startswith("ID") or line.startswith("MIN/MAX") or line.startswith("TOTAL"):
+            if not line.strip() or line.startswith("ID") or \
+               line.startswith("MIN/MAX") or line.startswith("TOTAL"):
                 continue
-                
-            # Check for host lines (they start with - and have "host" in them)
+
+            # Check for host lines (start with - and have "host" in them)
             if line.startswith('-') and 'host' in line:
                 current_host = line.split()[-1]
-                
+
             # Check for OSD lines (they have osd.X in them)
             if 'osd.' in line:
                 parts = line.split()
@@ -82,8 +104,10 @@ def parse_osd_tree(osd_tree_file):
                     if part.startswith('osd.'):
                         osd_num = part.split('.')[1]
                         osd_to_host[osd_num] = current_host
-                        
+                        break
+
     return osd_to_host
+
 
 def count_osds_in_entries(entries):
     """Count occurrences of each OSD in the given entries."""
@@ -92,6 +116,7 @@ def count_osds_in_entries(entries):
         for osd in entry:
             counts[osd] += 1
     return counts
+
 
 def print_summary(problematic_osds, total_operations):
     """Print final summary of all problematic OSDs."""
@@ -102,11 +127,13 @@ def print_summary(problematic_osds, total_operations):
     print("\n" + "=" * 70)
     print("=== SUMMARY: Problematic OSDs Identified ===")
     print("=" * 70)
-    print("{:<6} {:<10} {:<8} {:<20} {:<10}".format("Rank", "OSD", "Count", "Host", "Iteration"))
+    header_format = "{:<6} {:<10} {:<8} {:<20} {:<10}"
+    print(header_format.format("Rank", "OSD", "Count", "Host", "Iteration"))
     print("-" * 70)
 
-    for rank, (osd, count, host, iteration) in enumerate(problematic_osds, start=1):
-        print("{:<6} {:<10} {:<8} {:<20} {:<10}".format(
+    for rank, (osd, count, host, iteration) in enumerate(problematic_osds,
+                                                         start=1):
+        print(header_format.format(
             rank,
             f"osd.{osd}",
             count,
@@ -119,14 +146,18 @@ def print_summary(problematic_osds, total_operations):
     print(f"Total high-latency operations analyzed: {total_operations}")
     print("=" * 70)
 
+
 def print_results(osd_counts, osd_entries, osd_to_host):
+    """
+    Performs the iterative analysis and prints the final results.
+    """
     if not osd_counts:
         print("No matching entries found with the given criteria.")
         return
 
     total_operations = len(osd_entries)
-    problematic_osds = []  # List of (osd, count, host, iteration)
-    excluded_osds = set()
+    # List of tuples: (osd, count, host, iteration)
+    problematic_osds = []
     remaining_entries = osd_entries
     iteration = 1
 
@@ -139,7 +170,8 @@ def print_results(osd_counts, osd_entries, osd_to_host):
         current_counts = count_osds_in_entries(remaining_entries)
 
         if not current_counts:
-            print(f"\n[Iteration {iteration}] No more high-latency operations found.")
+            print(f"\n[Iteration {iteration}] No more high-latency "
+                  "operations found.")
             break
 
         # Find top OSD
@@ -149,22 +181,27 @@ def print_results(osd_counts, osd_entries, osd_to_host):
 
         # Record it
         problematic_osds.append((top_osd, count, host, iteration))
-        print(f"[Iteration {iteration}] Top OSD: osd.{top_osd} ({count} occurrences on {host})")
+        print(f"[Iteration {iteration}] Top OSD: osd.{top_osd} ({count} "
+              f"occurrences on {host})")
 
         # Exclude entries containing this OSD
-        excluded_osds.add(top_osd)
-        remaining_entries = [entry for entry in remaining_entries if top_osd not in entry]
+        # Filter out all entries that contain the top OSD
+        remaining_entries = [entry for entry in remaining_entries
+                             if top_osd not in entry]
         iteration += 1
 
     # Print final summary
     print_summary(problematic_osds, total_operations)
 
+
 def main():
+    """Main function to orchestrate the analysis."""
     log_file, osd_tree_file, latency_threshold = parse_args()
 
     print(f"Analyzing log file: {log_file}")
     print(f"OSD tree file: {osd_tree_file}")
-    print(f"Latency threshold: {latency_threshold} microseconds ({latency_threshold/1000:.1f} ms)")
+    print(f"Latency threshold: {latency_threshold} microseconds "
+          f"({latency_threshold/1000.0:.1f} ms)")
 
     # Parse the log file to get OSD counts and all entries
     osd_counts, osd_entries = parse_log_file(log_file, latency_threshold)
@@ -174,6 +211,7 @@ def main():
 
     # Print the results
     print_results(osd_counts, osd_entries, osd_to_host)
+
 
 if __name__ == "__main__":
     main()
