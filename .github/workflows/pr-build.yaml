@@ -22,3 +22,6 @@ jobs:
 
       - name: Run Makefile build
         run: make all
+
+      - name: Unit test - verify dwarf output is consistent
+        run: ./tests/dwarf-compare.sh
