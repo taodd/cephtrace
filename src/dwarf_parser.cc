@@ -28,6 +28,7 @@ extern "C" {
 }
 #include "bpf_ceph_types.h"
 #include "dwarf_parser.h"
+#include "utils.h"
 
 using namespace std;
 
@@ -912,11 +913,16 @@ bool DwarfParser::import_from_json(const std::string& filename, const std::strin
                 continue;
             }
             
+            // Convert absolute path to basename for backward compatibility
+            // Legacy JSON files use full paths (e.g., "/usr/bin/ceph-osd")
+            // New code expects basenames (e.g., "ceph-osd")
+            std::string key = get_basename(module);
+
             // Import func2pc data
             if (module_data.contains("func2pc")) {
                 const auto& pc_obj = module_data["func2pc"];
                 for (const auto& [func_name, addr] : pc_obj.items()) {
-                    mod_func2pc[module][func_name] = addr.get<Dwarf_Addr>();
+                    mod_func2pc[key][func_name] = addr.get<Dwarf_Addr>();
                 }
             }
 
@@ -946,7 +952,7 @@ bool DwarfParser::import_from_json(const std::string& filename, const std::strin
                         var_fields.push_back(var_field);
                     }
 
-                    mod_func2vf[module][func_name] = var_fields;
+                    mod_func2vf[key][func_name] = var_fields;
                 }
             }
         }

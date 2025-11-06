@@ -29,6 +29,7 @@ extern "C" {
 #include "bpf_ceph_types.h"
 #include "dwarf_parser.h"
 #include "version_utils.h"
+#include "utils.h"
 
 #define MAX_CNT 100000ll
 #define MAX_OSD 4000
@@ -1118,7 +1119,8 @@ int parse_args(int argc, char **argv) {
 }
 
 void fill_map_hprobes(std::string mod_path, DwarfParser &dwarfparser, struct bpf_map *hprobes) {
-  auto &func2vf = dwarfparser.mod_func2vf[mod_path];
+  std::string mod_basename = get_basename(mod_path);
+  auto &func2vf = dwarfparser.mod_func2vf[mod_basename];
   for (auto x : func2vf) {
     std::string funcname = x.first;
     int key_idx = func_id[funcname];
@@ -1152,7 +1154,8 @@ int attach_uprobe(struct osdtrace_bpf *skel,
     pid_path = "/proc/" + std::to_string(process_id) + "/root/" + path;
   }
 
-  auto &func2pc = dp.mod_func2pc[path];
+  std::string path_basename = get_basename(path);
+  auto &func2pc = dp.mod_func2pc[path_basename];
   size_t func_addr = func2pc[funcname];
   if (v > 0)
       funcname = funcname + "_v" + std::to_string(v); 
@@ -1176,7 +1179,8 @@ int attach_retuprobe(struct osdtrace_bpf *skel,
 	           std::string path,
 		   std::string funcname,
 		   int v = 0) {
-  auto &func2pc = dp.mod_func2pc[path];
+  std::string path_basename = get_basename(path);
+  auto &func2pc = dp.mod_func2pc[path_basename];
   size_t func_addr = func2pc[funcname];
   if (v > 0)
       funcname = funcname + "_v" + std::to_string(v); 
