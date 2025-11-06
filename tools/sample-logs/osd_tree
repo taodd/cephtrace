@@ -1,0 +1,14 @@
+ID  CLASS  WEIGHT   TYPE NAME                          STATUS  REWEIGHT  PRI-AFF
+-1         0.08720  root default                                                
+-5         0.02907      host juju-c5c4cd-tcs-retype-1                           
+ 2    hdd  0.00969          osd.2                          up   1.00000  1.00000
+ 4    hdd  0.00969          osd.4                          up   1.00000  1.00000
+ 8    hdd  0.00969          osd.8                          up   1.00000  1.00000
+-7         0.02907      host juju-c5c4cd-tcs-retype-2                           
+ 1    hdd  0.00969          osd.1                          up   1.00000  1.00000
+ 3    hdd  0.00969          osd.3                          up   1.00000  1.00000
+ 6    hdd  0.00969          osd.6                          up   1.00000  1.00000
+-3         0.02907      host juju-c5c4cd-tcs-retype-3                           
+ 0    hdd  0.00969          osd.0                          up   1.00000  1.00000
+ 5    hdd  0.00969          osd.5                          up   1.00000  1.00000
+ 7    hdd  0.00969          osd.7                          up   1.00000  1.00000
