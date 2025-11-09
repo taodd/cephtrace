@@ -58,79 +58,98 @@ def detect_file_format(file_path):
         # Check if it's a CSV format by looking for commas
         return 'csv' if ',' in line else 'space'
 
+
+def parse_csv_log(log_file, threshold, osd_counts, osd_entries):
+    """ Parse CSV formatted file. """
+
+    with open(log_file, 'r', encoding='utf-8') as file_handle:
+        lines = file_handle.readlines()
+        # Find the first line that contains actual data
+        start_idx = 0
+        for i, line in enumerate(lines):
+            if line.strip():
+                start_idx = i
+                break
+
+        # Process the CSV data starting from the actual data
+        csv_reader = csv.reader(lines[start_idx:])
+        for row in csv_reader:
+            if not row:  # Skip empty rows
+                continue
+
+            try:
+                # Latency is in the 9th column (0-based index 8)
+                latency = int(row[8])
+            except (ValueError, IndexError):
+                continue
+
+            if latency < threshold:
+                continue
+
+            # Extract OSDs from the acting field (should be in the
+            # format "[x,y,z]").
+            # Acting field is in the 6th column (0-based index 5)
+            acting_str = row[5]
+            osd_list = re.findall(r'\d+', acting_str)
+
+            osd_entries.append(osd_list)
+            for osd in osd_list:
+                osd_counts[osd] += 1
+
+
+def parse_space_log(log_file, threshold, osd_counts, osd_entries):
+    """ Parse whitespace formatted file. """
+
+    with open(log_file, 'r', encoding='utf-8') as file_handle:
+        for line in file_handle:
+            # Skip empty lines and header lines
+            if not line.strip() or line.startswith(('Execution', 'Version')):
+                continue
+
+            parts = line.split()
+
+            # Check if line has enough columns
+            if len(parts) < 9:
+                continue
+
+            # Parse latency (9th column, 0-based index 8)
+            try:
+                latency = int(parts[8])
+            except (ValueError, IndexError):
+                continue
+
+            # Check latency threshold
+            if latency < threshold:
+                continue
+
+            # Parse OSD list (6th column, index 5)
+            osd_list_str = parts[5]
+            osd_list = re.findall(r'\d+', osd_list_str)
+            osd_entries.append(osd_list)
+
+            # Count each OSD
+            for osd in osd_list:
+                osd_counts[osd] += 1
+
+
 def parse_log_file(log_file, threshold):
     """
     Parses the log file, filtering entries above the latency threshold.
     Returns counts of high-latency occurrences per OSD and a list of OSD lists
     (one for each high-latency entry).
     """
+
+    format_parser_map = {
+        'csv': parse_csv_log,
+        'space': parse_space_log,
+        }
+
     file_format = detect_file_format(log_file)
     osd_counts = defaultdict(int)
     osd_entries = []  # Store each entry's OSD list for subsequent passes
 
-    with open(log_file, 'r', encoding='utf-8') as file_handle:
-        if file_format == 'csv':
-            lines = file_handle.readlines()
-            # Find the first line that contains actual data
-            start_idx = 0
-            for i, line in enumerate(lines):
-                if line.strip():
-                    start_idx = i
-                    break
-            
-            print("start_idx = {}".format(start_idx))
-            # Process the CSV data starting from the actual data
-            csv_reader = csv.reader(lines[start_idx:])
-            for row in csv_reader:
-                if not row:  # Skip empty rows
-                    continue
-
-                try:
-                    latency = int(row[8])  # Latency is in the 9th column (0-based index 8)
-                except (ValueError, IndexError):
-                    continue
-
-                if latency < threshold:
-                    continue
-
-                # Extract OSDs from the acting field (should be in the format "[x,y,z]")
-                acting_str = row[5]  # Acting field is in the 6th column (0-based index 5)
-                osd_list = re.findall(r'\d+', acting_str)
-                
-                osd_entries.append(osd_list)
-                for osd in osd_list:
-                    osd_counts[osd] += 1
-
-        else:  # space-separated format
-            for line in file_handle:
-                # Skip empty lines and header lines
-                if not line.strip() or line.startswith(('Execution', 'Version')):
-                    continue
-
-                parts = line.split()
-
-                # Check if line has enough columns
-                if len(parts) < 9:
-                    continue
-
-                # Parse latency (9th column, 0-based index 8)
-                try:
-                    latency = int(parts[8])
-                except (ValueError, IndexError):
-                    continue
-
-                # Check latency threshold
-                if latency < threshold:
-                    continue
-
-                # Parse OSD list (6th column, index 5)
-                osd_list_str = parts[5]
-                osd_list = re.findall(r'\d+', osd_list_str)
-                osd_entries.append(osd_list)
-
-                # Count each OSD
-                for osd in osd_list:
-                    osd_counts[osd] += 1
+    parser = format_parser_map.get(file_format, parse_csv_log)
+    parser(log_file, threshold, osd_counts, osd_entries)
 
     return osd_counts, osd_entries
 
