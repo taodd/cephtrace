@@ -1,4 +1,4 @@
-VERSION := 1.2
+VERSION := 1.3
 DATE ?= $(shell date +%Y-%m-%d)
 SRC_TGT := release
 # Populate Source Package Name
@@ -59,6 +59,7 @@ endif
 # Main targets
 .PHONY: all clean
 all: $(PROG_OBJS)
+local: $(OSDTRACE_SRC)/ceph_btf_local.h all
 
 install:
 	$(call msg,INSTALL)
@@ -93,7 +94,7 @@ src-pkg:
 
 clean:
 	$(call msg,CLEAN)
-	$(Q)rm -rf $(OUTPUT) $(PROG_OBJS) $(DOCDIR)/*.8.gz $(DOCDIR)/*.in $(OSDTRACE_SRC)/ceph_btf.h
+	$(Q)rm -rf $(OUTPUT) $(PROG_OBJS) $(DOCDIR)/*.8.gz $(DOCDIR)/*.in $(OSDTRACE_SRC)/ceph_btf_local.h
 
 $(OUTPUT) $(OUTPUT)/libbpf $(BPFTOOL_OUTPUT):
 	$(call msg,MKDIR,$@)
@@ -112,29 +113,18 @@ $(BPFTOOL): | $(BPFTOOL_OUTPUT)
 	$(Q)make ARCH= CROSS_COMPILE= OUTPUT=$(BPFTOOL_OUTPUT)/ -C $(BPFTOOL_SRC) bootstrap
 
 # Generate Ceph BTF header
-$(OSDTRACE_SRC)/ceph_btf.h: | $(OUTPUT) $(BPFTOOL)
+$(OSDTRACE_SRC)/ceph_btf_local.h: | $(OUTPUT) $(BPFTOOL)
 	$(call msg,GEN-BTF,$@)
 	$(Q)if [ -f /sys/kernel/btf/ceph ]; then \
-		$(BPFTOOL) btf dump file /sys/kernel/btf/ceph format c > $@; \
+			$(BPFTOOL) btf dump file /sys/kernel/btf/ceph format c > $@; \
 	else \
-		echo "ceph module BTF not found, trying to load module..."; \
-		if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then \
-			if sudo modprobe ceph 2>/dev/null && [ -f /sys/kernel/btf/ceph ]; then \
-				$(BPFTOOL) btf dump file /sys/kernel/btf/ceph format c > $@; \
-			else \
-				echo "Error: Failed to load ceph module or BTF not available"; \
-				echo "Please run: sudo modprobe ceph"; \
-				exit 1; \
-			fi; \
-		else \
 			echo "Error: ceph module not loaded and cannot load automatically"; \
 			echo "Please run: sudo modprobe ceph"; \
 			exit 1; \
-		fi; \
 	fi
 
 # Build BPF objects and skeletons
-$(OUTPUT)/kfstrace.bpf.o: $(OSDTRACE_SRC)/kfstrace.bpf.c $(OSDTRACE_SRC)/ceph_btf.h $(LIBBPF_OBJ) | $(OUTPUT) $(BPFTOOL)
+$(OUTPUT)/kfstrace.bpf.o: $(OSDTRACE_SRC)/kfstrace.bpf.c $(LIBBPF_OBJ) | $(OUTPUT) $(BPFTOOL)
 	$(call msg,BPF,$@)
 	$(Q)$(CLANG) -g -O2 -target bpf $(CXXFLAGS) -c $< -o $(patsubst %.bpf.o,%.tmp.bpf.o,$@)
 	$(Q)$(BPFTOOL) gen object $@ $(patsubst %.bpf.o,%.tmp.bpf.o,$@)
@@ -179,7 +169,7 @@ endef
 # Special rule for kfstrace - doesn't need dwarf_parser
 kfstrace: $(OUTPUT)/kfstrace.o $(OUTPUT)/kfstrace.skel.h $(LIBBPF_OBJ) | $(OUTPUT)
 	$(call msg,LINK,$@)
-	$(Q)$(CXX) $(CXXFLAGS) -o $@ $< $(LIBBPF_OBJ) -lelf -lz -ldl
+	$(Q)$(CXX) $(CXXFLAGS) -o $(DESTDIR)$@ $< $(LIBBPF_OBJ) -lelf -lz -ldl
 
 # Apply build rule to other programs (osdtrace and radostrace)
 $(foreach prog,$(filter-out kfstrace,$(PROG_OBJS)),$(eval $(call build_rule,$(prog))))
