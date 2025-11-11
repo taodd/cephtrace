@@ -1,0 +1,6 @@
+debian/.debhelper/
+debian/cephtrace.substvars
+debian/cephtrace/
+debian/debhelper-build-stamp
+debian/files
+debian/tmp/
