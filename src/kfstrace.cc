@@ -81,6 +81,8 @@ struct mds_trace_event {
     char path[CEPH_MDS_PATH_MAX]; // Request path (truncated if needed)
 } __attribute__((packed));
 
+long long latency_threshold = 0;
+
 static volatile bool exiting = false;
 
 static void sig_handler(int sig)
@@ -171,6 +173,9 @@ static int handle_event(void *ctx, void *data, size_t data_sz)
         return 0;
     }
 
+    if (event->latency_us < (__u64)latency_threshold)
+        return 0;
+
     t = time(NULL);
     tm = localtime(&t);
     strftime(ts, sizeof(ts), "%H:%M:%S", tm);
@@ -238,6 +243,9 @@ static int handle_mds_event(void *ctx, void *data, size_t data_sz)
     tm = localtime(&t);
     strftime(ts, sizeof(ts), "%H:%M:%S", tm);
 
+    if (event->safe_latency_us < (__u64)latency_threshold)
+        return 0;
+
     // Format latencies
     char unsafe_lat[16] = "-";
     char safe_lat[16];
@@ -281,9 +289,10 @@ static void print_usage(const char *prog)
 {
     printf("Usage: %s [OPTIONS]\n", prog);
     printf("\nOPTIONS:\n");
-    printf("  -h, --help        Show this help message\n");
-    printf("  -t, --timeout <s> Set execution timeout (default: no timeout)\n");
-    printf("  -m, --mode <mode> Tracing mode: osd, mds, or all (default: mds)\n");
+    printf("  -h, --help                   Show this help message\n");
+    printf("  -t, --timeout <s>            Set execution timeout (default: no timeout)\n");
+    printf("  -m, --mode <mode>            Tracing mode: osd, mds, or all (default: mds)\n");
+    printf("  -l, --latency <microseconds> Set operation latency threshold to capture (default: 0)\n");
     printf("\nDescription:\n");
     printf("  Traces Ceph kernel client requests using kprobes.\n");
     printf("  OSD mode: Shows data requests to OSDs with latencies and operation details.\n");
@@ -313,12 +322,13 @@ int main(int argc, char **argv)
         {"help", no_argument, NULL, 'h'},
         {"timeout", required_argument, NULL, 't'},
         {"mode", required_argument, NULL, 'm'},
+        {"latency", required_argument, NULL, 'l'},
         {NULL, 0, NULL, 0}
     };
 
     // Parse command line arguments
     int opt;
-    while ((opt = getopt_long(argc, argv, "ht:m:", long_options, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "ht:m:l:", long_options, NULL)) != -1) {
         switch (opt) {
         case 'h':
             print_usage(argv[0]);
@@ -339,6 +349,13 @@ int main(int argc, char **argv)
                 mode = MODE_ALL;
             } else {
                 fprintf(stderr, "Invalid mode: %s (must be osd, mds, or all)\n", optarg);
+                return 1;
+            }
+            break;
+        case 'l':
+            latency_threshold=atoll(optarg);
+            if (latency_threshold <= 0) {
+                fprintf(stderr, "Invalid latency value: %s\n", optarg);
                 return 1;
             }
             break;
