@@ -58,8 +58,7 @@ endif
 
 # Main targets
 .PHONY: all clean
-all: $(PROG_OBJS)
-local: $(OSDTRACE_SRC)/ceph_btf_local.h all
+all: $(OSDTRACE_SRC)/ceph_btf_local.h $(PROG_OBJS)
 
 install:
 	$(call msg,INSTALL)
@@ -114,14 +113,19 @@ $(BPFTOOL): | $(BPFTOOL_OUTPUT)
 
 # Generate Ceph BTF header
 $(OSDTRACE_SRC)/ceph_btf_local.h: | $(OUTPUT) $(BPFTOOL)
-	$(call msg,GEN-BTF,$@)
-	$(Q)if [ -f /sys/kernel/btf/ceph ]; then \
-			$(BPFTOOL) btf dump file /sys/kernel/btf/ceph format c > $@; \
-	else \
-			echo "Error: ceph module not loaded and cannot load automatically"; \
-			echo "Please run: sudo modprobe ceph"; \
-			exit 1; \
-	fi
+	@$(call msg,GEN-BTF,$@)
+	@set -eu; \
+	src=""; tmp=""; \
+	CEPH_KO=$$(find /lib/modules/$$(uname -r) -type f -name 'ceph.ko*' 2>/dev/null | head -1); \
+	[ -n "$$CEPH_KO" ] || { echo "No ceph.ko* found under /lib/modules/$$(uname -r)" >&2; exit 1; }; \
+	echo "Found ceph kernel module: $$CEPH_KO"; \
+	case "$$CEPH_KO" in \
+		*.ko)     src="$$CEPH_KO";; \
+		*.ko.xz)  tmp=$$(mktemp); xz -v -dc "$$CEPH_KO" >"$$tmp"; src="$$tmp";; \
+		*.ko.zst) tmp=$$(mktemp); zstd -v -dc --no-progress "$$CEPH_KO" >"$$tmp"; src="$$tmp";; \
+	esac; \
+	$(BPFTOOL) btf dump file "$$src" format c --base-btf /sys/kernel/btf/vmlinux >"$@"; \
+	rm -fv $$tmp; \
 
 # Build BPF objects and skeletons
 $(OUTPUT)/kfstrace.bpf.o: $(OSDTRACE_SRC)/kfstrace.bpf.c $(LIBBPF_OBJ) | $(OUTPUT) $(BPFTOOL)
