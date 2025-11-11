@@ -53,7 +53,7 @@ chmod +x osdtrace
 dpkg -l | grep ceph-osd
 
 # Download corresponding DWARF file for osdtrace (example for Ceph 17.2.6)
-wget https://raw.githubusercontent.com/taodd/cephtrace/main/files/osdtrace/17.2.6-0ubuntu0.22.04.2_dwarf.json
+wget https://raw.githubusercontent.com/taodd/cephtrace/main/files/ubuntu/osdtrace/17.2.6-0ubuntu0.22.04.2_dwarf.json
 
 # Start tracing OSD operations
 sudo ./osdtrace -i 17.2.6-0ubuntu0.22.04.2_dwarf.json -x
@@ -145,10 +145,16 @@ git submodule update --init --recursive
 ```
 
 ### Build Prerequisites
-On a Debian or Ubuntu based system, use the following apt command to start the build dependencies. If using a system with a different package manager, a different set of commands will be required:
+On a Debian or Ubuntu based system, use the following apt command to start the build dependencies:
 ```
-sudo apt-get install g++ clang libelf-dev libc6-dev-i386 libdw-dev
+sudo apt-get install g++ clang libelf-dev libc6-dev libc6-dev-i386 libdw-dev
 ```
+For RHEL based systems, use the following commands:
+```
+sudo dnf config-manager --enable crb
+sudo dnf install g++ clang elfutils-libelf-devel glibc-devel glibc-devel.i686 elfutils-devel
+```
+If using a system with a different package manager, a different set of commands will be required.
 
 ## Build cephtrace
 Build the binaries:
