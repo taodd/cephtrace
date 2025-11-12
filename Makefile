@@ -43,7 +43,7 @@ INCLUDES := -I$(OUTPUT) \
 # Compiler flags
 CLANG_BPF_SYS_INCLUDES := $(shell $(CLANG) -v -E - </dev/null 2>&1 | \
     sed -n '/<...> search starts here:/,/End of search list./{ s| \(/.*\)|-idirafter \1|p }')
-CXXFLAGS := -g -O2 -Wall -Wextra -Wno-unused-function -Wno-address-of-packed-member -D__TARGET_ARCH_$(ARCH) $(INCLUDES) $(CLANG_BPF_SYS_INCLUDES)
+CXXFLAGS := -g -O2 -Wall -Werror -Wextra -Wno-unused-function -Wno-address-of-packed-member -D__TARGET_ARCH_$(ARCH) $(INCLUDES) $(CLANG_BPF_SYS_INCLUDES)
 LIBS := $(LIBBPF_OBJ) -lelf -ldw -lz -ldl
 
 # Build verbosity control
@@ -74,7 +74,7 @@ install:
 		rst2man $(DOCDIR)/$$prog.rst.in $(DOCDIR)/$$prog.8.gz; \
 		install -m 0644 $(DOCDIR)/$$prog.8.gz $(DESTDIR)$(MANDIR)/; \
 	done
-	
+
 src-pkg:
 	$(call msg,BUILD SOURCE PACKAGE)
 	TMPDIR=$$(mktemp -d) && \
@@ -128,7 +128,7 @@ $(OSDTRACE_SRC)/ceph_btf_local.h: | $(OUTPUT) $(BPFTOOL)
 	rm -fv $$tmp; \
 
 # Build BPF objects and skeletons
-$(OUTPUT)/kfstrace.bpf.o: $(OSDTRACE_SRC)/kfstrace.bpf.c $(LIBBPF_OBJ) | $(OUTPUT) $(BPFTOOL)
+$(OUTPUT)/kfstrace.bpf.o: $(OSDTRACE_SRC)/kfstrace.bpf.c $(OSDTRACE_SRC)/ceph_btf_local.h $(LIBBPF_OBJ) | $(OUTPUT) $(BPFTOOL)
 	$(call msg,BPF,$@)
 	$(Q)$(CLANG) -g -O2 -target bpf $(CXXFLAGS) -c $< -o $(patsubst %.bpf.o,%.tmp.bpf.o,$@)
 	$(Q)$(BPFTOOL) gen object $@ $(patsubst %.bpf.o,%.tmp.bpf.o,$@)
