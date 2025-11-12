@@ -243,19 +243,22 @@ static int handle_mds_event(void *ctx, void *data, size_t data_sz)
     tm = localtime(&t);
     strftime(ts, sizeof(ts), "%H:%M:%S", tm);
 
-    if (event->safe_latency_us < (__u64)latency_threshold)
-        return 0;
 
     // Format latencies
     char unsafe_lat[16] = "-";
     char safe_lat[16];
 
     if (event->got_unsafe_reply && event->unsafe_latency_us > 0) {
+        if (event->unsafe_latency_us < (__u64)latency_threshold)
+            return 0;
         if (event->unsafe_latency_us >= 1000) {
             snprintf(unsafe_lat, sizeof(unsafe_lat), "%.1fms", event->unsafe_latency_us / 1000.0);
         } else {
             snprintf(unsafe_lat, sizeof(unsafe_lat), "%lluμs", event->unsafe_latency_us);
         }
+    }else{
+        if (event->safe_latency_us < (__u64)latency_threshold)
+            return 0;
     }
 
     if (event->safe_latency_us >= 1000) {
