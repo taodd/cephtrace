@@ -29,3 +29,9 @@ new_dwarf="generated-dwarf.json"
 matching_ref_version=$(dpkg -l | awk '$2=="ceph-common" {print $3}')
 ref_file="./files/ubuntu/osdtrace/osd-${matching_ref_version}_dwarf.json"
 diff $ref_file $new_dwarf
+
+free -m
+cat /proc/cpuinfo
+df -h
+du -hs
+
