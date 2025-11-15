@@ -110,7 +110,7 @@ def sort(
     show_in_ms: bool = False,
     field: str = DEFAULT_LATENCY_FIELD,
 ) -> None:
-    """Print a (descending) sorted view of osd(s) operation latencies.
+    """Print a (ascending) sorted view of osd(s) operation latencies.
 
     Args:
         data: List of parsed osdtrace lines.
@@ -127,11 +127,9 @@ def sort(
     if field in BLUESTORE_OP_TYPES:
         sorted_data = sorted(
             data, key=lambda t: t.get(bd, {}).get(field, -1),
-            reverse=True
         )
     else:
-        sorted_data = sorted(data, key=lambda t: t[field],
-                             reverse=True)
+        sorted_data = sorted(data, key=lambda t: t[field])
 
     for trace in sorted_data:
         if bd in trace:
@@ -383,7 +381,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "-s",
         "--sort",
-        help="Sort osdtrace log lines by latency value as specified by '--field'", # noqa
+        help="Sort osdtrace log lines in ascending order by latency value as specified by '--field'", # noqa
         action="store_true",
     )
     parser.add_argument(
