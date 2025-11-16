@@ -9,12 +9,9 @@ from pathlib import Path
 import pytest
 
 from . import analyze_osdtrace_golden_outputs as golden
+from .. import analyze_osdtrace_output
 
-PROJECT_ROOT = Path(__file__).parent.parent
-sys.path.insert(0, str(PROJECT_ROOT / "tools"))
-
-import analyze_osdtrace_output
-SAMPLE_LOG = PROJECT_ROOT / "tools" / "sample-logs" / "osdtrace_data.log"
+SAMPLE_LOG = Path(__file__).parent.parent / "sample-logs" / "osdtrace_data.log"
 
 
 @pytest.mark.parametrize(

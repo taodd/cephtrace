@@ -339,7 +339,7 @@ def analyze(
             print()
 
 
-def main(margs) -> None:
+def run(margs) -> None:
     """ Parse and analyse the osdtrace log """
 
     # validate the field parameter
@@ -364,7 +364,8 @@ def main(margs) -> None:
         analyze(filtered_data, margs.show_in_ms, margs.field)
 
 
-if __name__ == "__main__":
+def create_arg_parser():
+    """Create and return the argument parser for this script."""
     parser = argparse.ArgumentParser(
         formatter_class=CustomFormatter,
         epilog=EPILOGUE_HELP,
@@ -405,5 +406,8 @@ if __name__ == "__main__":
         """, # noqa
         action="store_true",
     )
-    args = parser.parse_args()
-    main(args)
+    return parser
+
+
+if __name__ == "__main__":
+    run(create_arg_parser().parse_args())
