@@ -1,3 +1,5 @@
+# flake8: noqa
+# pylint: disable=all
 GOLDEN_OUTPUT = """osd.31:
   op_r lat (μsec): min=62, max=7089, avg=461.97, stdev=565.84, samples=4945
   lat percentiles (μsec):
@@ -604,4 +606,11 @@ GOLDEN_SORTED_OUTPUT_LAST_3_LINES = """
 osd 150 pg 22.160 op op_w size 4096 client 204434826 tid 14760815 throttle_lat 1 recv_lat 8 dispatch_lat 6 queue_lat 31 osd_lat 117 peers [(87, 902463), (153, 955)] bluestore_lat 538 (prepare 47 aio_wait 175 aio_size 1 seq_wait 5 kv_commit 309) lat_type op_lat lat 902616
 osd 150 pg 22.3c op op_w size 4096 client 237181702 tid 12899038 throttle_lat 1 recv_lat 8 dispatch_lat 5 queue_lat 24 osd_lat 99 peers [(74, 1093), (113, 941689)] bluestore_lat 486 (prepare 35 aio_wait 183 aio_size 1 seq_wait 6 kv_commit 260) lat_type op_lat lat 941815
 osd 150 pg 22.3c op op_w size 4096 client 196603652 tid 289352745 throttle_lat 1 recv_lat 6 dispatch_lat 6 queue_lat 37 osd_lat 158 peers [(74, 3850), (113, 1039606)] bluestore_lat 1084 (prepare 77 aio_wait 728 aio_size 1 seq_wait 4 kv_commit 274) lat_type op_lat lat 1039793
+"""
+
+
+GOLDEN_SORTED_OUTPUT_LAST_3_LINES_RECV_LAT = """
+osd 31 pg 24.5 op subop_w size 3138363 client 150886011 tid 553826191 throttle_lat 0 recv_lat 6839 dispatch_lat 33 queue_lat 34 osd_lat 42 peers [] bluestore_lat 8121 (prepare 2443 aio_wait 5449 aio_size 53 seq_wait 57 kv_commit 170) lat_type subop_lat lat 15092
+osd 31 pg 24.15f op subop_w size 4186939 client 198811324 tid 150013908 throttle_lat 0 recv_lat 7218 dispatch_lat 7 queue_lat 33 osd_lat 46 peers [] bluestore_lat 7752 (prepare 1992 aio_wait 5356 aio_size 69 seq_wait 124 kv_commit 278) lat_type subop_lat lat 16476
+osd 6 pg 24.543 op subop_w size 7447211 client 240381682 tid 401333 throttle_lat 0 recv_lat 7601 dispatch_lat 7 queue_lat 28 osd_lat 68 peers [] bluestore_lat 17473 (prepare 4298 aio_wait 12739 aio_size 125 seq_wait 238 kv_commit 196) lat_type subop_lat lat 25210
 """
