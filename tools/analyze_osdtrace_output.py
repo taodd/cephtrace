@@ -381,7 +381,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "-s",
         "--sort",
-        help="Sort osdtrace log lines in ascending order by latency value as specified by '--field'", # noqa
+        help="""
+            Sort osdtrace log lines in ascending order by
+            latency value as specified by '--field'
+        """,
         action="store_true",
     )
     parser.add_argument(
@@ -396,7 +399,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "-i",
         "--infer",
-        help="Infer individdual percentage contributions from all latency fields", # noqa
+        help="""
+            Infer individual percentage contributions from all latency fields
+            NOTE: This treats each latency field equally, i.e., without weighting
+        """, # noqa
         action="store_true",
     )
     args = parser.parse_args()
