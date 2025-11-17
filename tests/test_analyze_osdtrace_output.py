@@ -1,20 +1,17 @@
-#!/usr/bin/env python3
 """
 End to end tests for analyze_osdtrace_output.py
 """
 
-import sys
 from io import StringIO
 from pathlib import Path
+import sys
 import pytest
 
-from . import analyze_osdtrace_golden_outputs as golden
+import analyze_osdtrace_golden_outputs as golden
+import analyze_osdtrace_output  # pylint: disable=E0401
 
-PROJECT_ROOT = Path(__file__).parent.parent
-sys.path.insert(0, str(PROJECT_ROOT / "tools"))
-
-import analyze_osdtrace_output
-SAMPLE_LOG = PROJECT_ROOT / "tools" / "sample-logs" / "osdtrace_data.log"
+SAMPLE_DATA_DIR = Path(__file__).parent.parent / "tools" / "sample-logs"
+SAMPLE_LOG = SAMPLE_DATA_DIR / "osdtrace_data.log"
 
 
 @pytest.mark.parametrize(
