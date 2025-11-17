@@ -5,24 +5,10 @@ The `analyze_osdtrace_output.py` script provides automated statistical analysis 
 ## Overview
 
 This Python tool parses osdtrace output and provides:
-- Statistical analysis (min, max, avg, percentiles) for latencies
-- Latency distribution histograms (similar to fio output)
+- Statistical analysis (min, max, avg, fio-like percentiles) for latencies
 - Per-OSD filtering
 - Per-latency-field filtering (analyze specific stages like recv_lat, kv_commit)
 - Sorted output for detailed inspection
-
-### Use Cases
-
-- Understand latency distribution across operations
-- Identify percentile performance (p50, p95, p99)
-- Focus on specific latency components (e.g., only kv_commit times)
-- Compare performance across different OSDs
-- Generate performance reports
-
-## Prerequisites
-
-- Python 3.x
-- An osdtrace log file (preferably with `-x` extended output)
 
 ## Usage
 
@@ -37,7 +23,7 @@ This Python tool parses osdtrace output and provides:
 | Option | Description | Example |
 |--------|-------------|---------|
 | `-o, --osd <ID>` | Filter by specific OSD ID | `-o 5` |
-| `-f, --field <name>` | Analyze specific latency field | `-f kv_commit` |
+| `-f, --field <name>` | Analyze specific latency field | `-f recv_lat` |
 | `-s, --sort` | Print sorted lines instead of stats | `-s` |
 | `-h, --help` | Show help message | - |
 
@@ -52,7 +38,7 @@ When using `-f` option, you can analyze these latency components:
 - `queue_lat` - Queue wait time
 - `bluestore_lat` - Total BlueStore time
 
-**BlueStore sub-latencies** (requires `-x` extended output):
+**BlueStore sub-latencies** :
 - `prepare` - Transaction preparation
 - `aio_wait` - Async I/O wait
 - `seq_wait` - Sequencer wait
@@ -181,17 +167,6 @@ sudo ./osdtrace -x -t 300 > osdtrace-$(date +%Y%m%d-%H%M%S).log
 for field in queue_lat osd_lat bluestore_lat kv_commit; do
     echo "=== $field ==="
     ./tools/analyze_osdtrace_output.py osdtrace-*.log -f $field
-    echo
-done
-```
-
-### Step 4: Per-OSD Analysis
-
-```bash
-# If specific OSDs show issues, analyze individually
-for osd in 5 8 15; do
-    echo "=== OSD $osd ==="
-    ./tools/analyze_osdtrace_output.py osdtrace-*.log -o $osd
     echo
 done
 ```

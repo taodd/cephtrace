@@ -1,36 +1,29 @@
 # Cephtrace
+**eBPF-based dynamic tracing tools for Ceph - Zero downtime, minimal overhead**
 
-**eBPF-based dynamic tracing tools for Ceph**
-
-Currently we have three tools for real-time Ceph operation tracing without service restarts:
+Pinpoint performance bottlenecks with per-IO latency visibility across your entire Ceph stack. Currently three tools for real-time tracing (more coming):
 
 - **[radostrace](doc/tools/radostrace.md)** - Trace librados based client operations
-- **[osdtrace](doc/tools/osdtrace.md)** - Trace OSD operations with latency breakdown
+- **[osdtrace](doc/tools/osdtrace.md)** - Trace OSD operations with detailed latency breakdown
 - **[kfstrace](doc/tools/kfstrace.md)** - Trace kernel client operations (CephFS/RBD)
+
+**No service restarts. No configuration changes. Just run and trace.**
 
 ## Quick Start
 
-See [Getting Started](doc/getting-started.md) for installation instructions.
+See [Getting Started](doc/getting-started.md) for quick start instructions.
 
-**Ubuntu quick start:**
-```bash
-# Download binary and DWARF file
-wget https://github.com/taodd/cephtrace/releases/latest/download/radostrace
-wget https://raw.githubusercontent.com/taodd/cephtrace/main/files/ubuntu/radostrace/17.2.6-0ubuntu0.22.04.2_dwarf.json
-chmod +x radostrace
+## Presentation
 
-# Start tracing
-sudo ./radostrace -i 17.2.6-0ubuntu0.22.04.2_dwarf.json
-```
+- [Efficient Ceph Performance Troubleshooting in Production Using eBPF][cephalocon2025] - Cephalocon 2025 (Video will be available soon)
 
 ## Documentation
 
 ### User Guides
-- [Getting Started](doc/getting-started.md) - Installation and quick start
-- [DWARF JSON Files](doc/dwarf-json-files.md) - Managing debug information
 - [radostrace](doc/tools/radostrace.md) - Client-side tracing
 - [osdtrace](doc/tools/osdtrace.md) - OSD-side tracing
 - [kfstrace](doc/tools/kfstrace.md) - Kernel client tracing
+- [DWARF JSON Files](doc/dwarf-json-files.md) - Managing debug information
 
 ### Analysis
 - [Radostrace Analysis](doc/analysis/analyze-radostrace.md) - Analyzing client traces
@@ -42,25 +35,10 @@ sudo ./radostrace -i 17.2.6-0ubuntu0.22.04.2_dwarf.json
 ### Development
 - [Building](doc/development/building.md) - Build from source
 
-## Features
-
-- Zero downtime tracing
-- Minimal overhead (< 1-2% CPU)
-- Pre-built binaries for Ubuntu
-- No debug symbols needed on production (DWARF JSON files)
-- Detailed latency breakdown (osdtrace)
-
 ## Requirements
 
 - Linux kernel 5.8+
 - Ceph Octopus (15.x) - Squid (19.x)
-
-## Pre-generated DWARF Files
-
-- Ubuntu: [files/ubuntu/](files/ubuntu/)
-- CentOS Stream: [files/centos-stream/](files/centos-stream/)
-
-Missing your version? See [DWARF JSON Files guide](doc/dwarf-json-files.md).
 
 ## Contributing
 

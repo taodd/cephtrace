@@ -1,4 +1,4 @@
-# Radostra:ce Analysis Tool
+# Radostrace Analysis Tool
 
 The `analyze_radostrace_output.py` script provides automated analysis of radostrace log files to identify problematic OSDs involved in high-latency operations.
 
@@ -9,19 +9,6 @@ This Python tool parses radostrace output and:
 - Counts which OSDs are involved in slow operations
 - Maps OSDs to their physical hosts (using OSD tree)
 - Highlights problematic OSDs and hosts
-
-### Use Cases
-
-- Quickly identify which OSDs are causing slow client I/O
-- Correlate slow operations with specific hardware
-- Prioritize which OSDs to investigate further
-- Generate reports for capacity planning
-
-## Prerequisites
-
-- Python 3.x
-- A radostrace log file
-- Ceph OSD tree output (JSON format)
 
 ## Usage
 
@@ -82,11 +69,12 @@ Rank   OSD        Count    Host                 Iteration
 Total problematic OSDs identified: 6
 Total high-latency operations analyzed: 98
 
+```
+
 Above example shows all OSDs involved into slow operations are from the same host.
 It strongly indicates there is a host-level issue on that specific host, for example,
 resource shortage(cpu low performance setting, memory shortage), Network card problem, 
 or even shared disk issue if all OSDs share same DB devices or cache device.
-```
 
 ### Interpreting Results
 

@@ -18,7 +18,7 @@ The cephtrace tools (radostrace and osdtrace) need this information to:
 
 **Traditional approach (without JSON):**
 - Install debug symbol packages on every target machine
-- Each machine parses DWARF data at startup (~1-3 seconds overhead)
+- Each machine parses DWARF data at startup (~3-10 seconds overhead)
 - Requires internet access or local debug package repositories
 - Can consume significant disk space (100+ MB per package)
 
