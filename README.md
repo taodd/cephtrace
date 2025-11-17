@@ -15,7 +15,8 @@ See [Getting Started](doc/getting-started.md) for quick start instructions.
 
 ## Presentation
 
-- [Efficient Ceph Performance Troubleshooting in Production Using eBPF][cephalocon2025] - Cephalocon 2025 (Video will be available soon)
+- [Efficient Ceph Performance Troubleshooting in Production Using eBPF](https://cephalocon2025.sched.com/event/27f3z/efficient-ceph-performance-troubleshooting-in-production-using-ebpf-dongdong-tao-canonical) - Cephalocon 2025 (Video will be available soon)
+- [10 mins Demo](https://drive.google.com/file/d/12uwVptf_Gel7iN9Vkwo7JO3aClOASHH4/view?usp=drive_link) (The demo is explained in the Cephalocon2025 presentation)
 
 ## Documentation
 
