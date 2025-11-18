@@ -10,9 +10,6 @@ import pytest
 import analyze_osdtrace_golden_outputs as golden
 import analyze_osdtrace_output  # pylint: disable=E0401
 
-SAMPLE_DATA_DIR = Path(__file__).parent.parent / "tools" / "sample-logs"
-SAMPLE_LOG = SAMPLE_DATA_DIR / "osdtrace_data.log"
-
 
 @pytest.mark.parametrize(
     "flags,expected_output",
@@ -35,10 +32,13 @@ SAMPLE_LOG = SAMPLE_DATA_DIR / "osdtrace_data.log"
         "infer",
     ],
 )
-def test_e2e_analyze_sample_log(flags, expected_output):
-    """Test that analyzing the sample log produces expected output"""
+def test_e2e_analyze_sample_log(sample_osdtrace_log, flags, expected_output):
+    """Test that analyzing the sample log produces expected output
+
+    sample_osdtrace_log: Path to the sample osdtrace log file (this comes from fixtures set in conftest.py)
+    """
     parser = analyze_osdtrace_output.create_arg_parser()
-    script_args = [str(SAMPLE_LOG)] + (flags.split() if flags else [])
+    script_args = [str(sample_osdtrace_log)] + (flags.split() if flags else [])
     args = parser.parse_args(script_args)
 
     old_stdout = sys.stdout
@@ -63,10 +63,13 @@ def test_e2e_analyze_sample_log(flags, expected_output):
         "recv_lat",
     ],
 )
-def test_e2e_sort_sample_log(flags, expected_output):
-    """Test that sorting the sample log is as expected."""
+def test_e2e_sort_sample_log(sample_osdtrace_log, flags, expected_output):
+    """Test that sorting the sample log is as expected.
+
+    sample_osdtrace_log: Path to the sample osdtrace log file (this comes from fixtures set in conftest.py)
+    """
     parser = analyze_osdtrace_output.create_arg_parser()
-    script_args = [str(SAMPLE_LOG), "-s"] + (flags.split() if flags else [])
+    script_args = [str(sample_osdtrace_log), "-s"] + (flags.split() if flags else [])
     args = parser.parse_args(script_args)
 
     old_stdout = sys.stdout
