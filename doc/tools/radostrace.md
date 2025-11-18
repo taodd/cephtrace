@@ -45,7 +45,7 @@ wget https://raw.githubusercontent.com/taodd/cephtrace/main/files/ubuntu/radostr
 sudo ./radostrace -i 17.2.6-0ubuntu0.22.04.2_dwarf.json
 ```
 
-### With Debug Symbols Installed
+### With Debug Symbols Installed (When no mathcing DWARF json file)
 
 ```bash
 # Install debug symbols
