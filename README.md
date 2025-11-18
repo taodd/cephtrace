@@ -27,11 +27,11 @@ See [Getting Started](doc/getting-started.md) for quick start instructions.
 - [DWARF JSON Files](doc/dwarf-json-files.md) - Managing debug information
 
 ### Analysis
-- [Radostrace Analysis](doc/analysis/analyze-radostrace.md) - Analyzing client traces
-- [Osdtrace Analysis](doc/analysis/analyze-osdtrace.md) - Analyzing OSD traces
+- [Radostrace Analysis](doc/analysis/analyze-radostrace.md) - Analyzing radostrace logs
+- [Osdtrace Analysis](doc/analysis/analyze-osdtrace.md) - Analyzing osdtrace logs
 
 ### Deployment
-- [Containerized Ceph](doc/deployment/containerized-ceph.md) - Tracing containers (cephadm, Docker, Podman)
+- [Containerized Ceph](doc/deployment/containerized-ceph.md) - Tracing containers (cephadm, Docker)
 
 ### Development
 - [Building](doc/development/building.md) - Build from source
