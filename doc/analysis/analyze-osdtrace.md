@@ -25,6 +25,7 @@ This Python tool parses osdtrace output and provides:
 | `-o, --osd <ID>` | Filter by specific OSD ID | `-o 5` |
 | `-f, --field <name>` | Analyze specific latency field | `-f recv_lat` |
 | `-s, --sort` | Print sorted lines instead of stats | `-s` |
+| `-i, --infer` | Print an latency contributions distribution | `-i` |
 | `-h, --help` | Show help message | - |
 
 ### Available Fields
@@ -134,8 +135,35 @@ Perfect for deep-diving into a specific OSD's storage performance.
 
 # Pipe to find very slow operations
 ./tools/analyze_osdtrace_output.py osdtrace.log -s -f kv_commit | \
-    awk '$NF > 50000' | head -20
+    awk '$NF > 50000' | tail -20
 ```
+
+### Example 6: Latency Contribution Distribution
+
+If you are not sure which latency field to start looking into, you can see a high level overview
+
+```bash
+./tools/analyze_osdtrace_output.py osdtrace.log -i
+```
+
+Sample output:
+```console
+> ./tools/analyze_osdtrace_output.py tools/sample-logs/osdtrace_data.log -o 6 -i
+osd.6:
+...
+  subop_w:
+    65.69% from bluestore_lat
+    10.23% from queue_lat
+     7.90% from osd_lat
+     3.81% from recv_lat
+     1.24% from dispatch_lat
+     0.02% from throttle_lat
+...
+```
+
+This drive the investigation towards looking at bluestore latency,
+as described in example 1 or 2 (but with `-f bluestore_lat`)
+
 
 **Sample sorted output:**
 ```
@@ -153,14 +181,21 @@ osd 5 pg 2.3a op_w size 4096 client 12345 tid 67892 ... kv_commit 45670
 sudo ./osdtrace -x -t 300 > osdtrace-$(date +%Y%m%d-%H%M%S).log
 ```
 
-### Step 2: Quick Overview Analysis
+### Step 2: Quick Overview of Latency Contributions
+
+```bash
+# Get overall contributions
+./tools/analyze_osdtrace_output.py osdtrace-*.log -i
+```
+
+### Step 3: Quick Overview Analysis
 
 ```bash
 # Get overall statistics
 ./tools/analyze_osdtrace_output.py osdtrace-*.log
 ```
 
-### Step 3: Drill Down by Component
+### Step 4: Drill Down by Component
 
 ```bash
 # Analyze each latency component

@@ -7,6 +7,7 @@ from pathlib import Path
 import requests
 import pytest
 
+# flake8: noqa: E501
 URL = "https://github.com/taodd/cephtrace/releases/download/fixtures/sample_osdtrace_data.tar.gz"
 
 
