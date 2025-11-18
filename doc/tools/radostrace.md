@@ -7,8 +7,8 @@
 radostrace attaches to librados client processes and traces every operation sent to the Ceph cluster, capturing:
 - Which process and client is performing the operation
 - Target pool, placement group (PG), and OSD acting set
-- Operation type (read/write), size, and latency
-- Object name and detailed operation parameters
+- Operation type (read/write), size, offset, length, and latency
+- Object name and detailed OSDOp type 
 
 ### Use Cases
 
@@ -16,17 +16,15 @@ Run radostrace on machines acting as Ceph clients:
 - **Virtual machines** with Ceph RBD volumes attached
 - **OpenStack services** (Cinder volume service, Glance image service)
 - **RGW gateway servers** (RADOS Gateway)
-- **Custom applications** using librados or librbd libraries
+- **Custom applications** using librados libraries
 - **Kubernetes nodes** with RBD persistent volumes
 
 ### What You Can Learn
 
-- Identify slow I/O operations and their latencies
-- Track which PGs are receiving the most traffic
-- Understand I/O patterns (random vs sequential, read vs write)
-- Correlate application behavior with Ceph operations
-- Diagnose performance bottlenecks at the client level
-- Monitor object-level access patterns
+- Identify slow I/O operations and those OSDs contributed to the high latency IOs
+- Quickly pinpoint the underperformed OSDs in the cluster (refer [Analysis Tools](../analysis/analyze-radostrace.md))
+- Understand I/O patterns (random vs sequential, read vs write, 4k aligned or unaligned IO)
+- Monitor object-level access pattern
 
 ## Quick Start
 
@@ -79,10 +77,10 @@ sudo ./radostrace
 
 #### Trace a specific process
 ```bash
-# Find the process ID
-ps aux | grep rgw
+# Find the process ID for a VM
+ps aux | grep qemu-system
 
-# Trace that specific RGW process
+# Trace that specific VM
 sudo ./radostrace -p 12345
 ```
 
@@ -233,7 +231,7 @@ awk '$9 > 100000' /tmp/radostrace_output.txt
 
 ```bash
 # Find Cinder volume service process
-ps aux | grep cinder-volume | grep python
+ps aux | grep cinder-volume
 
 # Trace that specific process
 sudo ./radostrace -p <PID> -i <dwarf_json>
@@ -243,20 +241,10 @@ sudo ./radostrace -p <PID> -i <dwarf_json>
 
 ```bash
 # Trace RGW gateway
-sudo ./radostrace -p $(pgrep radosgw) -t 3600 > rgw_trace.log
+sudo ./radostrace -p $(pgrep radosgw) -t 300 > rgw_trace.log
 
 # Analyze object access patterns later
 # Look for frequently accessed objects, large transfers, etc.
-```
-
-### Scenario 4: Identifying Hot PGs
-
-```bash
-# Capture trace data
-sudo ./radostrace -t 60 > trace.log
-
-# Count operations per PG
-awk '{print $5}' trace.log | sort | uniq -c | sort -rn | head -20
 ```
 
 ## Man Page
