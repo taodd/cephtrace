@@ -19,7 +19,7 @@ def sample_fixture_data(tmp_path_factory) -> Path:
     try:
         response = requests.get(URL, timeout=30)
         response.raise_for_status()
-        
+
         with tarfile.open(fileobj=io.BytesIO(response.content), mode='r:gz') as tar:
             tar.extractall(path=fixture_dir, filter='data')
 
@@ -27,14 +27,14 @@ def sample_fixture_data(tmp_path_factory) -> Path:
         pytest.fail(f"Failed to download fixture data: {e}")
     except tarfile.TarError as e:
         pytest.fail(f"Failed to extract tarball: {e}")
-    except Exception as e:
+    except Exception as e:  # pylint: disable=W0718
         pytest.fail(f"Unexpected error downloading fixture: {e}")
-    
+
     return fixture_dir
 
 
 @pytest.fixture(scope="session")
-def sample_osdtrace_log(sample_fixture_data: Path) -> Path:
+def sample_osdtrace_log(sample_fixture_data: Path) -> Path:  # pylint: disable=R1710,W0621
     """Returns path to the downloaded sample osdtrace data log file."""
     for pattern in ["*osdtrace_data*.log"]:
         log_files = list(sample_fixture_data.glob(pattern))
