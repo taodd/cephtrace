@@ -699,6 +699,7 @@ static int preprocess_module(Dwfl_Module *dwflmod, void **userdata,
 
   if (!dwarf) {
     cerr << "preprocess_module dwarf get error" << endl;
+    clog << "Please ensure the debug symbol is installed" << endl;
     return EXIT_FAILURE;
   }
 
@@ -766,8 +767,6 @@ int DwarfParser::parse() {
     char envs[] = "DEBUGINFOD_URLS=https://debuginfod.ubuntu.com";
     putenv(envs);
   }
-  const char *debuginfod_urls = getenv("DEBUGINFOD_URLS");
-  clog << "Will download debug symbol from " << debuginfod_urls << " if no local debug symbol available" << endl;
 
   for (auto dwfl: dwfls) {
     dwfl_getmodules(dwfl, preprocess_module, this, 0);
