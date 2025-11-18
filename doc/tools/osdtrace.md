@@ -1,6 +1,6 @@
 # osdtrace
 
-**osdtrace** is an eBPF-based tool for tracing Ceph OSD operations with detailed latency breakdown across multiple processing stages. It provides deep visibility into OSD performance from network message receipt through storage backend completion.
+**osdtrace** is an eBPF-based tool for tracing Ceph OSD operations with detailed latency breakdown across multiple processing stages. It provides deep visibility into OSD performance from network message receipt through bluestore backend completion.
 
 ## Overview
 
@@ -24,7 +24,7 @@ Run osdtrace on **Ceph OSD nodes** to:
 ### What You Can Learn
 
 - Latency distribution across messenger, OSD, and BlueStore layers
-- Eaxct time spent on waiting on each peer OSD for replication
+- Eaxct time spent waiting on each peer OSD for replication
 - Detailed blueStore internal latencies
 - Queue depth and processing delays on PG layer(Able to print operations stalled on waiting for scrub, waiting for peered or some other background OSD activities)
 - Able to inspect the difference between Client-to-Primary vs Primary-to-Secondary operation
@@ -268,10 +268,10 @@ osd_lat 50 bluestore_lat 2500000 (prepare 100 aio_wait 0 kv_commit 2480000) ...
 
 #### Replication Issues
 ```
-osd_lat 100 peers [(5, 50000), (10, 48000)] bluestore_lat 2000 ...
+osd_lat 100 peers [(5, 5000), (10, 48000)] bluestore_lat 2000 ...
 ```
-- Peers have much higher latency than local bluestore
-- **Solution:** Check replica OSDs' performance, network between OSDs
+- Peer osd.10 have much higher latency than local bluestore and peer osd.5
+- **Solution:** Check osd.10's performance, and network between the current tracing OSD to osd.10
 
 ### Read vs Write Patterns
 
