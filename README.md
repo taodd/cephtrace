@@ -3,9 +3,9 @@
 
 Pinpoint performance bottlenecks with per-IO latency visibility across your entire Ceph stack. Currently three tools for real-time tracing (more coming):
 
-- **[radostrace](doc/tools/radostrace.md)** - Trace librados based client operations
-- **[osdtrace](doc/tools/osdtrace.md)** - Trace OSD operations with detailed latency breakdown
-- **[kfstrace](doc/tools/kfstrace.md)** - Trace kernel client operations (CephFS/RBD)
+- **[radostrace](doc/radostrace.md)** - Trace librados based client operations
+- **[osdtrace](doc/osdtrace.md)** - Trace OSD operations with detailed latency breakdown
+- **[kfstrace](doc/kfstrace.md)** - Trace kernel client operations (CephFS/RBD)
 
 **No service restarts. No configuration changes. Just run and trace.**
 
@@ -21,20 +21,21 @@ See [Getting Started](doc/getting-started.md) for quick start instructions.
 ## Documentation
 
 ### User Guides
-- [radostrace](doc/tools/radostrace.md) - Client-side tracing
-- [osdtrace](doc/tools/osdtrace.md) - OSD-side tracing
-- [kfstrace](doc/tools/kfstrace.md) - Kernel client tracing
+- [radostrace](doc/radostrace.md) - Client-side tracing
+- [osdtrace](doc/osdtrace.md) - OSD-side tracing
+- [kfstrace](doc/kfstrace.md) - Kernel client tracing
 - [DWARF JSON Files](doc/dwarf-json-files.md) - Managing debug information
 
 ### Analysis
-- [Radostrace Analysis](doc/analysis/analyze-radostrace.md) - Analyzing radostrace logs
-- [Osdtrace Analysis](doc/analysis/analyze-osdtrace.md) - Analyzing osdtrace logs
+- [Radostrace Analysis](doc/analyze-radostrace.md) - Analyzing radostrace logs
+- [Osdtrace Analysis](doc/analyze-osdtrace.md) - Analyzing osdtrace logs
 
 ### Deployment
-- [Containerized Ceph](doc/deployment/containerized-ceph.md) - Tracing containers (cephadm, Docker)
+- [Tracing Containerized Ceph](doc/tracing-containerized-ceph.md) - Tracing containers (cephadm, Docker)
+- [Tracing MicroCeph](doc/tracing-microceph-snap.md) - Tracing MicroCeph snap-based deployments
 
 ### Development
-- [Building](doc/development/building.md) - Build from source
+- [Building](doc/building.md) - Build from source
 
 ## Requirements
 

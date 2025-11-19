@@ -161,7 +161,7 @@ docker cp ceph-osd-0:/tmp/osd_dwarf.json ./
 
 ## See Also
 
-- [Getting Started Guide](../getting-started.md) - Basic installation
-- [DWARF JSON Files](../dwarf-json-files.md) - Generating and managing DWARF files
-- [radostrace](../tools/radostrace.md) - Radostrace documentation
-- [osdtrace](../tools/osdtrace.md) - Osdtrace documentation
+- [Getting Started Guide](getting-started.md) - Basic installation
+- [DWARF JSON Files](dwarf-json-files.md) - Generating and managing DWARF files
+- [radostrace](radostrace.md) - Radostrace documentation
+- [osdtrace](osdtrace.md) - Osdtrace documentation
