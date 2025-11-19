@@ -143,5 +143,5 @@ sudo ./kfstrace
 
 ## See Also
 
-- [Tracing Containerized Ceph](./tracing-containerized-ceph.md) - Similar concepts for container deployments
-- [DWARF JSON Files](../dwarf-json-files.md) - Generating and managing DWARF files
+- [Tracing Containerized Ceph](tracing-containerized-ceph.md) - Similar concepts for container deployments
+- [DWARF JSON Files](dwarf-json-files.md) - Generating and managing DWARF files

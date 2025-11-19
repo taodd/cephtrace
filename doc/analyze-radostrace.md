@@ -94,5 +94,5 @@ or even shared disk issue if all OSDs share same DB devices or cache device.
 - Less likely to be hardware failure
 
 ## See Also
-- [radostrace Documentation](../tools/radostrace.md) - Radostrace usage guide
+- [radostrace Documentation](radostrace.md) - Radostrace usage guide
 - [osdtrace Analysis](analyze-osdtrace.md) - Analyzing OSD-level traces
