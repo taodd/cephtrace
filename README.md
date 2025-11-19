@@ -30,11 +30,11 @@ See [Getting Started](doc/getting-started.md) for quick start instructions.
 - [Radostrace Analysis](doc/analyze-radostrace.md) - Analyzing radostrace logs
 - [Osdtrace Analysis](doc/analyze-osdtrace.md) - Analyzing osdtrace logs
 
-### Deployment
-- [Tracing Containerized Ceph](doc/tracing-containerized-ceph.md) - Tracing containers (cephadm, Docker)
+### Tracing Container/Snap
+- [Tracing Containerized Ceph](doc/tracing-containerized-ceph.md) - Tracing containers (cephadm/rook, Docker, lxd)
 - [Tracing MicroCeph](doc/tracing-microceph-snap.md) - Tracing MicroCeph snap-based deployments
 
-### Development
+### Build
 - [Building](doc/building.md) - Build from source
 
 ## Requirements
