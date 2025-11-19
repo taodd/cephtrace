@@ -74,6 +74,6 @@ def test_e2e_sort_sample_log(
     analyze_osdtrace_output.run(parser.parse_args(script_args))
 
     stdout = capsys.readouterr().out
-    tail_out = stdout.strip().split('\n')[-3:]
+    tail_out = stdout.strip().split("\n")[-3:]
 
-    assert f"\n{'\n'.join(tail_out)}\n" == expected_output
+    assert "\n" + "\n".join(tail_out) + "\n" == expected_output
