@@ -31,7 +31,8 @@ See [Getting Started](doc/getting-started.md) for quick start instructions.
 - [Osdtrace Analysis](doc/analysis/analyze-osdtrace.md) - Analyzing osdtrace logs
 
 ### Deployment
-- [Containerized Ceph](doc/deployment/containerized-ceph.md) - Tracing containers (cephadm, Docker)
+- [Tracing Containerized Ceph](doc/deployment/tracing-containerized-ceph.md) - Tracing containers (cephadm, Docker)
+- [Tracing MicroCeph](doc/deployment/tracing-microceph-snap.md) - Tracing MicroCeph snap-based deployments
 
 ### Development
 - [Building](doc/development/building.md) - Build from source
