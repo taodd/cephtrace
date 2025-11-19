@@ -334,4 +334,4 @@ For detailed command-line reference:
 man kfstrace
 ```
 
-Or see: [kfstrace.8](../man/8/kfstrace.rst)
+Or see: [kfstrace.8](man/8/kfstrace.rst)

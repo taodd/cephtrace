@@ -328,7 +328,7 @@ grep "subop_w" full_trace.log > replica_ops.log
 ```
 
 ## osdtrace log analyzer
-- [Analysis Tools](../analysis/analyze-osdtrace.md) - Automated analysis scripts
+- [Analysis Tools](analyze-osdtrace.md) - Automated analysis scripts
 
 ## Man Page
 
@@ -337,5 +337,5 @@ For detailed command-line reference:
 man osdtrace
 ```
 
-Or see: [osdtrace.8](../man/8/osdtrace.rst)
+Or see: [osdtrace.8](man/8/osdtrace.rst)
 

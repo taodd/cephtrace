@@ -256,7 +256,9 @@ std::string find_library_path(const std::string& lib_name, int pid) {
             "/lib/x86_64-linux-gnu",
             "/usr/lib/x86_64-linux-gnu",
             "/usr/lib/x86_64-linux-gnu/ceph",
-            "/usr/local/lib"
+            "/usr/local/lib",
+            "/snap/microceph/current/lib/x86_64-linux-gnu",
+            "/snap/microceph/current/lib/x86_64-linux-gnu/ceph"
         };
 
         // Try different possible filenames for the library

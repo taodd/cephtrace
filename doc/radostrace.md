@@ -22,7 +22,7 @@ Run radostrace on machines acting as Ceph clients:
 ### What You Can Learn
 
 - Identify slow I/O operations and those OSDs contributed to the high latency IOs
-- Quickly pinpoint the underperformed OSDs in the cluster (refer [Analysis Tools](../analysis/analyze-radostrace.md))
+- Quickly pinpoint the underperformed OSDs in the cluster (refer [Analysis Tools](analyze-radostrace.md))
 - Understand I/O patterns (random vs sequential, read vs write, 4k aligned or unaligned IO)
 - Monitor object-level access pattern
 
@@ -253,7 +253,7 @@ For detailed command-line reference:
 ```bash
 man radostrace
 ```
-Or see: [radostrace.8](../man/8/radostrace.rst)
+Or see: [radostrace.8](man/8/radostrace.rst)
 
 ## See Also
-- [Analysis Tools](../analysis/analyze-radostrace.md) - Automated analysis scripts
+- [Analysis Tools](analyze-radostrace.md) - Automated analysis scripts
