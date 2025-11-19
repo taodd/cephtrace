@@ -31,6 +31,6 @@ def sample_osdtrace_log(tmp_path_factory) -> Path:
     log_file = fixture_dir / "osdtrace_data.log"
 
     if not log_file.exists():
-        pytest.fail(f"Could not find any sample_osdtrace_data log file {log_file}")
+        pytest.fail(f"Could not find expected sample osdtrace_data log file {log_file}")
 
     return log_file
