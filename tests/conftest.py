@@ -12,7 +12,7 @@ URL = "https://github.com/taodd/cephtrace/releases/download/fixtures/sample_osdt
 
 
 @pytest.fixture(scope="session")
-def sample_fixture_data(tmp_path_factory) -> Path:
+def sample_osdtrace_log(tmp_path_factory) -> Path:
     """Download and extract sample fixture data for tests."""
     fixture_dir = tmp_path_factory.mktemp("fixtures")
 
@@ -27,18 +27,10 @@ def sample_fixture_data(tmp_path_factory) -> Path:
         pytest.fail(f"Failed to download fixture data: {e}")
     except tarfile.TarError as e:
         pytest.fail(f"Failed to extract tarball: {e}")
-    except Exception as e:  # pylint: disable=W0718
-        pytest.fail(f"Unexpected error downloading fixture: {e}")
 
-    return fixture_dir
+    log_file = fixture_dir / "osdtrace_data.log"
 
+    if not log_file.exists():
+        pytest.fail(f"Could not find any sample_osdtrace_data log file {log_file}")
 
-@pytest.fixture(scope="session")
-def sample_osdtrace_log(sample_fixture_data: Path) -> Path:  # pylint: disable=R1710,W0621
-    """Returns path to the downloaded sample osdtrace data log file."""
-    for pattern in ["*osdtrace_data*.log"]:
-        log_files = list(sample_fixture_data.glob(pattern))
-        if log_files:
-            return log_files[0]
-
-    pytest.fail(f"Could not find any sample_osdtrace_data log files in {sample_fixture_data}")
+    return log_file

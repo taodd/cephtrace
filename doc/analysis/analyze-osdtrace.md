@@ -25,7 +25,7 @@ This Python tool parses osdtrace output and provides:
 | `-o, --osd <ID>` | Filter by specific OSD ID | `-o 5` |
 | `-f, --field <name>` | Analyze specific latency field | `-f recv_lat` |
 | `-s, --sort` | Print sorted lines instead of stats | `-s` |
-| `-i, --infer` | Print an latency contributions distribution | `-i` |
+| `-i, --infer` | Print a latency contributions distribution | `-i` |
 | `-h, --help` | Show help message | - |
 
 ### Available Fields
@@ -133,9 +133,9 @@ Perfect for deep-diving into a specific OSD's storage performance.
 # Get sorted list of kv_commit latencies
 ./tools/analyze_osdtrace_output.py osdtrace.log -s -f kv_commit
 
-# Pipe to find very slow operations
-./tools/analyze_osdtrace_output.py osdtrace.log -s -f kv_commit | \
-    awk '$NF > 50000' | tail -20
+# Filter to find very slow operations slower than
+# or equal to 50ms (units are in microseconds)
+./tools/analyze_osdtrace_output.py osdtrace.log -s -f kv_commit -t 50000 | tail -20
 ```
 
 ### Example 6: Latency Contribution Distribution
@@ -161,7 +161,7 @@ osd.6:
 ...
 ```
 
-This drive the investigation towards looking at bluestore latency,
+This drives the investigation towards looking at bluestore latency,
 as described in example 1 or 2 (but with `-f bluestore_lat`)
 
 

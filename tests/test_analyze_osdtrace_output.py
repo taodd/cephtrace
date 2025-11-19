@@ -2,8 +2,6 @@
 End to end tests for analyze_osdtrace_output.py
 """
 
-from io import StringIO
-import sys
 import pytest
 
 import analyze_osdtrace_golden_outputs as golden
@@ -31,7 +29,12 @@ import analyze_osdtrace_output  # pylint: disable=E0401
         "infer",
     ],
 )
-def test_e2e_analyze_sample_log(sample_osdtrace_log, flags, expected_output):
+def test_e2e_analyze_sample_log(
+    sample_osdtrace_log,
+    flags,
+    expected_output,
+    capsys,
+):
     """Test that analyzing the sample log produces expected output
 
     sample_osdtrace_log: Path to the sample osdtrace log file
@@ -39,17 +42,9 @@ def test_e2e_analyze_sample_log(sample_osdtrace_log, flags, expected_output):
     """
     parser = analyze_osdtrace_output.create_arg_parser()
     script_args = [str(sample_osdtrace_log)] + flags.split()
-    args = parser.parse_args(script_args)
+    analyze_osdtrace_output.run(parser.parse_args(script_args))
 
-    old_stdout = sys.stdout
-    sys.stdout = captured_output = StringIO()
-
-    try:
-        analyze_osdtrace_output.run(args)
-    finally:
-        sys.stdout = old_stdout
-
-    assert captured_output.getvalue() == expected_output
+    assert capsys.readouterr().out == expected_output
 
 
 @pytest.mark.parametrize(
@@ -63,7 +58,12 @@ def test_e2e_analyze_sample_log(sample_osdtrace_log, flags, expected_output):
         "recv_lat",
     ],
 )
-def test_e2e_sort_sample_log(sample_osdtrace_log, flags, expected_output):
+def test_e2e_sort_sample_log(
+    sample_osdtrace_log,
+    flags,
+    expected_output,
+    capsys,
+):
     """Test that sorting the sample log is as expected.
 
     sample_osdtrace_log: Path to the sample osdtrace log file
@@ -71,17 +71,9 @@ def test_e2e_sort_sample_log(sample_osdtrace_log, flags, expected_output):
     """
     parser = analyze_osdtrace_output.create_arg_parser()
     script_args = [str(sample_osdtrace_log), "-s"] + flags.split()
-    args = parser.parse_args(script_args)
+    analyze_osdtrace_output.run(parser.parse_args(script_args))
 
-    old_stdout = sys.stdout
-    sys.stdout = captured_output = StringIO()
+    stdout = capsys.readouterr().out
+    tail_out = stdout.strip().split('\n')[-3:]
 
-    try:
-        analyze_osdtrace_output.run(args)
-    finally:
-        sys.stdout = old_stdout
-
-    actual_lines = captured_output.getvalue().strip().split('\n')
-    actual_last_3_lines = "\n" + "\n".join(actual_lines[-3:]) + "\n"
-
-    assert actual_last_3_lines == expected_output
+    assert f"\n{'\n'.join(tail_out)}\n" == expected_output

@@ -1,31 +1,6 @@
 # flake8: noqa
 # pylint: disable=all
-GOLDEN_OUTPUT = """osd.31:
-  op_r lat (μsec): min=62, max=7089, avg=461.97, stdev=565.84, samples=4945
-  lat percentiles (μsec):
-  |   1.00th=[  74.00],  5.00th=[  88.00], 10.00th=[ 102.00],
-  |  20.00th=[ 147.00], 30.00th=[ 230.00], 40.00th=[ 247.00],
-  |  50.00th=[ 264.00], 60.00th=[ 292.00], 70.00th=[ 346.00],
-  |  80.00th=[ 639.00], 90.00th=[1096.00], 95.00th=[1465.00],
-  |  99.00th=[2850.00], 99.50th=[3762.00], 99.90th=[5205.00]
-
-  op_w lat (μsec): min=534, max=59719, avg=2016.46, stdev=2398.03, samples=17553
-  lat percentiles (μsec):
-  |   1.00th=[  670.00],  5.00th=[  757.00], 10.00th=[  818.00],
-  |  20.00th=[  905.00], 30.00th=[  980.00], 40.00th=[ 1063.00],
-  |  50.00th=[ 1172.00], 60.00th=[ 1326.00], 70.00th=[ 1599.00],
-  |  80.00th=[ 2309.00], 90.00th=[ 4263.00], 95.00th=[ 6402.00],
-  |  99.00th=[12615.00], 99.50th=[15862.00], 99.90th=[19745.00]
-
-  subop_w lat (μsec): min=200, max=21635, avg=751.60, stdev=1331.56, samples=32665
-  lat percentiles (μsec):
-  |   1.00th=[  268.00],  5.00th=[  292.00], 10.00th=[  308.00],
-  |  20.00th=[  332.00], 30.00th=[  355.00], 40.00th=[  381.00],
-  |  50.00th=[  412.00], 60.00th=[  454.00], 70.00th=[  514.00],
-  |  80.00th=[  617.00], 90.00th=[ 1086.00], 95.00th=[ 2426.00],
-  |  99.00th=[ 7820.00], 99.50th=[10115.00], 99.90th=[13783.00]
-
-osd.6:
+GOLDEN_OUTPUT = """osd.6:
   op_r lat (μsec): min=62, max=27131, avg=434.17, stdev=850.61, samples=3298
   lat percentiles (μsec):
   |   1.00th=[  76.00],  5.00th=[  86.00], 10.00th=[  97.00],
@@ -49,6 +24,31 @@ osd.6:
   |  50.00th=[  437.00], 60.00th=[  477.00], 70.00th=[  533.00],
   |  80.00th=[  639.00], 90.00th=[ 1061.00], 95.00th=[ 2201.00],
   |  99.00th=[ 7242.00], 99.50th=[ 9118.00], 99.90th=[12042.00]
+
+osd.31:
+  op_r lat (μsec): min=62, max=7089, avg=461.97, stdev=565.84, samples=4945
+  lat percentiles (μsec):
+  |   1.00th=[  74.00],  5.00th=[  88.00], 10.00th=[ 102.00],
+  |  20.00th=[ 147.00], 30.00th=[ 230.00], 40.00th=[ 247.00],
+  |  50.00th=[ 264.00], 60.00th=[ 292.00], 70.00th=[ 346.00],
+  |  80.00th=[ 639.00], 90.00th=[1096.00], 95.00th=[1465.00],
+  |  99.00th=[2850.00], 99.50th=[3762.00], 99.90th=[5205.00]
+
+  op_w lat (μsec): min=534, max=59719, avg=2016.46, stdev=2398.03, samples=17553
+  lat percentiles (μsec):
+  |   1.00th=[  670.00],  5.00th=[  757.00], 10.00th=[  818.00],
+  |  20.00th=[  905.00], 30.00th=[  980.00], 40.00th=[ 1063.00],
+  |  50.00th=[ 1172.00], 60.00th=[ 1326.00], 70.00th=[ 1599.00],
+  |  80.00th=[ 2309.00], 90.00th=[ 4263.00], 95.00th=[ 6402.00],
+  |  99.00th=[12615.00], 99.50th=[15862.00], 99.90th=[19745.00]
+
+  subop_w lat (μsec): min=200, max=21635, avg=751.60, stdev=1331.56, samples=32665
+  lat percentiles (μsec):
+  |   1.00th=[  268.00],  5.00th=[  292.00], 10.00th=[  308.00],
+  |  20.00th=[  332.00], 30.00th=[  355.00], 40.00th=[  381.00],
+  |  50.00th=[  412.00], 60.00th=[  454.00], 70.00th=[  514.00],
+  |  80.00th=[  617.00], 90.00th=[ 1086.00], 95.00th=[ 2426.00],
+  |  99.00th=[ 7820.00], 99.50th=[10115.00], 99.90th=[13783.00]
 
 osd.53:
   op_r lat (μsec): min=62, max=40024, avg=1441.31, stdev=4320.96, samples=780
@@ -75,31 +75,6 @@ osd.53:
   |  80.00th=[ 947.00], 90.00th=[1323.00], 95.00th=[2001.00],
   |  99.00th=[4855.00], 99.50th=[5644.00], 99.90th=[7935.00]
 
-osd.93:
-  op_r lat (μsec): min=61, max=43990, avg=923.73, stdev=3000.79, samples=1008
-  lat percentiles (μsec):
-  |   1.00th=[   73.00],  5.00th=[  117.00], 10.00th=[  236.00],
-  |  20.00th=[  259.00], 30.00th=[  275.00], 40.00th=[  286.00],
-  |  50.00th=[  304.00], 60.00th=[  332.00], 70.00th=[  366.00],
-  |  80.00th=[  444.00], 90.00th=[ 1235.00], 95.00th=[ 1943.00],
-  |  99.00th=[16505.00], 99.50th=[21866.00], 99.90th=[25667.00]
-
-  op_w lat (μsec): min=793, max=461976, avg=2620.76, stdev=10911.04, samples=1814
-  lat percentiles (μsec):
-  |   1.00th=[  956.00],  5.00th=[ 1125.00], 10.00th=[ 1224.00],
-  |  20.00th=[ 1382.00], 30.00th=[ 1521.00], 40.00th=[ 1651.00],
-  |  50.00th=[ 1827.00], 60.00th=[ 2096.00], 70.00th=[ 2572.00],
-  |  80.00th=[ 3210.00], 90.00th=[ 4243.00], 95.00th=[ 4646.00],
-  |  99.00th=[ 9315.00], 99.50th=[12543.00], 99.90th=[20935.00]
-
-  subop_w lat (μsec): min=237, max=12141, avg=973.54, stdev=1040.15, samples=3658
-  lat percentiles (μsec):
-  |   1.00th=[  390.00],  5.00th=[  459.00], 10.00th=[  491.00],
-  |  20.00th=[  547.00], 30.00th=[  600.00], 40.00th=[  654.00],
-  |  50.00th=[  708.00], 60.00th=[  772.00], 70.00th=[  851.00],
-  |  80.00th=[  997.00], 90.00th=[ 1446.00], 95.00th=[ 2559.00],
-  |  99.00th=[ 6207.00], 99.50th=[ 8132.00], 99.90th=[11062.00]
-
 osd.61:
   op_r lat (μsec): min=65, max=13859, avg=458.60, stdev=649.33, samples=1384
   lat percentiles (μsec):
@@ -124,6 +99,31 @@ osd.61:
   |  50.00th=[ 791.00], 60.00th=[ 886.00], 70.00th=[1038.00],
   |  80.00th=[1362.00], 90.00th=[2076.00], 95.00th=[2640.00],
   |  99.00th=[3740.00], 99.50th=[7169.00], 99.90th=[8431.00]
+
+osd.93:
+  op_r lat (μsec): min=61, max=43990, avg=923.73, stdev=3000.79, samples=1008
+  lat percentiles (μsec):
+  |   1.00th=[   73.00],  5.00th=[  117.00], 10.00th=[  236.00],
+  |  20.00th=[  259.00], 30.00th=[  275.00], 40.00th=[  286.00],
+  |  50.00th=[  304.00], 60.00th=[  332.00], 70.00th=[  366.00],
+  |  80.00th=[  444.00], 90.00th=[ 1235.00], 95.00th=[ 1943.00],
+  |  99.00th=[16505.00], 99.50th=[21866.00], 99.90th=[25667.00]
+
+  op_w lat (μsec): min=793, max=461976, avg=2620.76, stdev=10911.04, samples=1814
+  lat percentiles (μsec):
+  |   1.00th=[  956.00],  5.00th=[ 1125.00], 10.00th=[ 1224.00],
+  |  20.00th=[ 1382.00], 30.00th=[ 1521.00], 40.00th=[ 1651.00],
+  |  50.00th=[ 1827.00], 60.00th=[ 2096.00], 70.00th=[ 2572.00],
+  |  80.00th=[ 3210.00], 90.00th=[ 4243.00], 95.00th=[ 4646.00],
+  |  99.00th=[ 9315.00], 99.50th=[12543.00], 99.90th=[20935.00]
+
+  subop_w lat (μsec): min=237, max=12141, avg=973.54, stdev=1040.15, samples=3658
+  lat percentiles (μsec):
+  |   1.00th=[  390.00],  5.00th=[  459.00], 10.00th=[  491.00],
+  |  20.00th=[  547.00], 30.00th=[  600.00], 40.00th=[  654.00],
+  |  50.00th=[  708.00], 60.00th=[  772.00], 70.00th=[  851.00],
+  |  80.00th=[  997.00], 90.00th=[ 1446.00], 95.00th=[ 2559.00],
+  |  99.00th=[ 6207.00], 99.50th=[ 8132.00], 99.90th=[11062.00]
 
 osd.150:
   op_r lat (μsec): min=57, max=370943, avg=6584.67, stdev=26096.72, samples=698
@@ -206,24 +206,7 @@ GOLDEN_OUTPUT_OSD_6_IN_MS = """osd.6:
 
 """
 
-GOLDEN_KV_COMMIT_OUTPUT = """osd.31:
-  op_w kv_commit (μsec): min=93, max=3047, avg=160.90, stdev=92.86, samples=17553
-  kv_commit percentiles (μsec):
-  |   1.00th=[ 102.00],  5.00th=[ 108.00], 10.00th=[ 114.00],
-  |  20.00th=[ 121.00], 30.00th=[ 127.00], 40.00th=[ 134.00],
-  |  50.00th=[ 141.00], 60.00th=[ 149.00], 70.00th=[ 163.00],
-  |  80.00th=[ 188.00], 90.00th=[ 229.00], 95.00th=[ 261.00],
-  |  99.00th=[ 383.00], 99.50th=[ 451.00], 99.90th=[1813.00]
-
-  subop_w kv_commit (μsec): min=90, max=3099, avg=161.87, stdev=78.54, samples=32665
-  kv_commit percentiles (μsec):
-  |   1.00th=[101.00],  5.00th=[109.00], 10.00th=[114.00],
-  |  20.00th=[121.00], 30.00th=[128.00], 40.00th=[134.00],
-  |  50.00th=[142.00], 60.00th=[152.00], 70.00th=[167.00],
-  |  80.00th=[195.00], 90.00th=[233.00], 95.00th=[265.00],
-  |  99.00th=[379.00], 99.50th=[432.00], 99.90th=[706.00]
-
-osd.6:
+GOLDEN_KV_COMMIT_OUTPUT = """osd.6:
   op_w kv_commit (μsec): min=97, max=6189, avg=171.62, stdev=125.12, samples=13978
   kv_commit percentiles (μsec):
   |   1.00th=[ 107.00],  5.00th=[ 114.00], 10.00th=[ 119.00],
@@ -239,6 +222,23 @@ osd.6:
   |  50.00th=[ 149.00], 60.00th=[ 159.00], 70.00th=[ 175.00],
   |  80.00th=[ 204.00], 90.00th=[ 246.00], 95.00th=[ 294.00],
   |  99.00th=[ 561.00], 99.50th=[ 817.00], 99.90th=[1381.00]
+
+osd.31:
+  op_w kv_commit (μsec): min=93, max=3047, avg=160.90, stdev=92.86, samples=17553
+  kv_commit percentiles (μsec):
+  |   1.00th=[ 102.00],  5.00th=[ 108.00], 10.00th=[ 114.00],
+  |  20.00th=[ 121.00], 30.00th=[ 127.00], 40.00th=[ 134.00],
+  |  50.00th=[ 141.00], 60.00th=[ 149.00], 70.00th=[ 163.00],
+  |  80.00th=[ 188.00], 90.00th=[ 229.00], 95.00th=[ 261.00],
+  |  99.00th=[ 383.00], 99.50th=[ 451.00], 99.90th=[1813.00]
+
+  subop_w kv_commit (μsec): min=90, max=3099, avg=161.87, stdev=78.54, samples=32665
+  kv_commit percentiles (μsec):
+  |   1.00th=[101.00],  5.00th=[109.00], 10.00th=[114.00],
+  |  20.00th=[121.00], 30.00th=[128.00], 40.00th=[134.00],
+  |  50.00th=[142.00], 60.00th=[152.00], 70.00th=[167.00],
+  |  80.00th=[195.00], 90.00th=[233.00], 95.00th=[265.00],
+  |  99.00th=[379.00], 99.50th=[432.00], 99.90th=[706.00]
 
 osd.53:
   op_w kv_commit (μsec): min=129, max=2229, avg=433.21, stdev=339.53, samples=1419
@@ -257,23 +257,6 @@ osd.53:
   |  80.00th=[ 418.00], 90.00th=[ 547.00], 95.00th=[ 676.00],
   |  99.00th=[1778.00], 99.50th=[2221.00], 99.90th=[3039.00]
 
-osd.93:
-  op_w kv_commit (μsec): min=164, max=7400, avg=429.21, stdev=360.68, samples=1814
-  kv_commit percentiles (μsec):
-  |   1.00th=[ 179.00],  5.00th=[ 193.00], 10.00th=[ 205.00],
-  |  20.00th=[ 226.00], 30.00th=[ 255.00], 40.00th=[ 286.00],
-  |  50.00th=[ 320.00], 60.00th=[ 370.00], 70.00th=[ 460.00],
-  |  80.00th=[ 555.00], 90.00th=[ 694.00], 95.00th=[ 905.00],
-  |  99.00th=[1843.00], 99.50th=[2246.00], 99.90th=[3164.00]
-
-  subop_w kv_commit (μsec): min=134, max=4155, avg=406.34, stdev=427.80, samples=3658
-  kv_commit percentiles (μsec):
-  |   1.00th=[ 169.00],  5.00th=[ 185.00], 10.00th=[ 197.00],
-  |  20.00th=[ 218.00], 30.00th=[ 244.00], 40.00th=[ 275.00],
-  |  50.00th=[ 302.00], 60.00th=[ 331.00], 70.00th=[ 378.00],
-  |  80.00th=[ 453.00], 90.00th=[ 593.00], 95.00th=[ 869.00],
-  |  99.00th=[2397.00], 99.50th=[4136.00], 99.90th=[4152.00]
-
 osd.61:
   op_w kv_commit (μsec): min=156, max=6380, avg=372.35, stdev=362.56, samples=2856
   kv_commit percentiles (μsec):
@@ -290,6 +273,23 @@ osd.61:
   |  50.00th=[ 330.00], 60.00th=[ 369.00], 70.00th=[ 430.00],
   |  80.00th=[ 508.00], 90.00th=[ 697.00], 95.00th=[1027.00],
   |  99.00th=[2167.00], 99.50th=[4117.00], 99.90th=[5539.00]
+
+osd.93:
+  op_w kv_commit (μsec): min=164, max=7400, avg=429.21, stdev=360.68, samples=1814
+  kv_commit percentiles (μsec):
+  |   1.00th=[ 179.00],  5.00th=[ 193.00], 10.00th=[ 205.00],
+  |  20.00th=[ 226.00], 30.00th=[ 255.00], 40.00th=[ 286.00],
+  |  50.00th=[ 320.00], 60.00th=[ 370.00], 70.00th=[ 460.00],
+  |  80.00th=[ 555.00], 90.00th=[ 694.00], 95.00th=[ 905.00],
+  |  99.00th=[1843.00], 99.50th=[2246.00], 99.90th=[3164.00]
+
+  subop_w kv_commit (μsec): min=134, max=4155, avg=406.34, stdev=427.80, samples=3658
+  kv_commit percentiles (μsec):
+  |   1.00th=[ 169.00],  5.00th=[ 185.00], 10.00th=[ 197.00],
+  |  20.00th=[ 218.00], 30.00th=[ 244.00], 40.00th=[ 275.00],
+  |  50.00th=[ 302.00], 60.00th=[ 331.00], 70.00th=[ 378.00],
+  |  80.00th=[ 453.00], 90.00th=[ 593.00], 95.00th=[ 869.00],
+  |  99.00th=[2397.00], 99.50th=[4136.00], 99.90th=[4152.00]
 
 osd.150:
   op_w kv_commit (μsec): min=171, max=2630, avg=455.73, stdev=287.03, samples=1268
@@ -310,32 +310,7 @@ osd.150:
 
 """
 
-GOLDEN_RECV_LAT_OUTPUT = """osd.31:
-  op_r recv_lat (μsec): min=0, max=192, avg=4.19, stdev=4.69, samples=4945
-  recv_lat percentiles (μsec):
-  |   1.00th=[ 1.00],  5.00th=[ 1.00], 10.00th=[ 2.00],
-  |  20.00th=[ 2.00], 30.00th=[ 3.00], 40.00th=[ 3.00],
-  |  50.00th=[ 4.00], 60.00th=[ 4.00], 70.00th=[ 4.00],
-  |  80.00th=[ 5.00], 90.00th=[ 7.00], 95.00th=[ 8.00],
-  |  99.00th=[14.00], 99.50th=[18.00], 99.90th=[46.00]
-
-  op_w recv_lat (μsec): min=1, max=6261, avg=78.90, stdev=372.20, samples=17553
-  recv_lat percentiles (μsec):
-  |   1.00th=[   3.00],  5.00th=[   5.00], 10.00th=[   6.00],
-  |  20.00th=[   7.00], 30.00th=[   7.00], 40.00th=[   9.00],
-  |  50.00th=[  10.00], 60.00th=[  13.00], 70.00th=[  16.00],
-  |  80.00th=[  22.00], 90.00th=[  41.00], 95.00th=[ 152.00],
-  |  99.00th=[1957.00], 99.50th=[2859.00], 99.90th=[4677.00]
-
-  subop_w recv_lat (μsec): min=2, max=7218, avg=74.18, stdev=361.30, samples=32665
-  recv_lat percentiles (μsec):
-  |   1.00th=[   3.00],  5.00th=[   6.00], 10.00th=[   7.00],
-  |  20.00th=[   9.00], 30.00th=[  11.00], 40.00th=[  13.00],
-  |  50.00th=[  15.00], 60.00th=[  17.00], 70.00th=[  19.00],
-  |  80.00th=[  23.00], 90.00th=[  37.00], 95.00th=[  96.00],
-  |  99.00th=[1899.00], 99.50th=[2927.00], 99.90th=[4468.00]
-
-osd.6:
+GOLDEN_RECV_LAT_OUTPUT = """osd.6:
   op_r recv_lat (μsec): min=1, max=121, avg=4.33, stdev=3.19, samples=3298
   recv_lat percentiles (μsec):
   |   1.00th=[ 1.00],  5.00th=[ 2.00], 10.00th=[ 2.00],
@@ -359,6 +334,31 @@ osd.6:
   |  50.00th=[  13.00], 60.00th=[  14.00], 70.00th=[  16.00],
   |  80.00th=[  20.00], 90.00th=[  30.00], 95.00th=[  71.00],
   |  99.00th=[1380.00], 99.50th=[1919.00], 99.90th=[3292.00]
+
+osd.31:
+  op_r recv_lat (μsec): min=0, max=192, avg=4.19, stdev=4.69, samples=4945
+  recv_lat percentiles (μsec):
+  |   1.00th=[ 1.00],  5.00th=[ 1.00], 10.00th=[ 2.00],
+  |  20.00th=[ 2.00], 30.00th=[ 3.00], 40.00th=[ 3.00],
+  |  50.00th=[ 4.00], 60.00th=[ 4.00], 70.00th=[ 4.00],
+  |  80.00th=[ 5.00], 90.00th=[ 7.00], 95.00th=[ 8.00],
+  |  99.00th=[14.00], 99.50th=[18.00], 99.90th=[46.00]
+
+  op_w recv_lat (μsec): min=1, max=6261, avg=78.90, stdev=372.20, samples=17553
+  recv_lat percentiles (μsec):
+  |   1.00th=[   3.00],  5.00th=[   5.00], 10.00th=[   6.00],
+  |  20.00th=[   7.00], 30.00th=[   7.00], 40.00th=[   9.00],
+  |  50.00th=[  10.00], 60.00th=[  13.00], 70.00th=[  16.00],
+  |  80.00th=[  22.00], 90.00th=[  41.00], 95.00th=[ 152.00],
+  |  99.00th=[1957.00], 99.50th=[2859.00], 99.90th=[4677.00]
+
+  subop_w recv_lat (μsec): min=2, max=7218, avg=74.18, stdev=361.30, samples=32665
+  recv_lat percentiles (μsec):
+  |   1.00th=[   3.00],  5.00th=[   6.00], 10.00th=[   7.00],
+  |  20.00th=[   9.00], 30.00th=[  11.00], 40.00th=[  13.00],
+  |  50.00th=[  15.00], 60.00th=[  17.00], 70.00th=[  19.00],
+  |  80.00th=[  23.00], 90.00th=[  37.00], 95.00th=[  96.00],
+  |  99.00th=[1899.00], 99.50th=[2927.00], 99.90th=[4468.00]
 
 osd.53:
   op_r recv_lat (μsec): min=0, max=20, avg=3.87, stdev=2.31, samples=780
@@ -385,31 +385,6 @@ osd.53:
   |  80.00th=[  19.00], 90.00th=[  26.00], 95.00th=[  37.00],
   |  99.00th=[ 211.00], 99.50th=[ 593.00], 99.90th=[1197.00]
 
-osd.93:
-  op_r recv_lat (μsec): min=0, max=39, avg=3.84, stdev=2.38, samples=1008
-  recv_lat percentiles (μsec):
-  |   1.00th=[ 1.00],  5.00th=[ 1.00], 10.00th=[ 2.00],
-  |  20.00th=[ 2.00], 30.00th=[ 3.00], 40.00th=[ 3.00],
-  |  50.00th=[ 3.00], 60.00th=[ 4.00], 70.00th=[ 4.00],
-  |  80.00th=[ 5.00], 90.00th=[ 6.00], 95.00th=[ 7.00],
-  |  99.00th=[11.00], 99.50th=[15.00], 99.90th=[23.00]
-
-  op_w recv_lat (μsec): min=2, max=2266, avg=16.95, stdev=81.25, samples=1814
-  recv_lat percentiles (μsec):
-  |   1.00th=[   3.00],  5.00th=[   4.00], 10.00th=[   4.00],
-  |  20.00th=[   5.00], 30.00th=[   6.00], 40.00th=[   7.00],
-  |  50.00th=[   8.00], 60.00th=[  10.00], 70.00th=[  12.00],
-  |  80.00th=[  15.00], 90.00th=[  21.00], 95.00th=[  33.00],
-  |  99.00th=[ 120.00], 99.50th=[ 248.00], 99.90th=[1657.00]
-
-  subop_w recv_lat (μsec): min=2, max=3096, avg=24.09, stdev=129.41, samples=3658
-  recv_lat percentiles (μsec):
-  |   1.00th=[   4.00],  5.00th=[   5.00], 10.00th=[   5.00],
-  |  20.00th=[   6.00], 30.00th=[   7.00], 40.00th=[   8.00],
-  |  50.00th=[  10.00], 60.00th=[  12.00], 70.00th=[  13.00],
-  |  80.00th=[  15.00], 90.00th=[  21.00], 95.00th=[  29.00],
-  |  99.00th=[ 429.00], 99.50th=[1006.00], 99.90th=[2051.00]
-
 osd.61:
   op_r recv_lat (μsec): min=1, max=50, avg=5.22, stdev=3.50, samples=1384
   recv_lat percentiles (μsec):
@@ -434,6 +409,31 @@ osd.61:
   |  50.00th=[  11.00], 60.00th=[  13.00], 70.00th=[  16.00],
   |  80.00th=[  20.00], 90.00th=[  28.00], 95.00th=[  38.00],
   |  99.00th=[ 143.00], 99.50th=[ 258.00], 99.90th=[1779.00]
+
+osd.93:
+  op_r recv_lat (μsec): min=0, max=39, avg=3.84, stdev=2.38, samples=1008
+  recv_lat percentiles (μsec):
+  |   1.00th=[ 1.00],  5.00th=[ 1.00], 10.00th=[ 2.00],
+  |  20.00th=[ 2.00], 30.00th=[ 3.00], 40.00th=[ 3.00],
+  |  50.00th=[ 3.00], 60.00th=[ 4.00], 70.00th=[ 4.00],
+  |  80.00th=[ 5.00], 90.00th=[ 6.00], 95.00th=[ 7.00],
+  |  99.00th=[11.00], 99.50th=[15.00], 99.90th=[23.00]
+
+  op_w recv_lat (μsec): min=2, max=2266, avg=16.95, stdev=81.25, samples=1814
+  recv_lat percentiles (μsec):
+  |   1.00th=[   3.00],  5.00th=[   4.00], 10.00th=[   4.00],
+  |  20.00th=[   5.00], 30.00th=[   6.00], 40.00th=[   7.00],
+  |  50.00th=[   8.00], 60.00th=[  10.00], 70.00th=[  12.00],
+  |  80.00th=[  15.00], 90.00th=[  21.00], 95.00th=[  33.00],
+  |  99.00th=[ 120.00], 99.50th=[ 248.00], 99.90th=[1657.00]
+
+  subop_w recv_lat (μsec): min=2, max=3096, avg=24.09, stdev=129.41, samples=3658
+  recv_lat percentiles (μsec):
+  |   1.00th=[   4.00],  5.00th=[   5.00], 10.00th=[   5.00],
+  |  20.00th=[   6.00], 30.00th=[   7.00], 40.00th=[   8.00],
+  |  50.00th=[  10.00], 60.00th=[  12.00], 70.00th=[  13.00],
+  |  80.00th=[  15.00], 90.00th=[  21.00], 95.00th=[  29.00],
+  |  99.00th=[ 429.00], 99.50th=[1006.00], 99.90th=[2051.00]
 
 osd.150:
   op_r recv_lat (μsec): min=1, max=18, avg=4.09, stdev=2.37, samples=698
@@ -462,143 +462,55 @@ osd.150:
 
 """
 
-GOLDEN_INFER_OUTPUT = f"""osd.31:
-  op_r:
-    45.01% from bluestore_lat
-    25.87% from queue_lat
-     9.29% from osd_lat
-     2.63% from dispatch_lat
-     1.75% from recv_lat
-     0.21% from throttle_lat
-  subop_w:
-    64.36% from bluestore_lat
-    10.85% from queue_lat
-     8.32% from osd_lat
-     4.81% from recv_lat
-     1.29% from dispatch_lat
-     0.04% from throttle_lat
+GOLDEN_INFER_OUTPUT = f"""osd.6:
   op_w:
-    25.17% from bluestore_lat
-    11.88% from queue_lat
-     9.66% from osd_lat
-     2.05% from recv_lat
-     0.45% from dispatch_lat
-     0.04% from throttle_lat
-
-osd.6:
-  op_r:
-    45.57% from bluestore_lat
-    19.96% from queue_lat
-     8.76% from osd_lat
-     2.78% from dispatch_lat
-     1.82% from recv_lat
-     0.28% from throttle_lat
-  subop_w:
-    65.69% from bluestore_lat
-    10.23% from queue_lat
-     7.90% from osd_lat
-     3.81% from recv_lat
-     1.24% from dispatch_lat
-     0.02% from throttle_lat
-  op_w:
-    26.70% from bluestore_lat
-    10.23% from queue_lat
-     9.95% from osd_lat
-     1.59% from recv_lat
-     0.48% from dispatch_lat
-     0.06% from throttle_lat
-
-osd.53:
-  subop_w:
-    80.99% from bluestore_lat
-     5.72% from queue_lat
-     5.35% from osd_lat
-     2.13% from recv_lat
-     0.87% from dispatch_lat
-     0.01% from throttle_lat
-  op_w:
-    40.81% from bluestore_lat
-    12.34% from queue_lat
-     6.56% from osd_lat
-     0.75% from recv_lat
-     0.30% from dispatch_lat
-     0.01% from throttle_lat
-  op_r:
-    57.82% from bluestore_lat
-    24.36% from queue_lat
-     9.06% from osd_lat
-     2.43% from dispatch_lat
-     1.45% from recv_lat
-     0.15% from throttle_lat
-
-osd.93:
-  op_r:
-    62.73% from bluestore_lat
-    20.39% from queue_lat
-     9.27% from osd_lat
-     2.07% from dispatch_lat
-     1.33% from recv_lat
-     0.15% from throttle_lat
-  subop_w:
-    82.20% from bluestore_lat
-     5.46% from queue_lat
-     5.24% from osd_lat
-     1.81% from recv_lat
-     0.78% from dispatch_lat
-     0.01% from throttle_lat
-  op_w:
-    42.09% from bluestore_lat
-     9.56% from queue_lat
-     6.18% from osd_lat
-     0.69% from recv_lat
-     0.28% from dispatch_lat
-     0.02% from throttle_lat
+    0.16% from bluestore_lat
+    0.04% from osd_lat
+    0.02% from recv_lat
+    0.02% from queue_lat
+    0.00% from dispatch_lat
+    0.00% from throttle_lat
 
 osd.61:
-  subop_w:
-    78.86% from bluestore_lat
-     7.81% from queue_lat
-     5.27% from osd_lat
-     1.90% from recv_lat
-     0.88% from dispatch_lat
-     0.02% from throttle_lat
   op_w:
-    39.05% from bluestore_lat
-     6.95% from osd_lat
-     6.70% from queue_lat
-     0.89% from recv_lat
-     0.42% from dispatch_lat
-     0.03% from throttle_lat
-  op_r:
-    59.27% from bluestore_lat
-    21.22% from queue_lat
-     9.21% from osd_lat
-     2.86% from dispatch_lat
-     1.77% from recv_lat
-     0.28% from throttle_lat
+    0.36% from bluestore_lat
+    0.07% from osd_lat
+    0.02% from recv_lat
+    0.01% from queue_lat
+    0.00% from dispatch_lat
+    0.00% from throttle_lat
+
+osd.93:
+  op_w:
+    0.13% from bluestore_lat
+    0.03% from osd_lat
+    0.01% from queue_lat
+    0.00% from recv_lat
+    0.00% from dispatch_lat
+    0.00% from throttle_lat
 
 osd.150:
-  op_r:
-    58.73% from bluestore_lat
-    21.49% from queue_lat
-     9.01% from osd_lat
-     2.37% from dispatch_lat
-     1.40% from recv_lat
-     0.18% from throttle_lat
-  subop_w:
-    78.78% from bluestore_lat
-     7.32% from queue_lat
-     4.68% from osd_lat
-     1.66% from recv_lat
-     0.72% from dispatch_lat
-     0.01% from throttle_lat
   op_w:
-    30.55% from bluestore_lat
-     8.56% from queue_lat
-     4.18% from osd_lat
-     0.42% from recv_lat
-     0.19% from dispatch_lat
-     0.01% from throttle_lat
+    0.75% from bluestore_lat
+    0.57% from queue_lat
+    0.05% from osd_lat
+    0.01% from recv_lat
+    0.00% from dispatch_lat
+    0.00% from throttle_lat
+  op_r:
+    69.95% from bluestore_lat
+     2.12% from queue_lat
+     0.02% from osd_lat
+     0.00% from dispatch_lat
+     0.00% from recv_lat
+     0.00% from throttle_lat
+  subop_w:
+    2.01% from bluestore_lat
+    0.19% from recv_lat
+    0.03% from osd_lat
+    0.03% from queue_lat
+    0.01% from dispatch_lat
+    0.00% from throttle_lat
 
 """
 
