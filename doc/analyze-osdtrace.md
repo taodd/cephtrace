@@ -9,6 +9,8 @@ This Python tool parses osdtrace output and provides:
 - Per-OSD filtering
 - Per-latency-field filtering (analyze specific stages like recv_lat, kv_commit)
 - Sorted output for detailed inspection
+- Latency threshold filtering
+- High level overview of latency distribution
 
 ## Usage
 
@@ -25,6 +27,7 @@ This Python tool parses osdtrace output and provides:
 | `-o, --osd <ID>` | Filter by specific OSD ID | `-o 5` |
 | `-f, --field <name>` | Analyze specific latency field | `-f recv_lat` |
 | `-s, --sort` | Print sorted lines instead of stats | `-s` |
+| `-i, --infer` | Print a latency contributions distribution | `-i` |
 | `-h, --help` | Show help message | - |
 
 ### Available Fields
@@ -132,9 +135,9 @@ Perfect for deep-diving into a specific OSD's storage performance.
 # Get sorted list of kv_commit latencies
 ./tools/analyze_osdtrace_output.py osdtrace.log -s -f kv_commit
 
-# Pipe to find very slow operations
-./tools/analyze_osdtrace_output.py osdtrace.log -s -f kv_commit | \
-    awk '$NF > 50000' | head -20
+# Filter to find very slow operations slower than
+# or equal to 50ms (units are in microseconds)
+./tools/analyze_osdtrace_output.py osdtrace.log -s -f kv_commit -t 50000 | tail -20
 ```
 
 **Sample sorted output:**
@@ -143,6 +146,34 @@ osd 5 pg 2.3a op_w size 4096 client 12345 tid 67890 ... kv_commit 2340
 osd 5 pg 2.3a op_w size 8192 client 12345 tid 67891 ... kv_commit 3120
 osd 5 pg 2.3a op_w size 4096 client 12345 tid 67892 ... kv_commit 45670
 ```
+
+### Example 6: Latency Contribution Distribution
+
+If you are not sure which latency field to start looking into, you can see a high level overview
+
+```bash
+./tools/analyze_osdtrace_output.py osdtrace.log -o 6 -i -t 10000
+```
+
+This runs the infer method on osd 6, only considering operations where the
+total latency >= 10000 microseconds
+
+**Sample output:**
+```console
+osd.6:
+...
+  subop_w:
+    65.69% from bluestore_lat
+    20.81% from recv_lat
+     4.99% from queue_lat
+     0.41% from osd_lat
+     0.07% from dispatch_lat
+     0.00% from throttle_lat
+...
+```
+
+This drives the investigation towards looking at bluestore latency,
+as described in example 1 or 2 (but with `-f bluestore_lat`)
 
 ## Workflow Integration
 
@@ -153,14 +184,22 @@ osd 5 pg 2.3a op_w size 4096 client 12345 tid 67892 ... kv_commit 45670
 sudo ./osdtrace -x -t 300 > osdtrace-$(date +%Y%m%d-%H%M%S).log
 ```
 
-### Step 2: Quick Overview Analysis
+### Step 2: Quick Overview of Latency Contributions
+
+```bash
+# Get overall contributions
+# The default threshold when running infer is 100000 microseconds
+./tools/analyze_osdtrace_output.py osdtrace-*.log -i
+```
+
+### Step 3: Quick Overview Analysis
 
 ```bash
 # Get overall statistics
 ./tools/analyze_osdtrace_output.py osdtrace-*.log
 ```
 
-### Step 3: Drill Down by Component
+### Step 4: Drill Down by Component
 
 ```bash
 # Analyze each latency component
