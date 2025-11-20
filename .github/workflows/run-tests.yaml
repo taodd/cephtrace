@@ -36,3 +36,5 @@ jobs:
       run: tox -e lint
     - name: Run pep8
       run: tox -e pep8
+    - name: Run python script tests
+      run: tox -e test

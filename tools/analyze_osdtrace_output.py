@@ -14,6 +14,10 @@ from textwrap import dedent
 OP_TYPES = ["op_r", "op_w", "subop_r", "subop_w"]
 BLUESTORE_OP_TYPES = {"prepare", "aio_wait", "aio_size", "seq_wait",
                       "kv_commit"}
+NUM_PERCENTILE_PER_LINE = 3  # number of percentile entries per line
+DEFAULT_LATENCY_FIELD = "lat"
+FINAL_LATENCY_FIELD = "lat"
+BD = "bluestore_details"
 
 EPILOGUE_HELP = dedent(
     """
@@ -25,11 +29,11 @@ EPILOGUE_HELP = dedent(
     Prints statistical analysis but for kv_commit latencies
     ./analyze_osdtrace_output.py osdtrace.out -f kv_commit
 
-    Prints statistical analysis but for kv_commit latencies and osd 22
-    ./analyze_osdtrace_output.py osdtrace.out -f kv_commit -o 22
+    Prints statistical analysis but for recv_lat latencies and osd 22
+    ./analyze_osdtrace_output.py osdtrace.out -f recv_lat -o 22
 
     Prints sorted lines for kv_commit latencies
-    ./analyze_osdtrace_output.py osdtrace.out -s -f kv_commit
+    ./analyze_osdtrace_output.py osdtrace.out -f kv_commit -s
     """
 )
 
@@ -76,11 +80,11 @@ def parse_line(line: str = "") -> list:
         data["peers"] = []
 
     # Parse bluestore details into dict
-    if data.get("bluestore_details"):
-        details = re.findall(r"(\w+)\s+(\d+)", data["bluestore_details"])
-        data["bluestore_details"] = {k: int(v) for k, v in details}
+    if data.get(BD):
+        details = re.findall(r"(\w+)\s+(\d+)", data[BD])
+        data[BD] = {k: int(v) for k, v in details}
     else:
-        data["bluestore_details"] = {}
+        data[BD] = {}
 
     # Convert all relevant numeric fields
     for key in [
@@ -104,55 +108,124 @@ def parse_file(filepath: str) -> list:
 
 
 def sort(
-    data: list = None,
+    data: list,
     show_in_ms: bool = False,
-    field: str = "lat",
-    single_osd: int = -1,
+    field: str = DEFAULT_LATENCY_FIELD,
 ) -> None:
-    """Print a (descending) sorted view of osd(s) operation latencies.
+    """Print a (ascending) sorted view of osd(s) operation latencies.
 
     Args:
         data: List of parsed osdtrace lines.
         show_in_ms: Show final timestamps in milliseconds, instead of μsecs.
-        field: Specify a single latency field to analyze.
-        single_osd: Specify a single osd to filter.
+        field: Single latency field to sort by.
     """
-    data = data or []
-
     def _format_ts(key: str, value: int) -> float | int:
         if key.endswith("lat") or key in BLUESTORE_OP_TYPES:
             return round(value / 1000, 2) if show_in_ms else value
         return value
 
-    if single_osd >= 0:
-        filtered_data = filter(lambda t: t["osd"] == single_osd, data)
-    else:
-        filtered_data = data
-
-    bd = "bluestore_details"
-
     if field in BLUESTORE_OP_TYPES:
         sorted_data = sorted(
-            filtered_data, key=lambda t: t.get(bd, {}).get(field, -1),
-            reverse=True
+            data, key=lambda t: t.get(BD, {}).get(field, -1),
         )
     else:
-        sorted_data = sorted(filtered_data, key=lambda t: t[field],
-                             reverse=True)
+        sorted_data = sorted(data, key=lambda t: t[field])
 
     for trace in sorted_data:
-        if bd in trace:
-            trace[bd] = (
-                "(" + " ".join(
-                    f"{k} {_format_ts(k, v)}" for k, v in trace[bd].items()
-                ) + ")"
+        if BD in trace:
+            bd_details = " ".join(
+                f"{k} {_format_ts(k, v)}" for k, v in trace[BD].items()
             )
+            trace[BD] = f"({bd_details})"
         print(
             " ".join(
-                f"{k} {_format_ts(k, v)}" if k != bd else v
+                f"{k} {_format_ts(k, v)}" if k != BD else v
                 for k, v in trace.items()
             )
         )
+
+
+def group_by_osd_and_op(
+    data: list,
+    field: str = DEFAULT_LATENCY_FIELD
+) -> dict:
+    """Group parsed osdtrace lines by osd and operation type.
+
+    Aggregate data over each operation type
+    Group by osd so we can print all data for a given osd at once
+
+    Args:
+        data: List of parsed osdtrace lines.
+        field: Latency field to aggregate.
+    """
+    results = {}
+    for trace in data:
+        osd = trace["osd"]
+        if osd not in results:
+            results[osd] = {f"{op_type}_data": [] for op_type in OP_TYPES}
+        if field in BLUESTORE_OP_TYPES:
+            if BD in trace:
+                if field in trace[BD]:
+                    results[osd][f"{trace['op']}_data"].append(
+                        trace[BD][field]
+                    )
+        else:
+            results[osd][f"{trace['op']}_data"].append(trace[field])
+
+    return results
+
+
+# pylint: disable=too-many-locals
+def infer(data: list) -> None:
+    """Infer % contributions from latency fields.
+
+    Args:
+        data: List of parsed osdtrace lines.
+    """
+    results = {}
+
+    for trace in data:
+        # group by osd
+        if trace["osd"] not in results:
+            results[trace["osd"]] = {}
+        # group each osd by op type
+        if trace["op"] not in results[trace["osd"]]:
+            results[trace["osd"]][trace["op"]] = {}
+        # group each op type by field
+        for field, latency in trace.items():
+            if field != FINAL_LATENCY_FIELD:
+                if field.endswith("lat") or field in BLUESTORE_OP_TYPES:
+                    contribution = (latency / trace[FINAL_LATENCY_FIELD]) * 100
+                    if contribution >= 100.0:
+                        contribution = 99.99  # or ignore this value?
+                    if field not in results[trace["osd"]][trace["op"]]:
+                        results[trace["osd"]][trace["op"]][field] = []
+                    results[trace["osd"]][trace["op"]][field].append(
+                        contribution
+                    )
+
+    for osd_id, ops in sorted(results.items()):
+        print(f"osd.{osd_id}:")
+        for op_type, fields in ops.items():
+            print(f"  {op_type}:")
+
+            field_to_contribution = {}
+            for field, contributions in fields.items():
+                field_to_contribution[field] = statistics.mean(contributions)
+
+            sorted_fields = sorted(
+                field_to_contribution.items(),
+                key=lambda item: item[1],
+                reverse=True
+            )
+
+            max_width = len(f"{sorted_fields[0][1]:.2f}")
+            for field, avg_contribution in sorted_fields:
+                avg_cont_str = f"{avg_contribution:.2f}"
+                leading_spaces = " " * (max_width - len(avg_cont_str))
+                print(f"    {leading_spaces}{avg_cont_str}% from {field}")
+
+        print()
 
 
 def format_percentile_value_display(width: int, value: float) -> str:
@@ -162,8 +235,10 @@ def format_percentile_value_display(width: int, value: float) -> str:
     return f"{leading_spaces}{formatted_val}"
 
 
-def calc_percentiles(unsorted_data: list[int],
-                     thresholds: list[float]) -> list[float]:
+def calc_percentiles(
+    unsorted_data: list[int],
+    thresholds: list[float],
+) -> list[float]:
     """Calculate percentiles using the nearest-rank method.
 
     Ref: https://en.wikipedia.org/wiki/Percentile#The_nearest-rank_method
@@ -179,44 +254,62 @@ def calc_percentiles(unsorted_data: list[int],
     return percentiles
 
 
-# pylint: disable=too-many-locals, too-many-branches
+def print_percentiles(lat_data: list) -> None:
+    """Print FIO style latency percentiles."""
+    percentile_thresholds = (
+        [1, 5] + [i*10 for i in range(1, 10)] + [95, 99, 99.5, 99.9]
+    )
+    percentiles = calc_percentiles(lat_data, percentile_thresholds)
+
+    # number of lines of percentiles to print
+    num_lines = len(percentile_thresholds) // NUM_PERCENTILE_PER_LINE
+
+    # widths of percentile thresholds are determined by the longest threshold
+    p_thresh_display_min_width = len(str(f"{percentile_thresholds[0]:.2f}"))
+    p_thresh_display_max_width = len(str(f"{percentile_thresholds[-1]:.2f}"))
+    leading_space_offset = (
+        p_thresh_display_max_width - p_thresh_display_min_width
+    )
+
+    # widths of percentile values are determined by the longest value
+    max_percentile_display_width = len(str(f"{percentiles[-1]:.2f}"))
+
+    for pt in range(num_lines + 1):
+        pline = ""
+        for sub_pt in range(NUM_PERCENTILE_PER_LINE):
+            idx = (pt * NUM_PERCENTILE_PER_LINE) + sub_pt
+            if idx < len(percentile_thresholds):
+                value = format_percentile_value_display(
+                    max_percentile_display_width,
+                    percentiles[idx],
+                )
+                threshold = f"{percentile_thresholds[idx]:.2f}"
+                leading_space = ""
+                if len(threshold) == p_thresh_display_min_width:
+                    leading_space = " " * leading_space_offset
+                pline += f" {leading_space}{threshold}th=[{value}],"
+        if pline:
+            if pt == num_lines - 1:
+                pline = pline[:-1]
+            print(f"  | {pline}")
+
+
 def analyze(
-    data: list = None,
+    data: list,
     show_in_ms: bool = False,
-    field: str = "lat",
-    single_osd: int = -1,
+    field: str = DEFAULT_LATENCY_FIELD,
 ) -> None:
     """Print a statistical analysis of osd(s) operation latencies.
 
     Args:
         data: List of parsed osdtrace lines.
         show_in_ms: Show final timestamps in milliseconds, instead of μsecs.
-        field: Specify a single latency field to analyze.
-        single_osd: Specify a single osd to analyze.
+        field: Single latency field to analyze.
     """
-    data = data or []
-    results = {}
+    grouped_data = group_by_osd_and_op(data, field)
     unit = "msec" if show_in_ms else "μsec"
 
-    # aggregate data over each operation type
-    # group by osd so we can print all data for a given osd at once
-    for trace in data:
-        osd = trace["osd"]
-        if single_osd >= 0 and single_osd != osd:
-            # Only collect data for a single osd if specified
-            continue
-        if osd not in results:
-            results[osd] = {f"{op_type}_data": [] for op_type in OP_TYPES}
-        if field in BLUESTORE_OP_TYPES:
-            if "bluestore_details" in trace:
-                if field in trace["bluestore_details"]:
-                    results[osd][f"{trace['op']}_data"].append(
-                        trace["bluestore_details"][field]
-                    )
-        else:
-            results[osd][f"{trace['op']}_data"].append(trace[field])
-
-    for osd_id, info in results.items():
+    for osd_id, info in sorted(grouped_data.items()):
         print(f"osd.{osd_id}:")
         for op_type in OP_TYPES:
             lat_data = info[f"{op_type}_data"]
@@ -224,7 +317,7 @@ def analyze(
                 continue
 
             avg = statistics.mean(lat_data)
-            stdev = statistics.stdev(lat_data)
+            stdev = statistics.stdev(lat_data) if len(lat_data) > 1 else 0.0
             max_lat = max(lat_data)
             min_lat = min(lat_data)
 
@@ -235,53 +328,61 @@ def analyze(
                 min_lat = min_lat / 1000
                 lat_data = [x / 1000 for x in lat_data]
 
-            percentile_thresholds = (
-                [1, 5] + [i*10 for i in range(1, 10)] + [95, 99, 99.5, 99.9]
-            )
-            percentiles = calc_percentiles(lat_data, percentile_thresholds)
             print(f"  {op_type} {field} ({unit}): min={min_lat}, "
-                  "max={max_lat}, avg={avg:.2f}, stdev={stdev:.2f}, "
-                  "samples={len(lat_data)}")
+                  f"max={max_lat}, avg={avg:.2f}, stdev={stdev:.2f}, "
+                  f"samples={len(lat_data)}")
+
             print(f"  {field} percentiles ({unit}):")
-            num_percentile_per_line = 3
-            num_lines = len(percentile_thresholds) // num_percentile_per_line
-            percentile_display_width = len(str(f"{percentiles[-1]:.2f}"))
-            for pt in range(num_lines + 1):
-                pline = ""
-                for sub_pt in range(num_percentile_per_line):
-                    idx = (pt * num_percentile_per_line) + sub_pt
-                    if idx < len(percentile_thresholds):
-                        value = format_percentile_value_display(
-                            percentile_display_width, percentiles[idx])
-                        threshold = f"{percentile_thresholds[idx]:.2f}"
-                        leading_space = " " if len(threshold) == 4 else ""
-                        pline += f" {leading_space}{threshold}th=[{value}],"
-                if pline:
-                    if pt == num_lines - 1:
-                        pline = pline[:-1]
-                    print(f"  | {pline}")
+            print_percentiles(lat_data)
 
             print()
 
 
-def main(margs) -> None:
+def run(margs) -> None:
     """ Parse and analyse the osdtrace log """
 
-    # validate the field parameter
     if (not margs.field.endswith("lat")
             and margs.field not in BLUESTORE_OP_TYPES):
         print(f"{margs.field} does not seem like a latency field, exiting...")
         sys.exit(1)
 
+    if margs.threshold is None:
+        margs.threshold = 100000 if margs.infer else 0
+
+    if margs.threshold < 0:
+        print("Latency threshold must be a non-negative integer, exiting...")
+        sys.exit(1)
+
     parsed_data = parse_file(margs.osdtrace_file)
+    if margs.osd >= 0:
+        osd_filtered_data = filter(
+            lambda t: t["osd"] == margs.osd, parsed_data
+        )
+    else:
+        osd_filtered_data = parsed_data
+
+    field = DEFAULT_LATENCY_FIELD if margs.infer else margs.field
+    if margs.field in BLUESTORE_OP_TYPES:
+        threshold_filtered_data = list(filter(
+            lambda t: t.get(BD, {}).get(field, -1) >= margs.threshold,
+            osd_filtered_data
+        ))
+    else:
+        threshold_filtered_data = list(filter(
+            lambda t: t[field] >= margs.threshold,
+            osd_filtered_data
+        ))
 
     if margs.sort:
-        sort(parsed_data, margs.show_in_ms, margs.field, margs.osd)
+        sort(threshold_filtered_data, margs.show_in_ms, margs.field)
+    elif margs.infer:
+        infer(threshold_filtered_data)
     else:
-        analyze(parsed_data, margs.show_in_ms, margs.field, margs.osd)
+        analyze(threshold_filtered_data, margs.show_in_ms, margs.field)
 
 
-if __name__ == "__main__":
+def create_arg_parser():
+    """Create and return the argument parser for this script."""
     parser = argparse.ArgumentParser(
         formatter_class=CustomFormatter,
         epilog=EPILOGUE_HELP,
@@ -298,7 +399,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "-s",
         "--sort",
-        help="Sort osdtrace log lines by latency value as specified by '--field'", # noqa
+        help="""
+            Sort osdtrace log lines in ascending order by
+            latency value as specified by '--field'
+        """,
         action="store_true",
     )
     parser.add_argument(
@@ -308,7 +412,31 @@ if __name__ == "__main__":
             "Latency field to analyze of each operation type, by default only "
             "the final latencies are analyzed"
         ),
-        default="lat",
+        default=DEFAULT_LATENCY_FIELD,
     )
-    args = parser.parse_args()
-    main(args)
+    parser.add_argument(
+        "-i",
+        "--infer",
+        help="""
+            Infer individual percentage contributions from all latency fields
+            NOTE: This treats each latency field equally, i.e., without weighting
+        """, # noqa
+        action="store_true",
+    )
+    parser.add_argument(
+        "-t",
+        "--threshold",
+        help="""
+            Filter latency >= this value (in microseconds)
+            When used in conjuction with '--infer',
+            only final latency is filtered
+            Default is 100000 microseconds when used with '--infer',
+            0 otherwise
+        """, # noqa
+        type=int,
+    )
+    return parser
+
+
+if __name__ == "__main__":
+    run(create_arg_parser().parse_args())
