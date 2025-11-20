@@ -15,7 +15,7 @@ sudo apt install ubuntu-dbgsym-keyring -y
 
 echo "Types: deb
 URIs: http://ddebs.ubuntu.com/
-Suites: $(lsb_release -cs) $(lsb_release -cs)-updates $(lsb_release -cs)-proposed
+Suites: $(lsb_release -cs) $(lsb_release -cs)-updates
 Components: main restricted universe multiverse
 Signed-by: /usr/share/keyrings/ubuntu-dbgsym-keyring.gpg" | \
 sudo tee -a /etc/apt/sources.list.d/ddebs.sources
