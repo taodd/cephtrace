@@ -7,7 +7,7 @@ on:
       - main
 
 jobs:
-  build:
+  build-ubuntu:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -24,7 +24,56 @@ jobs:
             git submodule update --init --recursive
 
       - name: Run Makefile build
-        run: make -j all
+        run: make -j all 
 
       - name: Unit test - verify dwarf output is consistent
         run: ./tests/dwarf-compare.sh
+
+  build-centos:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        centos-version: ['9']
+    container:
+      image: quay.io/centos/centos:stream${{ matrix.centos-version }}
+    steps:
+      - name: Install dependencies
+        run: |
+          dnf install -y git gcc gcc-c++ clang make elfutils-libelf-devel elfutils-devel glibc-devel glibc-devel.i686
+
+      - name: Checkout code and submodules
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - name: Configure git safe directory
+        run: git config --global --add safe.directory /__w/cephtrace/cephtrace
+
+      - name: Ensure submodules are updated
+        run: git submodule update --init --recursive
+
+      - name: Run Makefile build
+        run: make -j radostrace osdtrace
+
+  build-rocky:
+    runs-on: ubuntu-latest
+    container:
+      image: rockylinux:9
+    steps:
+      - name: Install dependencies
+        run: |
+          dnf install -y git gcc gcc-c++ clang make elfutils-libelf-devel elfutils-devel glibc-devel glibc-devel.i686
+
+      - name: Checkout code and submodules
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - name: Configure git safe directory
+        run: git config --global --add safe.directory /__w/cephtrace/cephtrace
+
+      - name: Ensure submodules are updated
+        run: git submodule update --init --recursive
+
+      - name: Run Makefile build
+        run: make -j radostrace osdtrace
