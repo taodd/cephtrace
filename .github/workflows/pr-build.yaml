@@ -57,11 +57,8 @@ jobs:
 
   build-rocky:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        rocky-version: ['9.6', '10.0']
     container:
-      image: rockylinux:${{ matrix.rocky-version }}
+      image: rockylinux:9
     steps:
       - name: Install dependencies
         run: |
