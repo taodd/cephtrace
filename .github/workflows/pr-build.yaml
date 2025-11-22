@@ -24,7 +24,7 @@ jobs:
             git submodule update --init --recursive
 
       - name: Run Makefile build
-        run: make -j all
+        run: make -j all 
 
       - name: Unit test - verify dwarf output is consistent
         run: ./tests/dwarf-compare.sh
@@ -53,15 +53,15 @@ jobs:
         run: git submodule update --init --recursive
 
       - name: Run Makefile build
-        run: make -j all
+        run: make -j radostrace osdtrace
 
-  build-rhel:
+  build-rocky:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        ubi-version: ['9']
+        rocky-version: ['9.6', '10.0']
     container:
-      image: registry.access.redhat.com/ubi${{ matrix.ubi-version }}/ubi:latest
+      image: rockylinux:${{ matrix.rocky-version }}
     steps:
       - name: Install dependencies
         run: |
@@ -79,4 +79,4 @@ jobs:
         run: git submodule update --init --recursive
 
       - name: Run Makefile build
-        run: make -j all
+        run: make -j radostrace osdtrace
