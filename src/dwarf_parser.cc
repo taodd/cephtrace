@@ -241,7 +241,7 @@ bool DwarfParser::find_prologue(Dwarf_Die *func, Dwarf_Addr &pc) {
   Dwarf_Addr entrypc;
   string funcname = dwarf_diename(func);
   if (func_entrypc(func, &entrypc) == false) {
-    cerr << "Error in func_entrypc " << funcname << endl;
+    cerr << "Empty in func_entrypc " << funcname << endl;
     return false;
   }
 
