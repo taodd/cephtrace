@@ -55,6 +55,9 @@ jobs:
       - name: Run Makefile build
         run: make -j radostrace osdtrace
 
+      - name: Unit test - verify dwarf output is consistent
+        run: ./tests/dwarf-compare-centos.sh
+
   build-rocky:
     runs-on: ubuntu-latest
     container:

@@ -22,72 +22,88 @@ std::string get_package_version(const std::string& library_path) {
     } else {
         lib_name = library_path;
     }
-    
+
     // Remove .so extension and version numbers
     std::string base_name = lib_name;
     size_t dot_pos = base_name.find(".so");
     if (dot_pos != std::string::npos) {
         base_name = base_name.substr(0, dot_pos);
     }
-    
+
     // Remove "lib" prefix if present
     if (base_name.substr(0, 3) == "lib") {
         base_name = base_name.substr(3);
     }
-    
-    // Try to get version using dpkg
-    std::string cmd = "dpkg -s " + base_name + " 2>/dev/null | grep '^Version:' | cut -d' ' -f2";
-    FILE* pipe = popen(cmd.c_str(), "r");
-    if (!pipe) {
-        return "unknown";
+
+    // Determine alternative package names for Ceph libraries
+    std::vector<std::string> alt_names;
+    if (base_name == "rados") {
+        alt_names = {"librados2", "ceph-common"};
+    } else if (base_name == "rbd") {
+        alt_names = {"librbd1", "ceph-common"};
+    } else if (base_name == "ceph-common") {
+        alt_names = {"ceph-common"};
+    } else if (base_name == "ceph-osd") {
+        alt_names = {"ceph-osd", "ceph-common"};
+    } else {
+        alt_names = {base_name};
     }
-    
+
     char buffer[256];
     std::string result = "";
-    while (fgets(buffer, sizeof(buffer), pipe) != NULL) {
-        result += buffer;
-    }
-    pclose(pipe);
-    
-    // Remove trailing newline
-    if (!result.empty() && result[result.length()-1] == '\n') {
-        result.erase(result.length()-1);
-    }
-    
-    if (result.empty()) {
-        // Try alternative package names for Ceph libraries
-        std::vector<std::string> alt_names;
-        if (base_name == "rados") {
-            alt_names = {"librados2", "ceph-common"};
-        } else if (base_name == "rbd") {
-            alt_names = {"librbd1", "ceph-common"};
-        } else if (base_name == "ceph-common") {
-            alt_names = {"ceph-common"};
-        } else if (base_name == "ceph-osd") {
-            alt_names = {"ceph-osd", "ceph-common"};
-        }
-        
-        for (const auto& alt_name : alt_names) {
-            cmd = "dpkg -s " + alt_name + " 2>/dev/null | grep '^Version:' | cut -d' ' -f2";
-            pipe = popen(cmd.c_str(), "r");
+
+    // Detect which package manager is available
+    bool has_dpkg = (access("/usr/bin/dpkg", X_OK) == 0);
+    bool has_rpm = (access("/usr/bin/rpm", X_OK) == 0);
+
+    // Try dpkg first (Debian/Ubuntu)
+    if (has_dpkg) {
+        for (const auto& pkg_name : alt_names) {
+            std::string cmd = "dpkg -s " + pkg_name + " 2>/dev/null | grep '^Version:' | cut -d' ' -f2";
+            FILE* pipe = popen(cmd.c_str(), "r");
             if (pipe) {
                 result = "";
                 while (fgets(buffer, sizeof(buffer), pipe) != NULL) {
                     result += buffer;
                 }
                 pclose(pipe);
-                
+
                 if (!result.empty() && result[result.length()-1] == '\n') {
                     result.erase(result.length()-1);
                 }
-                
+
                 if (!result.empty()) {
-                    break;
+                    return result;
                 }
             }
         }
     }
-    
+
+    // Try rpm (CentOS/RHEL/Rocky)
+    if (has_rpm && result.empty()) {
+        for (const auto& pkg_name : alt_names) {
+            std::string cmd = "rpm -q " + pkg_name + " --queryformat '%{EPOCH}:%{VERSION}-%{RELEASE}' 2>/dev/null";
+            FILE* pipe = popen(cmd.c_str(), "r");
+            if (pipe) {
+                result = "";
+                while (fgets(buffer, sizeof(buffer), pipe) != NULL) {
+                    result += buffer;
+                }
+                pclose(pipe);
+
+                if (!result.empty() && result[result.length()-1] == '\n') {
+                    result.erase(result.length()-1);
+                }
+
+                // Check if the package is not installed (rpm returns "package X is not installed")
+                if (!result.empty() && result.find("not installed") == std::string::npos) {
+                    return result;
+                }
+                result = "";
+            }
+        }
+    }
+
     return result.empty() ? "unknown" : result;
 }
 
