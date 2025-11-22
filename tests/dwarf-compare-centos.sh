@@ -8,11 +8,11 @@
 set -ex
 
 # Install the ceph package
-sudo dnf install -y centos-release-ceph-reef
-sudo dnf install -y ceph-common
+dnf install -y centos-release-ceph-reef
+dnf install -y ceph-common
 
 # Install debug symbols, needed to generate dwarf.json
-sudo dnf install -y ceph-debuginfo ceph-osd-debuginfo librados-devel librados-debuginfo librbd-devel
+dnf install -y ceph-debuginfo ceph-osd-debuginfo librados-devel librados-debuginfo librbd-devel
 
 # Get the ceph version for reference file lookup
 matching_ref_version=$(rpm -q ceph-common --queryformat '%{VERSION}-%{RELEASE}')
