@@ -46,6 +46,9 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Configure git safe directory
+        run: git config --global --add safe.directory /__w/cephtrace/cephtrace
+
       - name: Ensure submodules are updated
         run: git submodule update --init --recursive
 
@@ -68,6 +71,9 @@ jobs:
         uses: actions/checkout@v3
         with:
           submodules: recursive
+
+      - name: Configure git safe directory
+        run: git config --global --add safe.directory /__w/cephtrace/cephtrace
 
       - name: Ensure submodules are updated
         run: git submodule update --init --recursive
