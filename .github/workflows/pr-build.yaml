@@ -7,7 +7,7 @@ on:
       - main
 
 jobs:
-  build:
+  build-ubuntu:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -28,3 +28,49 @@ jobs:
 
       - name: Unit test - verify dwarf output is consistent
         run: ./tests/dwarf-compare.sh
+
+  build-centos:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        centos-version: ['9']
+    container:
+      image: quay.io/centos/centos:stream${{ matrix.centos-version }}
+    steps:
+      - name: Install dependencies
+        run: |
+          dnf install -y git gcc gcc-c++ clang make elfutils-libelf-devel elfutils-devel glibc-devel.i686
+
+      - name: Checkout code and submodules
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - name: Ensure submodules are updated
+        run: git submodule update --init --recursive
+
+      - name: Run Makefile build
+        run: make -j all
+
+  build-rhel:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        ubi-version: ['9']
+    container:
+      image: registry.access.redhat.com/ubi${{ matrix.ubi-version }}/ubi:latest
+    steps:
+      - name: Install dependencies
+        run: |
+          dnf install -y git gcc gcc-c++ clang make elfutils-libelf-devel elfutils-devel glibc-devel
+
+      - name: Checkout code and submodules
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - name: Ensure submodules are updated
+        run: git submodule update --init --recursive
+
+      - name: Run Makefile build
+        run: make -j all
