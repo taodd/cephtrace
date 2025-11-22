@@ -39,7 +39,7 @@ jobs:
     steps:
       - name: Install dependencies
         run: |
-          dnf install -y git gcc gcc-c++ clang make elfutils-libelf-devel elfutils-devel glibc-devel.i686
+          dnf install -y git gcc gcc-c++ clang make elfutils-libelf-devel elfutils-devel glibc-devel glibc-devel.i686
 
       - name: Checkout code and submodules
         uses: actions/checkout@v3
@@ -62,7 +62,7 @@ jobs:
     steps:
       - name: Install dependencies
         run: |
-          dnf install -y git gcc gcc-c++ clang make elfutils-libelf-devel elfutils-devel glibc-devel
+          dnf install -y git gcc gcc-c++ clang make elfutils-libelf-devel elfutils-devel glibc-devel glibc-devel.i686
 
       - name: Checkout code and submodules
         uses: actions/checkout@v3
