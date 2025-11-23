@@ -31,7 +31,7 @@ echo "Testing osdtrace dwarf json generation..."
 osd_new_dwarf="generated-osd-dwarf.json"
 ./osdtrace -j $osd_new_dwarf
 osd_ref_file="./files/ubuntu/osdtrace/osd-${matching_ref_version}_dwarf.json"
-diff $osd_ref_file $osd_new_dwarf
+./tests/compare_dwarf_json.py $osd_ref_file $osd_new_dwarf
 echo "osdtrace dwarf json comparison passed!"
 
 # Test radostrace dwarf json generation
@@ -39,7 +39,7 @@ echo "Testing radostrace dwarf json generation..."
 rados_new_dwarf="generated-rados-dwarf.json"
 ./radostrace -j $rados_new_dwarf
 rados_ref_file="./files/ubuntu/radostrace/${matching_ref_version}_dwarf.json"
-diff $rados_ref_file $rados_new_dwarf
+./tests/compare_dwarf_json.py $rados_ref_file $rados_new_dwarf
 echo "radostrace dwarf json comparison passed!"
 
 echo "All dwarf json comparisons passed successfully!"
