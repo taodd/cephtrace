@@ -65,7 +65,7 @@ def compare_func2pc(file1_name: str, func2pc1: Dict[str, int],
             )
 
     if pc_mismatches:
-        errors.append(f"Program counter mismatches:")
+        errors.append("Program counter mismatches:")
         errors.extend(pc_mismatches)
 
     return len(errors) == 0, errors
@@ -290,7 +290,7 @@ def main():
     """Main entry point"""
     if len(sys.argv) < 3:
         print(f"Usage: {sys.argv[0]} <reference_file.json> "
-              f"<generated_file.json> [-v|--verbose]")
+              "<generated_file.json> [-v|--verbose]")
         print()
         print("Compare two dwarf JSON files for cephtrace testing.")
         print("Returns exit code 0 if files match, 1 otherwise.")
