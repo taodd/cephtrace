@@ -1,6 +1,6 @@
 {
   "version": "17.2.6-0ubuntu0.22.04.1",
-  "/lib/x86_64-linux-gnu/librados.so.2": {
+  "librados.so.2": {
     "func2pc": {
       "Objecter::_finish_op": 911264,
       "Objecter::_send_op": 856016
@@ -383,7 +383,7 @@
       }
     }
   },
-  "/lib/x86_64-linux-gnu/librbd.so.1": {
+  "librbd.so.1": {
     "func2pc": {
       "Objecter::_finish_op": 6657552,
       "Objecter::_send_op": 6602304
@@ -766,7 +766,7 @@
       }
     }
   },
-  "/usr/lib/x86_64-linux-gnu/ceph/libceph-common.so.2": {
+  "libceph-common.so.2": {
     "func2pc": {
       "Objecter::_finish_op": 8015824,
       "Objecter::_send_op": 7960576
