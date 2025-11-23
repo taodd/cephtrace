@@ -1,4 +1,4 @@
-VERSION := 1.3
+VERSION := 1.4
 DATE ?= $(shell date +%Y-%m-%d)
 SRC_TGT := release
 # Populate Source Package Name
