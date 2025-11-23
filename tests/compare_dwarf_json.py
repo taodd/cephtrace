@@ -58,8 +58,10 @@ def compare_func2pc(file1_name: str, func2pc1: Dict[str, int],
         if func2pc1[func] != func2pc2[func]:
             pc_mismatches.append(
                 f"  - {func}:\n"
-                f"      {file1_name}: {func2pc1[func]} (0x{func2pc1[func]:x})\n"
-                f"      {file2_name}: {func2pc2[func]} (0x{func2pc2[func]:x})"
+                f"      {file1_name}: {func2pc1[func]} "
+                f"(0x{func2pc1[func]:x})\n"
+                f"      {file2_name}: {func2pc2[func]} "
+                f"(0x{func2pc2[func]:x})"
             )
 
     if pc_mismatches:
@@ -180,7 +182,12 @@ def compare_binary_data(file1_name: str, data1: Dict[str, Any],
 
         if not success:
             all_success = False
-            all_errors.append(colored(f"\n[func2pc differences in {binary_path}]", Colors.YELLOW))
+            all_errors.append(
+                colored(
+                    f"\n[func2pc differences in {binary_path}]",
+                    Colors.YELLOW
+                )
+            )
             all_errors.extend(errors)
 
     # Compare func2vf
@@ -196,13 +203,19 @@ def compare_binary_data(file1_name: str, data1: Dict[str, Any],
 
         if not success:
             all_success = False
-            all_errors.append(colored(f"\n[func2vf differences in {binary_path}]", Colors.YELLOW))
+            all_errors.append(
+                colored(
+                    f"\n[func2vf differences in {binary_path}]",
+                    Colors.YELLOW
+                )
+            )
             all_errors.extend(errors)
 
     return all_success, all_errors
 
 
-def compare_dwarf_json(file1_path: str, file2_path: str, verbose: bool = False) -> bool:
+def compare_dwarf_json(file1_path: str, file2_path: str,
+                       verbose: bool = False) -> bool:
     """
     Compare two dwarf JSON files.
     Returns True if files are equivalent, False otherwise.
@@ -247,7 +260,10 @@ def compare_dwarf_json(file1_path: str, file2_path: str, verbose: bool = False) 
     if "version" in data1 and "version" in data2:
         if data1["version"] != data2["version"]:
             if verbose:
-                print(colored("Note: Version difference (informational only):", Colors.BLUE))
+                print(colored(
+                    "Note: Version difference (informational only):",
+                    Colors.BLUE
+                ))
                 print(f"  {file1_path}: {data1['version']}")
                 print(f"  {file2_path}: {data2['version']}")
 
@@ -273,7 +289,8 @@ def compare_dwarf_json(file1_path: str, file2_path: str, verbose: bool = False) 
 def main():
     """Main entry point"""
     if len(sys.argv) < 3:
-        print(f"Usage: {sys.argv[0]} <reference_file.json> <generated_file.json> [-v|--verbose]")
+        print(f"Usage: {sys.argv[0]} <reference_file.json> "
+              f"<generated_file.json> [-v|--verbose]")
         print()
         print("Compare two dwarf JSON files for cephtrace testing.")
         print("Returns exit code 0 if files match, 1 otherwise.")
