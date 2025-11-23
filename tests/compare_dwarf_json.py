@@ -9,7 +9,7 @@ import sys
 from typing import Dict, Any, List, Tuple
 
 
-class Colors:
+class Colors:  # pylint: disable=too-few-public-methods
     """ANSI color codes for terminal output"""
     RED = '\033[91m'
     GREEN = '\033[92m'
@@ -25,8 +25,7 @@ def colored(text: str, color: str) -> str:
 
 
 def compare_func2pc(file1_name: str, func2pc1: Dict[str, int],
-                    file2_name: str, func2pc2: Dict[str, int],
-                    binary_path: str) -> Tuple[bool, List[str]]:
+                    file2_name: str, func2pc2: Dict[str, int]) -> Tuple[bool, List[str]]:
     """
     Compare func2pc dictionaries (function name to program counter mappings).
     Returns (success, list of error messages)
@@ -119,8 +118,7 @@ def compare_var_fields(file1_name: str, vf1: Dict[str, Any],
 
 
 def compare_func2vf(file1_name: str, func2vf1: Dict[str, Any],
-                    file2_name: str, func2vf2: Dict[str, Any],
-                    binary_path: str) -> Tuple[bool, List[str]]:
+                    file2_name: str, func2vf2: Dict[str, Any]) -> Tuple[bool, List[str]]:
     """
     Compare func2vf dictionaries (function to variable fields mappings).
     Returns (success, list of error messages)
@@ -176,8 +174,7 @@ def compare_binary_data(file1_name: str, data1: Dict[str, Any],
 
         success, errors = compare_func2pc(
             file1_name, func2pc1,
-            file2_name, func2pc2,
-            binary_path
+            file2_name, func2pc2
         )
 
         if not success:
@@ -197,8 +194,7 @@ def compare_binary_data(file1_name: str, data1: Dict[str, Any],
 
         success, errors = compare_func2vf(
             file1_name, func2vf1,
-            file2_name, func2vf2,
-            binary_path
+            file2_name, func2vf2
         )
 
         if not success:
@@ -220,9 +216,10 @@ def compare_dwarf_json(file1_path: str, file2_path: str,
     Compare two dwarf JSON files.
     Returns True if files are equivalent, False otherwise.
     """
+    # pylint: disable=too-many-locals,too-many-branches
     # Load JSON files
     try:
-        with open(file1_path, 'r') as f:
+        with open(file1_path, 'r', encoding='utf-8') as f:
             data1 = json.load(f)
     except FileNotFoundError:
         print(colored(f"Error: File not found: {file1_path}", Colors.RED))
@@ -232,7 +229,7 @@ def compare_dwarf_json(file1_path: str, file2_path: str,
         return False
 
     try:
-        with open(file2_path, 'r') as f:
+        with open(file2_path, 'r', encoding='utf-8') as f:
             data2 = json.load(f)
     except FileNotFoundError:
         print(colored(f"Error: File not found: {file2_path}", Colors.RED))
