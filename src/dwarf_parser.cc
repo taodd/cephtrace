@@ -693,7 +693,8 @@ static int preprocess_module(Dwfl_Module *dwflmod, void **userdata,
   assert(dwflmod != NULL && dp != NULL);
 
   dp->cur_mod = dwflmod;
-  dp->cur_mod_name = dwfl_module_info(dwflmod, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+  const char* mod_path = dwfl_module_info(dwflmod, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+  dp->cur_mod_name = get_basename(mod_path);
   Dwarf_Addr modbias;
   Dwarf *dwarf = dwfl_module_getdwarf(dwflmod, &modbias);
 
@@ -719,7 +720,8 @@ static int handle_module(Dwfl_Module *dwflmod, void **userdata,
   assert(dwflmod != NULL && dp != NULL);
 
   dp->cur_mod = dwflmod;
-  dp->cur_mod_name = dwfl_module_info(dwflmod, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+  const char* mod_path = dwfl_module_info(dwflmod, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+  dp->cur_mod_name = get_basename(mod_path);
   Dwarf_Addr modbias;
   Dwarf *dwarf = dwfl_module_getdwarf(dwflmod, &modbias);
 
