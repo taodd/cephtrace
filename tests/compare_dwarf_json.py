@@ -25,7 +25,8 @@ def colored(text: str, color: str) -> str:
 
 
 def compare_func2pc(file1_name: str, func2pc1: Dict[str, int],
-                    file2_name: str, func2pc2: Dict[str, int]) -> Tuple[bool, List[str]]:
+                    file2_name: str,
+                    func2pc2: Dict[str, int]) -> Tuple[bool, List[str]]:
     """
     Compare func2pc dictionaries (function name to program counter mappings).
     Returns (success, list of error messages)
@@ -118,7 +119,8 @@ def compare_var_fields(file1_name: str, vf1: Dict[str, Any],
 
 
 def compare_func2vf(file1_name: str, func2vf1: Dict[str, Any],
-                    file2_name: str, func2vf2: Dict[str, Any]) -> Tuple[bool, List[str]]:
+                    file2_name: str,
+                    func2vf2: Dict[str, Any]) -> Tuple[bool, List[str]]:
     """
     Compare func2vf dictionaries (function to variable fields mappings).
     Returns (success, list of error messages)
