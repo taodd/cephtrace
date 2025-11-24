@@ -2,9 +2,7 @@
 
 # 🔍 Cephtrace
 
-### eBPF-Powered Performance Tracing for Ceph
-
-**Zero downtime · Minimal overhead · Production-ready**
+### eBPF-Powered Dynamic Tracing for Ceph Distributed Storage
 
 [![License: GPL v2](https://img.shields.io/badge/License-GPL%20v2-blue.svg)](https://www.gnu.org/licenses/gpl-2.0)
 [![Build Status](https://github.com/taodd/cephtrace/workflows/build/badge.svg)](https://github.com/taodd/cephtrace/actions)
