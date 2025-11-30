@@ -71,10 +71,12 @@ __u64 fetch_register(const struct pt_regs *const ctx, int reg) {
 #elif defined(__TARGET_ARCH_arm64)
   // ARM64: DWARF register numbers
   // x0-x30 are registers 0-30, sp is 31
+  // Use user_pt_regs which is properly defined in BPF context
+  const struct user_pt_regs *regs = (const struct user_pt_regs *)ctx;
   if (reg >= 0 && reg <= 30)
-    v = ctx->regs[reg];
+    v = regs->regs[reg];
   else if (reg == 31)
-    v = ctx->sp;
+    v = regs->sp;
   else {
     bpf_printk("fetch_register: unexpected ARM64 register %d\n", reg);
   }
