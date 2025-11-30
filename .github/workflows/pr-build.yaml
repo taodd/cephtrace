@@ -29,6 +29,25 @@ jobs:
       - name: Unit test - verify dwarf output is consistent
         run: ./tests/dwarf-compare.sh
 
+  build-ubuntu-arm64:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Checkout code and submodules
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+            sudo apt-get update
+            sudo apt-get install -y g++ clang libelf-dev libdw-dev
+
+      - name: Ensure submodules are updated
+        run: git submodule update --init --recursive
+
+      - name: Run Makefile build
+        run: make -j all
+
   build-centos:
     runs-on: ubuntu-latest
     strategy:
