@@ -30,7 +30,7 @@ __u32 get_tid() {
 __u64 fetch_register(const struct pt_regs *const ctx, int reg) {
   __u64 v = 0;
 
-#if defined(__x86_64__)
+#if defined(__TARGET_ARCH_x86)
   // x86_64: DWARF register numbers
   if (reg == 0)
     v = ctx->rax;
@@ -68,7 +68,7 @@ __u64 fetch_register(const struct pt_regs *const ctx, int reg) {
     bpf_printk("fetch_register: unexpected x86_64 register %d\n", reg);
   }
 
-#elif defined(__aarch64__)
+#elif defined(__TARGET_ARCH_arm64)
   // ARM64: DWARF register numbers
   // x0-x30 are registers 0-30, sp is 31
   if (reg >= 0 && reg <= 30)
@@ -80,7 +80,7 @@ __u64 fetch_register(const struct pt_regs *const ctx, int reg) {
   }
 
 #else
-#error "Unsupported architecture: only x86_64 and aarch64 are supported"
+#error "Unsupported architecture: only x86 and arm64 are supported"
 #endif
 
   return v;
