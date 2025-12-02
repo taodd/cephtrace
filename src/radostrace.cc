@@ -578,9 +578,60 @@ int main(int argc, char **argv) {
   /* Load and verify BPF application */
   clog << "Start to load uprobe" << endl;
 
-  skel = radostrace_bpf__open_and_load();
+  /* Open BPF skeleton first (before loading) */
+  skel = radostrace_bpf__open();
   if (!skel) {
-    cerr << "Failed to open and load BPF skeleton" << endl;
+    cerr << "Failed to open BPF skeleton" << endl;
+    return 1;
+  }
+
+  /* Set BPF global variables (rodata) - must be done after open but before load.
+   * These values match the original macro definitions and typical Ceph builds.
+   * Values differ between Ceph versions due to struct layout changes.
+   */
+
+  // Determine Ceph version: from JSON file if importing, otherwise from package
+  std::string ceph_version;
+  if (import_json) {
+    ceph_version = get_version_from_json(json_input_file);
+    clog << "Using version from JSON file: " << ceph_version << endl;
+  } else {
+    ceph_version = get_package_version(librados_path);
+    clog << "Using version from package: " << ceph_version << endl;
+  }
+
+  bool is_squid_or_above = is_ceph_version_squid_or_above(ceph_version);
+
+  if (is_squid_or_above) {
+    // Ceph squid (19.2.0) and above: smaller OSDOp struct
+    skel->rodata->CEPH_OSD_OP_SIZE = 112;              // sizeof(OSDOp) for squid+
+    skel->rodata->CEPH_OSD_OP_BUFFER_CARRIAGE_OFFSET = 56; // offset to _carriage from OSDOp start for squid+
+    clog << "Using Ceph squid (19.2.0+) struct offsets" << endl;
+  } else {
+    // Ceph reef (18.x) and earlier
+    skel->rodata->CEPH_OSD_OP_SIZE = 152;              // sizeof(OSDOp) for pre-squid
+    skel->rodata->CEPH_OSD_OP_BUFFER_CARRIAGE_OFFSET = 96; // offset to _carriage from OSDOp start for pre-squid
+    clog << "Using Ceph pre-squid struct offsets" << endl;
+  }
+
+  skel->rodata->CEPH_OSD_OP_EXTENT_OFFSET_OFFSET = 6;   // offsetof(ceph_osd_op, extent.offset)
+  skel->rodata->CEPH_OSD_OP_EXTENT_LENGTH_OFFSET = 14;  // offsetof(ceph_osd_op, extent.length)
+  skel->rodata->CEPH_OSD_OP_CLS_CLASS_OFFSET = 6;       // offsetof(ceph_osd_op, cls.class_len)
+  skel->rodata->CEPH_OSD_OP_CLS_METHOD_OFFSET = 7;      // offsetof(ceph_osd_op, cls.method_len)
+  skel->rodata->CEPH_OSD_OP_BUFFER_RAW_OFFSET = 8;      // offset to _raw in ptr_node
+  skel->rodata->CEPH_OSD_OP_BUFFER_DATA_OFFSET = 32;    // offset to data in raw
+
+  clog << "Ceph struct offsets set in BPF globals:" << endl;
+  clog << "  CEPH_OSD_OP_SIZE: " << skel->rodata->CEPH_OSD_OP_SIZE << endl;
+  clog << "  CEPH_OSD_OP_EXTENT_OFFSET_OFFSET: " << skel->rodata->CEPH_OSD_OP_EXTENT_OFFSET_OFFSET << endl;
+  clog << "  CEPH_OSD_OP_EXTENT_LENGTH_OFFSET: " << skel->rodata->CEPH_OSD_OP_EXTENT_LENGTH_OFFSET << endl;
+  clog << "  CEPH_OSD_OP_BUFFER_CARRIAGE_OFFSET: " << skel->rodata->CEPH_OSD_OP_BUFFER_CARRIAGE_OFFSET << endl;
+
+  /* Now load the BPF program with the configured globals */
+  ret = radostrace_bpf__load(skel);
+  if (ret) {
+    cerr << "Failed to load BPF skeleton: " << ret << endl;
+    radostrace_bpf__destroy(skel);
     return 1;
   }
 
