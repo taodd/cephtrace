@@ -1157,8 +1157,12 @@ int attach_uprobe(struct osdtrace_bpf *skel,
   std::string path_basename = get_basename(path);
   auto &func2pc = dp.mod_func2pc[path_basename];
   size_t func_addr = func2pc[funcname];
+  if (func_addr == 0) {
+    cerr << "Warning: func_addr is zero for " << funcname << " in " << path << ", skipping uprobe" << endl;
+    return -1;
+  }
   if (v > 0)
-      funcname = funcname + "_v" + std::to_string(v); 
+      funcname = funcname + "_v" + std::to_string(v);
   int pid = func_progid[funcname];
   struct bpf_link *ulink = bpf_program__attach_uprobe(
       *skel->skeleton->progs[pid].prog,
@@ -1182,8 +1186,12 @@ int attach_retuprobe(struct osdtrace_bpf *skel,
   std::string path_basename = get_basename(path);
   auto &func2pc = dp.mod_func2pc[path_basename];
   size_t func_addr = func2pc[funcname];
+  if (func_addr == 0) {
+    cerr << "Warning: func_addr is zero for " << funcname << " in " << path << ", skipping uretprobe" << endl;
+    return -1;
+  }
   if (v > 0)
-      funcname = funcname + "_v" + std::to_string(v); 
+      funcname = funcname + "_v" + std::to_string(v);
   int pid = func_progid[funcname];
   struct bpf_link *ulink = bpf_program__attach_uprobe(
       *skel->skeleton->progs[pid].prog, 
