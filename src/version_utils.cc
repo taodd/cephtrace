@@ -12,6 +12,9 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include "nlohmann/json.hpp"
+
+using json = nlohmann::json;
 
 std::string get_package_version(const std::string& library_path) {
     // Extract the library name from the path
@@ -263,6 +266,7 @@ std::string find_library_path(const std::string& lib_name, int pid) {
     // Fallback: search in common library directories
     {
         std::vector<std::string> search_dirs = {
+            "./lib",
             "/lib",
             "/lib64",
             "/lib64/ceph",
@@ -416,6 +420,38 @@ bool check_process_executable_deleted(int pid, const std::string& exe_name) {
     return false;
 }
 
+bool is_ceph_version_squid_or_above(const std::string& version) {
+    if (version.empty() || version == "unknown") {
+        return false;
+    }
+
+    // Parse version string to extract major.minor.patch
+    // Formats:
+    // - dpkg: "19.2.0-0ubuntu0.22.04.1" or "17.2.9-0ubuntu0.22.04.1"
+    // - rpm:  "2:19.2.0-1.el9" (epoch:version-release)
+    std::string ver_str = version;
+
+    // Remove epoch prefix if present (rpm format: "epoch:version")
+    size_t colon_pos = ver_str.find(':');
+    if (colon_pos != std::string::npos) {
+        ver_str = ver_str.substr(colon_pos + 1);
+    }
+
+    // Extract major.minor.patch by parsing until non-version characters
+    int major = 0, minor = 0, patch = 0;
+    if (sscanf(ver_str.c_str(), "%d.%d.%d", &major, &minor, &patch) < 2) {
+        // Failed to parse at least major.minor
+        return false;
+    }
+
+    // squid is 19.2.0, so check if version >= 19.2.0
+    // Compare as: major * 10000 + minor * 100 + patch
+    int current = major * 10000 + minor * 100 + patch;
+    int squid = 19 * 10000 + 2 * 100 + 0;  // 19.2.0
+
+    return current >= squid;
+}
+
 bool check_executable_deleted(int process_id, const std::string& exe_name) {
     if (process_id > 0) {
         // Check specific process
@@ -459,4 +495,25 @@ bool check_executable_deleted(int process_id, const std::string& exe_name) {
     }
 
     return false;
+}
+
+std::string get_version_from_json(const std::string& json_file) {
+    try {
+        std::ifstream input(json_file);
+        if (!input.is_open()) {
+            return "";
+        }
+
+        json j;
+        input >> j;
+        input.close();
+
+        if (j.contains("version")) {
+            return j["version"].get<std::string>();
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "Error reading version from JSON: " << e.what() << std::endl;
+    }
+
+    return "";
 }

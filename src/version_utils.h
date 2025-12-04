@@ -79,4 +79,22 @@ bool check_process_executable_deleted(int pid, const std::string& exe_name);
  */
 bool check_executable_deleted(int process_id, const std::string& exe_name);
 
+/**
+ * Check if the Ceph version is squid (19.2.0) or above.
+ * Parses version strings from dpkg (e.g., "19.2.0-0ubuntu0.22.04.1")
+ * or rpm (e.g., "2:19.2.0-1.el9") formats.
+ *
+ * @param version The version string from get_package_version()
+ * @return true if version >= 19.2.0, false otherwise
+ */
+bool is_ceph_version_squid_or_above(const std::string& version);
+
+/**
+ * Get the version string from a DWARF JSON file.
+ *
+ * @param json_file The path to the JSON file
+ * @return The version string, or empty string if not found or error
+ */
+std::string get_version_from_json(const std::string& json_file);
+
 #endif // VERSION_UTILS_H
