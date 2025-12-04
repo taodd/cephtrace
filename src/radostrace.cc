@@ -363,11 +363,11 @@ static int handle_event(void *ctx, void *data, size_t size) {
         widths.latency = MAX(9, (int)std::to_string(latency_us).length() + 1);
         
         // Print header using calculated widths
-        printf("%*s%*s%*s%*s%*s%*s%*s%*s%*s%s\n", 
+        printf("%*s%*s%*s%*s%*s %*s%*s%*s%*s%s\n",
                widths.pid, "pid",
-               widths.client, "client", 
+               widths.client, "client",
                widths.tid, "tid",
-               widths.pool, "pool", 
+               widths.pool, "pool",
                widths.pg, "pg",
                widths.acting, "acting",
                widths.wr, "WR",
@@ -379,14 +379,15 @@ static int handle_event(void *ctx, void *data, size_t size) {
     }
 
     // Format output using calculated widths
-    printf("%*d%*lld%*lld%*lld%*s", 
+    // Note: explicit space after pg ensures separation from acting column
+    // even when acting_str exceeds its calculated width
+    printf("%*d%*lld%*lld%*lld%*s %*s",
            widths.pid, op_v->pid,
-           widths.client, op_v->cid, 
+           widths.client, op_v->cid,
            widths.tid, op_v->tid,
-           widths.pool, op_v->m_pool, 
-           widths.pg, pgid.c_str()); 
-
-    printf("%*s", widths.acting, acting_str.c_str());
+           widths.pool, op_v->m_pool,
+           widths.pg, pgid.c_str(),
+           widths.acting, acting_str.c_str());
 
     printf("%*s%*lld%*lld",
            widths.wr, wr_str.c_str(),
