@@ -1225,15 +1225,6 @@ int main(int argc, char **argv) {
   int ret = 0;
   struct ring_buffer *rb;
 
-  /* Set up timeout if provided */
-  if (timeout > 0) {
-      signal(SIGALRM, timeout_handler);
-      alarm(timeout);
-      std::cout << "Execution timeout set to " << timeout << " seconds.\n";
-  } else {
-      std::cout << "No execution timeout set (unlimited).\n";
-  }
-
   clog << "Start to parse ceph dwarf info" << endl;
 
   std::string osd_path;
@@ -1394,6 +1385,15 @@ int main(int argc, char **argv) {
   if (!rb) {
     cerr << "failed to setup ring_buffer" << endl;
     goto cleanup;
+  }
+
+  /* Set up timeout if provided - start counting after initialization is complete */
+  if (timeout > 0) {
+      signal(SIGALRM, timeout_handler);
+      alarm(timeout);
+      std::cout << "Execution timeout set to " << timeout << " seconds.\n";
+  } else {
+      std::cout << "No execution timeout set (unlimited).\n";
   }
 
   clog << "Started to poll from ring buffer" << endl;
