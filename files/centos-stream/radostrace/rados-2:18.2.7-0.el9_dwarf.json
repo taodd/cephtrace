@@ -1,6 +1,6 @@
 {
   "version": "2:18.2.7-0.el9",
-  "/lib64/ceph/libceph-common.so.2": {
+  "libceph-common.so.2": {
     "func2pc": {
       "Objecter::_finish_op": 5875648,
       "Objecter::_send_op": 5911280
@@ -383,7 +383,7 @@
       }
     }
   },
-  "/lib64/librados.so.2": {
+  "librados.so.2": {
     "func2pc": {
       "Objecter::_finish_op": 949904,
       "Objecter::_send_op": 953376
@@ -766,7 +766,7 @@
       }
     }
   },
-  "/lib64/librbd.so.1": {
+  "librbd.so.1": {
     "func2pc": {
       "Objecter::_finish_op": 4932624
     },

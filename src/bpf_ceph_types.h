@@ -15,17 +15,10 @@
 #define CEPH_OSD_FLAG_READ 0x0010
 #define CEPH_OSD_FLAG_WRITE 0x0020
 
-#define CEPH_OSD_OP_SIZE 152 // see OSDOp
-//#define CEPH_OSD_OP_UNION_OFFSET 12 // refer ceph_osd_op
-#define CEPH_OSD_OP_EXTENT_OFFSET_OFFSET 6 // refer ceph_osd_op
-#define CEPH_OSD_OP_EXTENT_LENGTH_OFFSET 14 // refer ceph_osd_op
-
-#define CEPH_OSD_OP_CLS_CLASS_OFFSET 6
-#define CEPH_OSD_OP_CLS_METHOD_OFFSET 7
-
-#define CEPH_OSD_OP_BUFFER_CARRIAGE_OFFSET 96 //offset from the start of OSDOp 
-#define CEPH_OSD_OP_BUFFER_RAW_OFFSET 8  //offset in the ptr_node (_carriage)
-#define CEPH_OSD_OP_BUFFER_DATA_OFFSET 32 // offset in the raw 
+/* Note: CEPH_OSD_OP_* struct offset constants are now defined as global variables
+ * in radostrace.bpf.c and set by userspace via skel->rodata-> before BPF load.
+ * This allows runtime configuration of struct offsets for different Ceph versions.
+ */ 
 
 static const __u8 flag_queued_for_pg=1 << 0;
 static const __u8 flag_reached_pg =  1 << 1;

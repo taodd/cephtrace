@@ -1,6 +1,6 @@
 {
   "version": "19.2.0-0ubuntu0.24.04.2~cloud0",
-  "/lib/x86_64-linux-gnu/librados.so.2": {
+  "librados.so.2": {
     "func2pc": {
       "Objecter::_finish_op": 960560,
       "Objecter::_send_op": 901104
@@ -383,7 +383,7 @@
       }
     }
   },
-  "/lib/x86_64-linux-gnu/librbd.so.1": {
+  "librbd.so.1": {
     "func2pc": {
       "Objecter::_finish_op": 7129760,
       "Objecter::_send_op": 7070304
@@ -766,7 +766,7 @@
       }
     }
   },
-  "/usr/lib/x86_64-linux-gnu/ceph/libceph-common.so.2": {
+  "libceph-common.so.2": {
     "func2pc": {
       "Objecter::_finish_op": 8655344,
       "Objecter::_send_op": 8595888

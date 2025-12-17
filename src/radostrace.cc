@@ -158,6 +158,10 @@ int attach_uprobe(struct radostrace_bpf *skel,
   std::string path_basename = get_basename(path);
   auto &func2pc = dp.mod_func2pc[path_basename];
   size_t func_addr = func2pc[funcname];
+  if (func_addr == 0) {
+    cerr << "Warning: func_addr is zero for " << funcname << " in " << path << ", skipping uprobe" << endl;
+    return -1;
+  }
   if (v > 0)
       funcname = funcname + "_v" + std::to_string(v);
   int prog_id = func_progid[funcname];
@@ -194,6 +198,10 @@ int attach_retuprobe(struct radostrace_bpf *skel,
   std::string path_basename = get_basename(path);
   auto &func2pc = dp.mod_func2pc[path_basename];
   size_t func_addr = func2pc[funcname];
+  if (func_addr == 0) {
+    cerr << "Warning: func_addr is zero for " << funcname << " in " << path << ", skipping uretprobe" << endl;
+    return -1;
+  }
   if (v > 0)
       funcname = funcname + "_v" + std::to_string(v);
   int prog_id = func_progid[funcname];
@@ -363,11 +371,11 @@ static int handle_event(void *ctx, void *data, size_t size) {
         widths.latency = MAX(9, (int)std::to_string(latency_us).length() + 1);
         
         // Print header using calculated widths
-        printf("%*s%*s%*s%*s%*s%*s%*s%*s%*s%s\n", 
+        printf("%*s%*s%*s%*s%*s %*s%*s%*s%*s%s\n",
                widths.pid, "pid",
-               widths.client, "client", 
+               widths.client, "client",
                widths.tid, "tid",
-               widths.pool, "pool", 
+               widths.pool, "pool",
                widths.pg, "pg",
                widths.acting, "acting",
                widths.wr, "WR",
@@ -379,14 +387,15 @@ static int handle_event(void *ctx, void *data, size_t size) {
     }
 
     // Format output using calculated widths
-    printf("%*d%*lld%*lld%*lld%*s", 
+    // Note: explicit space after pg ensures separation from acting column
+    // even when acting_str exceeds its calculated width
+    printf("%*d%*lld%*lld%*lld%*s %*s",
            widths.pid, op_v->pid,
-           widths.client, op_v->cid, 
+           widths.client, op_v->cid,
            widths.tid, op_v->tid,
-           widths.pool, op_v->m_pool, 
-           widths.pg, pgid.c_str()); 
-
-    printf("%*s", widths.acting, acting_str.c_str());
+           widths.pool, op_v->m_pool,
+           widths.pg, pgid.c_str(),
+           widths.acting, acting_str.c_str());
 
     printf("%*s%*lld%*lld",
            widths.wr, wr_str.c_str(),
@@ -485,15 +494,6 @@ int main(int argc, char **argv) {
     }
   }
 
-  /* Set up timeout if provided */
-  if (timeout > 0) {
-      signal(SIGALRM, timeout_handler);
-      alarm(timeout);
-      std::cout << "Execution timeout set to " << timeout << " seconds.\n";
-  } else {
-      std::cout << "No execution timeout set (unlimited).\n";
-  }
-
   struct radostrace_bpf *skel;
   // long uprobe_offset;
   int ret = 0;
@@ -578,9 +578,60 @@ int main(int argc, char **argv) {
   /* Load and verify BPF application */
   clog << "Start to load uprobe" << endl;
 
-  skel = radostrace_bpf__open_and_load();
+  /* Open BPF skeleton first (before loading) */
+  skel = radostrace_bpf__open();
   if (!skel) {
-    cerr << "Failed to open and load BPF skeleton" << endl;
+    cerr << "Failed to open BPF skeleton" << endl;
+    return 1;
+  }
+
+  /* Set BPF global variables (rodata) - must be done after open but before load.
+   * These values match the original macro definitions and typical Ceph builds.
+   * Values differ between Ceph versions due to struct layout changes.
+   */
+
+  // Determine Ceph version: from JSON file if importing, otherwise from package
+  std::string ceph_version;
+  if (import_json) {
+    ceph_version = get_version_from_json(json_input_file);
+    clog << "Using version from JSON file: " << ceph_version << endl;
+  } else {
+    ceph_version = get_package_version(librados_path);
+    clog << "Using version from package: " << ceph_version << endl;
+  }
+
+  bool is_squid_or_above = is_ceph_version_squid_or_above(ceph_version);
+
+  if (is_squid_or_above) {
+    // Ceph squid (19.2.0) and above: smaller OSDOp struct
+    skel->rodata->CEPH_OSD_OP_SIZE = 112;              // sizeof(OSDOp) for squid+
+    skel->rodata->CEPH_OSD_OP_BUFFER_CARRIAGE_OFFSET = 56; // offset to _carriage from OSDOp start for squid+
+    clog << "Using Ceph squid (19.2.0+) struct offsets" << endl;
+  } else {
+    // Ceph reef (18.x) and earlier
+    skel->rodata->CEPH_OSD_OP_SIZE = 152;              // sizeof(OSDOp) for pre-squid
+    skel->rodata->CEPH_OSD_OP_BUFFER_CARRIAGE_OFFSET = 96; // offset to _carriage from OSDOp start for pre-squid
+    clog << "Using Ceph pre-squid struct offsets" << endl;
+  }
+
+  skel->rodata->CEPH_OSD_OP_EXTENT_OFFSET_OFFSET = 6;   // offsetof(ceph_osd_op, extent.offset)
+  skel->rodata->CEPH_OSD_OP_EXTENT_LENGTH_OFFSET = 14;  // offsetof(ceph_osd_op, extent.length)
+  skel->rodata->CEPH_OSD_OP_CLS_CLASS_OFFSET = 6;       // offsetof(ceph_osd_op, cls.class_len)
+  skel->rodata->CEPH_OSD_OP_CLS_METHOD_OFFSET = 7;      // offsetof(ceph_osd_op, cls.method_len)
+  skel->rodata->CEPH_OSD_OP_BUFFER_RAW_OFFSET = 8;      // offset to _raw in ptr_node
+  skel->rodata->CEPH_OSD_OP_BUFFER_DATA_OFFSET = 32;    // offset to data in raw
+
+  clog << "Ceph struct offsets set in BPF globals:" << endl;
+  clog << "  CEPH_OSD_OP_SIZE: " << skel->rodata->CEPH_OSD_OP_SIZE << endl;
+  clog << "  CEPH_OSD_OP_EXTENT_OFFSET_OFFSET: " << skel->rodata->CEPH_OSD_OP_EXTENT_OFFSET_OFFSET << endl;
+  clog << "  CEPH_OSD_OP_EXTENT_LENGTH_OFFSET: " << skel->rodata->CEPH_OSD_OP_EXTENT_LENGTH_OFFSET << endl;
+  clog << "  CEPH_OSD_OP_BUFFER_CARRIAGE_OFFSET: " << skel->rodata->CEPH_OSD_OP_BUFFER_CARRIAGE_OFFSET << endl;
+
+  /* Now load the BPF program with the configured globals */
+  ret = radostrace_bpf__load(skel);
+  if (ret) {
+    cerr << "Failed to load BPF skeleton: " << ret << endl;
+    radostrace_bpf__destroy(skel);
     return 1;
   }
 
@@ -604,6 +655,15 @@ int main(int argc, char **argv) {
   if (!rb) {
     cerr << "failed to setup ring_buffer" << endl;
     goto cleanup;
+  }
+
+  /* Set up timeout if provided - start counting after initialization is complete */
+  if (timeout > 0) {
+      signal(SIGALRM, timeout_handler);
+      alarm(timeout);
+      std::cout << "Execution timeout set to " << timeout << " seconds.\n";
+  } else {
+      std::cout << "No execution timeout set (unlimited).\n";
   }
 
   clog << "Started to poll from ring buffer" << endl;

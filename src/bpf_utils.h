@@ -27,10 +27,20 @@ __u32 get_tid() {
   return tid;
 }
 
-// currently only work for x86_64 arch
 __u64 fetch_register(const struct pt_regs *const ctx, int reg) {
   __u64 v = 0;
-  if (reg == 4)
+
+#if defined(__TARGET_ARCH_x86)
+  // x86_64: DWARF register numbers
+  if (reg == 0)
+    v = ctx->rax;
+  else if (reg == 1)
+    v = ctx->rdx;
+  else if (reg == 2)
+    v = ctx->rcx;
+  else if (reg == 3)
+    v = ctx->rbx;
+  else if (reg == 4)
     v = ctx->rsi;
   else if (reg == 5)
     v = ctx->rdi;
@@ -42,42 +52,39 @@ __u64 fetch_register(const struct pt_regs *const ctx, int reg) {
     v = ctx->r8;
   else if (reg == 9)
     v = ctx->r9;
-  else if (reg == 0)
-    v = ctx->rax;
-  else if (reg == 1)
-    v = ctx->rdx;
-  else if (reg == 2)
-    v = ctx->rcx;
-  else if (reg == 3)
-    v = ctx->rbx;
+  else if (reg == 10)
+    v = ctx->r10;
+  else if (reg == 11)
+    v = ctx->r11;
+  else if (reg == 12)
+    v = ctx->r12;
+  else if (reg == 13)
+    v = ctx->r13;
+  else if (reg == 14)
+    v = ctx->r14;
+  else if (reg == 15)
+    v = ctx->r15;
   else {
-    bpf_printk("unexpected register used\n");
+    bpf_printk("fetch_register: unexpected x86_64 register %d\n", reg);
   }
-  return v;
 
-  /* switch case is not supported well by eBPF, we'll run into  unable to
-  deference modified ctx error switch (reg) { case 6: v = ctx->rbp; break; case
-  7: v = ctx->rsp; break; case 0: v = ctx->rax; break; case 1: v =
-  PT_REGS_PARM3(ctx); //rdx break; case 2: v = PT_REGS_PARM4(ctx); //rcx break;
-      case 3:
-          v = ctx->rbx;
-          break;
-      case 4:
-          v = PT_REGS_PARM2(ctx); //rsi
-          break;
-      case 5:
-          v = PT_REGS_PARM1(ctx); //rdi
-          break;
-      case 8:
-          v = PT_REGS_PARM5(ctx); //r8
-          break;
-      case 9:
-          v = ctx->r9;
-          break;
-      default:
-          break;
+#elif defined(__TARGET_ARCH_arm64)
+  // ARM64: DWARF register numbers
+  // x0-x30 are registers 0-30, sp is 31
+  // Use user_pt_regs which is properly defined in BPF context
+  const struct user_pt_regs *regs = (const struct user_pt_regs *)ctx;
+  if (reg >= 0 && reg <= 30)
+    v = regs->regs[reg];
+  else if (reg == 31)
+    v = regs->sp;
+  else {
+    bpf_printk("fetch_register: unexpected ARM64 register %d\n", reg);
   }
-  */
+
+#else
+#error "Unsupported architecture: only x86 and arm64 are supported"
+#endif
+
   return v;
 }
 

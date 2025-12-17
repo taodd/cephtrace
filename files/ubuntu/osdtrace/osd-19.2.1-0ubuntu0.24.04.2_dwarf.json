@@ -1,6 +1,6 @@
 {
   "version": "19.2.1-0ubuntu0.24.04.2",
-  "/usr/bin/ceph-osd": {
+  "ceph-osd": {
     "func2pc": {
       "BlueStore::_do_write": 13889792,
       "BlueStore::_txc_apply_kv": 13629696,

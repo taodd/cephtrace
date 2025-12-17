@@ -1,6 +1,6 @@
 {
   "version": "15.2.17-0ubuntu0.20.04.6",
-  "/lib/x86_64-linux-gnu/librados.so.2": {
+  "librados.so.2": {
     "func2pc": {
       "Objecter::_finish_op": 812976,
       "Objecter::_send_op": 735072
@@ -383,7 +383,7 @@
       }
     }
   },
-  "/usr/lib/x86_64-linux-gnu/ceph/libceph-common.so.2": {
+  "libceph-common.so.2": {
     "func2pc": {
       "Objecter::_finish_op": 8097360,
       "Objecter::_send_op": 8019456

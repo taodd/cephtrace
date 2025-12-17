@@ -29,6 +29,16 @@ struct {
   __uint(max_entries, 8192);
 } hprobes SEC(".maps");
 
+/* Global variables for struct offsets - set by userspace before loading */
+const volatile __u32 CEPH_OSD_OP_SIZE = 0;
+const volatile __u32 CEPH_OSD_OP_EXTENT_OFFSET_OFFSET = 0;
+const volatile __u32 CEPH_OSD_OP_EXTENT_LENGTH_OFFSET = 0;
+const volatile __u32 CEPH_OSD_OP_CLS_CLASS_OFFSET = 0;
+const volatile __u32 CEPH_OSD_OP_CLS_METHOD_OFFSET = 0;
+const volatile __u32 CEPH_OSD_OP_BUFFER_CARRIAGE_OFFSET = 0;
+const volatile __u32 CEPH_OSD_OP_BUFFER_RAW_OFFSET = 0;
+const volatile __u32 CEPH_OSD_OP_BUFFER_DATA_OFFSET = 0;
+
 void initialize_value(struct client_op_k key) {
   struct client_op_v val;
   memset(&val, 0, sizeof(val));

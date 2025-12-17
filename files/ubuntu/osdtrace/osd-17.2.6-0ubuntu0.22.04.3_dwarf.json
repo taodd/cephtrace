@@ -1,6 +1,6 @@
 {
   "version": "17.2.6-0ubuntu0.22.04.3",
-  "/usr/bin/ceph-osd": {
+  "ceph-osd": {
     "func2pc": {
       "BlueStore::_do_write": 12618640,
       "BlueStore::_txc_apply_kv": 12638624,
