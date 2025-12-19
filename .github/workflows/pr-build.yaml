@@ -24,10 +24,19 @@ jobs:
             git submodule update --init --recursive
 
       - name: Run Makefile build
-        run: make -j all 
+        run: make -j all
 
       - name: Unit test - verify dwarf output is consistent
         run: ./tests/dwarf-compare.sh
+
+      - name: Uninstall pre-installed Ceph packages
+        run: |
+          # Remove any pre-installed Ceph packages that might conflict with MicroCeph
+          sudo apt-get remove --purge -y ceph ceph-common ceph-osd python3-ceph-argparse python3-ceph-common 'ceph-libboost*' || true
+          sudo apt-get autoremove -y || true
+
+      - name: Functional test - verify osdtrace and radostrace with MicroCeph
+        run: sudo ./tests/functional-test-microceph.sh
 
   build-ubuntu-arm64:
     runs-on: ubuntu-24.04-arm
