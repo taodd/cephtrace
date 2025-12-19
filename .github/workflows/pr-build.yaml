@@ -32,7 +32,7 @@ jobs:
       - name: Uninstall pre-installed Ceph packages
         run: |
           # Remove any pre-installed Ceph packages that might conflict with MicroCeph
-          sudo apt-get remove --purge -y python3-ceph-argparse python3-ceph-common 'ceph-libboost*' || true
+          sudo apt-get remove --purge -y ceph ceph-common ceph-osd python3-ceph-argparse python3-ceph-common 'ceph-libboost*' || true
           sudo apt-get autoremove -y || true
 
       - name: Functional test - verify osdtrace and radostrace with MicroCeph
