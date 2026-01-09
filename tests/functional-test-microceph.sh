@@ -132,7 +132,7 @@ echo "Using OSD DWARF file: $OSD_DWARF"
 echo "Using Rados DWARF file: $RADOS_DWARF"
 
 echo "=== Step 7: Find OSD process PID ==="
-OSD_PID=$(pgrep -f "ceph-osd.*--id 0" | head -1)
+OSD_PID=$(pgrep -f "ceph-osd.*--id 1" | head -1)
 if [ -z "$OSD_PID" ]; then
     echo "Error: Could not find ceph-osd process"
     ps aux | grep ceph-osd
