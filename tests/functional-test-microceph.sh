@@ -25,8 +25,8 @@ cleanup() {
     rm -f /tmp/osdtrace.log /tmp/radostrace.log
 
     # Remove test RBD resources
-    rbd rm test_pool/testimage 2>/dev/null || true
-    ceph osd pool delete test_pool test_pool --yes-i-really-really-mean-it 2>/dev/null || true
+    microceph.rbd rm test_pool/testimage 2>/dev/null || true
+    microceph.ceph osd pool delete test_pool test_pool --yes-i-really-really-mean-it 2>/dev/null || true
 
     echo "Cleanup completed"
 }
@@ -71,7 +71,7 @@ fi
 
 echo "=== Step 3: Add OSDs ==="
 # Check if we already have OSDs
-OSD_COUNT=$(ceph osd stat | grep -oP '\d+(?= osds:)' || echo "0")
+OSD_COUNT=$(microceph.ceph osd stat | grep -oP '\d+(?= osds:)' || echo "0")
 if [ "$OSD_COUNT" -lt 3 ]; then
     echo "Adding 3 loop-backed OSDs (4GB each)..."
     microceph disk add loop,4G,3
@@ -83,7 +83,7 @@ echo "=== Step 4: Wait for cluster to be healthy ==="
 TIMEOUT=120
 ELAPSED=0
 while [ $ELAPSED -lt $TIMEOUT ]; do
-    if ceph status | grep -q "HEALTH_OK\|HEALTH_WARN"; then
+    if microceph.ceph status | grep -q "HEALTH_OK\|HEALTH_WARN"; then
         echo "Cluster is ready"
         break
     fi
@@ -92,7 +92,7 @@ while [ $ELAPSED -lt $TIMEOUT ]; do
     ELAPSED=$((ELAPSED + 5))
 done
 
-ceph status
+microceph.ceph status
 
 echo "=== Step 5: Get Ceph version from snap manifest ==="
 CEPH_VERSION=$(cat /snap/microceph/current/snap/manifest.yaml | grep "^ceph-osd:" | awk '{print $2}')
@@ -142,13 +142,13 @@ echo "Found OSD process: PID $OSD_PID"
 
 echo "=== Step 8: Create RBD pool and image for testing ==="
 # Create RBD pool if it doesn't exist
-if ! ceph osd pool ls | grep -q "^test_pool$"; then
-    ceph osd pool create test_pool 32
-    ceph osd pool application enable test_pool rbd
+if ! microceph.ceph osd pool ls | grep -q "^test_pool$"; then
+    microceph.ceph osd pool create test_pool 32
+    microceph.ceph osd pool application enable test_pool rbd
 fi
 
 # Create RBD image
-rbd create test_pool/testimage --size 1G || true
+microceph.rbd create test_pool/testimage --size 1G || true
 
 echo "=== Step 9: Start osdtrace in background ==="
 timeout 30 $PROJECT_ROOT/osdtrace -i $OSD_DWARF -p $OSD_PID --skip-version-check -x > /tmp/osdtrace.log 2>&1 &
@@ -166,7 +166,7 @@ sleep 3
 echo "=== Step 11: Generate I/O traffic using rbd bench ==="
 # Run rbd bench for write operations
 echo "Running rbd bench write..."
-rbd bench --io-type write --io-size 4M --io-threads 4 --io-total 100M test_pool/testimage &
+microceph.rbd bench --io-type write --io-size 4M --io-threads 4 --io-total 100M test_pool/testimage &
 RBD_BENCH_PID=$!
 
 # Wait a bit for some I/O to occur
@@ -174,9 +174,9 @@ sleep 10
 
 # Run some rados operations to generate more librados traffic
 echo "Performing rados operations..."
-rados -p test_pool put testobj /etc/hostname || true
-rados -p test_pool get testobj /tmp/testobj || true
-rados -p test_pool rm testobj || true
+microceph.rados -p test_pool put testobj /etc/hostname || true
+microceph.rados -p test_pool get testobj /tmp/testobj || true
+microceph.rados -p test_pool rm testobj || true
 
 echo "=== Step 12: Wait for rbd bench to complete ==="
 wait $RBD_BENCH_PID 2>/dev/null || true
