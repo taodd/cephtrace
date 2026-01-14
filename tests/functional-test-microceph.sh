@@ -73,7 +73,7 @@ echo "=== Step 3: Add OSDs ==="
 # Check if we already have OSDs
 OSD_COUNT=$(microceph.ceph osd stat | grep -oP '\d+(?= osds:)' || echo "0")
 if [ "$OSD_COUNT" -lt 3 ]; then
-    echo "Adding 3 loop-backed OSDs (4GB each)..."
+    echo "Adding 3 loop-backed OSDs (1GB each)..."
     microceph disk add loop,1G,3
 else
     echo "Already have $OSD_COUNT OSDs"
