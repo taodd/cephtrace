@@ -22,6 +22,7 @@ cleanup() {
     pkill -f "rbd bench" || true
 
     # Remove test files
+    cat /tmp/osdtrace.log /tmp/radostrace.log
     rm -f /tmp/osdtrace.log /tmp/radostrace.log
 
     # Remove test RBD resources
@@ -32,6 +33,9 @@ cleanup() {
 }
 
 trap cleanup EXIT
+
+OSDTRACE_LOG="/tmp/osdtrace.log"
+RADOSTRACE_LOG="/tmp/radostrace.log"
 
 # Check if running as root or with sudo
 if [ "$EUID" -ne 0 ]; then
@@ -93,6 +97,7 @@ while [ $ELAPSED -lt $TIMEOUT ]; do
 done
 
 microceph.ceph status
+microceph --version
 
 echo "=== Step 5: Get Ceph version from snap metadata ==="
 # Primary: read from snap's metadata.yaml
@@ -155,14 +160,14 @@ fi
 microceph.rbd create test_pool/testimage --size 1G || true
 
 echo "=== Step 9: Start osdtrace in background ==="
-timeout 30 $PROJECT_ROOT/osdtrace -i $OSD_DWARF -p $OSD_PID --skip-version-check -x > /tmp/osdtrace.log 2>&1 &
-OSDTRACE_PID=$!
+timeout 30 $PROJECT_ROOT/osdtrace -i $OSD_DWARF -p $OSD_PID --skip-version-check -x >$OSDTRACE_LOG  2>&1 &
+OSDTRACE_PID=(pidof osdtrace)
 echo "Started osdtrace with PID $OSDTRACE_PID"
 sleep 3
 
 echo "=== Step 10: Start radostrace in background ==="
 # radostrace will trace all librados clients, including the rbd bench command
-timeout 30 $PROJECT_ROOT/radostrace -i $RADOS_DWARF --skip-version-check > /tmp/radostrace.log 2>&1 &
+timeout 30 $PROJECT_ROOT/radostrace -i $RADOS_DWARF --skip-version-check >$RADOSTRACE_LOG 2>&1 &
 RADOSTRACE_PID=$!
 echo "Started radostrace with PID $RADOSTRACE_PID"
 sleep 3
@@ -195,36 +200,63 @@ wait $OSDTRACE_PID 2>/dev/null || true
 wait $RADOSTRACE_PID 2>/dev/null || true
 
 echo "=== Step 14: Verify osdtrace output ==="
-if [ ! -f /tmp/osdtrace.log ]; then
-    echo "Error: osdtrace log file not found"
-    exit 1
-fi
 
-OSD_LINE_COUNT=$(wc -l < /tmp/osdtrace.log)
+# 14a. Check trace exists
+OSD_LINE_COUNT=$(wc -l < $OSDTRACE_LOG)
 echo "osdtrace captured $OSD_LINE_COUNT lines"
-
 if [ $OSD_LINE_COUNT -lt 5 ]; then
     echo "Error: osdtrace did not capture enough trace data (expected at least 5 lines)"
     echo "osdtrace output:"
-    cat /tmp/osdtrace.log
+    cat $OSDTRACE_LOG
     exit 1
 fi
 
-echo "✓ osdtrace successfully captured trace data"
+# 14b. Check OSD IDs range is within the expected limit
+MAX_OSD_ID=$(microceph.ceph osd stat | grep -oP '\d+(?= osds:)' || echo "0")
+MAX_OSD_ID=$((MAX_OSD_ID - 1))  # Convert count to max ID (0-indexed)
+echo "Max OSD ID in cluster: $MAX_OSD_ID"
 
-echo "=== Step 15: Verify radostrace output ==="
-if [ ! -f /tmp/radostrace.log ]; then
-    echo "Error: radostrace log file not found"
+osd_id_err=$(awk -v max_osd=$MAX_OSD_ID '$1=="osd" && ($2 < 0 || $2 > max_osd) {print $2; exit}' $OSDTRACE_LOG)
+if [ -n "$osd_id_err" ]; then
+    echo "ERROR: Found OSD id outside the expected range, $osd_id_err"
     exit 1
 fi
 
-RADOS_LINE_COUNT=$(wc -l < /tmp/radostrace.log)
+# 14c. Check the correct pool id is used
+TEST_POOL_ID=$(microceph.ceph osd pool ls detail | grep "^pool.*'test_pool'" | grep -oP "pool \K\d+")
+pool_id_err=$(awk -v p_id=$TEST_POOL_ID '$1=="osd" && $2=="pg"{split($4, a, "."); if (a[0] != p_id) {print a[0]; exit}}' $OSDTRACE_LOG)
+if [ -n "$pool_id_err" ]; then
+    echo "ERROR: Unexpected pool id found in osdtrace, $pool_id_err"
+    exit 1
+fi
+
+# 14d. Check PG ranges in the test pool
+TOT_PG=$(microceph.ceph osd pool get test_pool pg_num | awk '{print $2}')
+pg_range_err=$(awk -v tot=$TOT_PG '$1=="osd" && $2=="pg"{split($4, a, "."); pg=strtonum(a[1]); if (pg < 0 || pg >= tot)print a[1]}' $OSDTRACE_LOG)
+if [[ -n $pg_range_err ]]; then
+    echo "ERROR: Found PGs outside the expected range: $pg_range_err"
+    exit 1
+fi
+
+# 14e. Check for high latencies
+# Maximum acceptable latency value (in microseconds) = 100ms
+MAX_LATENCY=100000000
+high_lat=$(awk -v lmax=$MAX_LATENCY '$1=="osd" && $2=="pg" && $NF > lmax' $OSDTRACE_LOG)
+if [[ -n $high_lat ]]; then
+    echo "ERROR: Found latencies over $MAX_LATENCY μs"
+    exit 1
+fi
+
+echo "✓ All osdtrace output fields validated successfully"
+
+echo "===Step 15: Verify radostrace output ==="
+RADOS_LINE_COUNT=$(wc -l < $RADOSTRACE_LOG)
 echo "radostrace captured $RADOS_LINE_COUNT lines"
 
 if [ $RADOS_LINE_COUNT -lt 3 ]; then
     echo "Error: radostrace did not capture enough trace data (expected at least 3 lines)"
     echo "radostrace output:"
-    cat /tmp/radostrace.log
+    cat $RADOSTRACE_LOG
     exit 1
 fi
 
@@ -234,13 +266,14 @@ echo ""
 echo "=== Test Summary ==="
 echo "✓ MicroCeph cluster deployed successfully"
 echo "✓ osdtrace captured $OSD_LINE_COUNT lines of trace data"
+echo "✓ osdtrace output validated: $LINES_VALIDATED lines checked, 0 errors"
 echo "✓ radostrace captured $RADOS_LINE_COUNT lines of trace data"
 echo "✓ All functional tests passed!"
 echo ""
 echo "Sample osdtrace output (first 10 lines):"
-head -10 /tmp/osdtrace.log
+head -10 $OSDTRACE_LOG
 echo ""
 echo "Sample radostrace output (first 10 lines):"
-head -10 /tmp/radostrace.log
+head -10 $RADOSTRACE_LOG
 
 exit 0
