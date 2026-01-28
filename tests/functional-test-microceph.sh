@@ -22,7 +22,15 @@ cleanup() {
     pkill -f "rbd bench" || true
 
     # Remove test files
-    cat /tmp/osdtrace.log /tmp/radostrace.log
+    echo "OSD trace output:"
+    cat /tmp/osdtrace.log
+    echo " === END of OSD trace === "
+    echo "RADOS trace output:"
+    cat /tmp/radostrace.log
+    echo " === END of RADOS trace === "
+
+    # Remove test files
+    echo "RADOS trace output" 
     rm -f /tmp/osdtrace.log /tmp/radostrace.log
 
     # Remove test RBD resources
@@ -161,7 +169,7 @@ microceph.rbd create test_pool/testimage --size 1G || true
 
 echo "=== Step 9: Start osdtrace in background ==="
 timeout 30 $PROJECT_ROOT/osdtrace -i $OSD_DWARF -p $OSD_PID --skip-version-check -x >$OSDTRACE_LOG  2>&1 &
-OSDTRACE_PID=(pidof osdtrace)
+OSDTRACE_PID=$(pidof osdtrace)
 echo "Started osdtrace with PID $OSDTRACE_PID"
 sleep 3
 
@@ -206,8 +214,6 @@ OSD_LINE_COUNT=$(wc -l < $OSDTRACE_LOG)
 echo "osdtrace captured $OSD_LINE_COUNT lines"
 if [ $OSD_LINE_COUNT -lt 5 ]; then
     echo "Error: osdtrace did not capture enough trace data (expected at least 5 lines)"
-    echo "osdtrace output:"
-    cat $OSDTRACE_LOG
     exit 1
 fi
 
@@ -239,7 +245,7 @@ if [[ -n $pg_range_err ]]; then
 fi
 
 # 14e. Check for high latencies
-# Maximum acceptable latency value (in microseconds) = 100ms
+# Maximum acceptable latency value (in microseconds) = 100s
 MAX_LATENCY=100000000
 high_lat=$(awk -v lmax=$MAX_LATENCY '$1=="osd" && $2=="pg" && $NF > lmax' $OSDTRACE_LOG)
 if [[ -n $high_lat ]]; then
@@ -255,8 +261,6 @@ echo "radostrace captured $RADOS_LINE_COUNT lines"
 
 if [ $RADOS_LINE_COUNT -lt 3 ]; then
     echo "Error: radostrace did not capture enough trace data (expected at least 3 lines)"
-    echo "radostrace output:"
-    cat $RADOSTRACE_LOG
     exit 1
 fi
 
