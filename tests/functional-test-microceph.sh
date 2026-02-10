@@ -21,6 +21,9 @@ err() {
     echo "ERROR: $@"
 }
 
+OSDTRACE_LOG="/tmp/osdtrace.log"
+RADOSTRACE_LOG="/tmp/radostrace.log"
+
 # Cleanup function
 cleanup() {
     info "=== Cleanup ==="
@@ -37,8 +40,7 @@ cleanup() {
     info " === END of RADOS trace === "
 
     # Remove test files
-    info "RADOS trace output" 
-    rm -f /tmp/osdtrace.log /tmp/radostrace.log
+    rm -f $OSDTRACE_LOG $RADOSTRACE_LOG
 
     # Remove test RBD resources
     microceph.rbd rm test_pool/testimage 2>/dev/null || true
@@ -48,9 +50,6 @@ cleanup() {
 }
 
 trap cleanup EXIT
-
-OSDTRACE_LOG="/tmp/osdtrace.log"
-RADOSTRACE_LOG="/tmp/radostrace.log"
 
 # Check if running as root or with sudo
 if [ "$EUID" -ne 0 ]; then
@@ -131,7 +130,7 @@ OSD_DWARF="$PROJECT_ROOT/files/ubuntu/osdtrace/osd-${CEPH_VERSION}_dwarf.json"
 RADOS_DWARF="$PROJECT_ROOT/files/ubuntu/radostrace/${CEPH_VERSION}_dwarf.json"
 
 if [ ! -f "$OSD_DWARF" ]; then
-    warn "OSD DWARF file not found at $OSD_DWARF"
+    info "OSD DWARF file not found at $OSD_DWARF"
     info "Looking for any available OSD DWARF files..."
     OSD_DWARF=$(find "$PROJECT_ROOT/files/ubuntu/osdtrace/" -name "*_dwarf.json" | head -1)
     if [ -z "$OSD_DWARF" ]; then
@@ -142,7 +141,7 @@ if [ ! -f "$OSD_DWARF" ]; then
 fi
 
 if [ ! -f "$RADOS_DWARF" ]; then
-    warn "Rados DWARF file not found at $RADOS_DWARF"
+    info "Rados DWARF file not found at $RADOS_DWARF"
     info "Looking for any available radostrace DWARF files..."
     RADOS_DWARF=$(find "$PROJECT_ROOT/files/ubuntu/radostrace/" -name "*_dwarf.json" | head -1)
     if [ -z "$RADOS_DWARF" ]; then
@@ -181,22 +180,18 @@ OSDTRACE_PID=$(pidof osdtrace)
 info "Started osdtrace with PID $OSDTRACE_PID"
 sleep 3
 
-info "=== Step 10: Start radostrace in background ==="
-# radostrace will trace all librados clients, including the rbd bench command
-timeout 30 $PROJECT_ROOT/radostrace -i $RADOS_DWARF --skip-version-check >$RADOSTRACE_LOG 2>&1 &
-sleep 2 # ensure radostrace starts before we get its PID
-RADOSTRACE_PID=$(pidof radostrace)
-info "Started radostrace with PID $RADOSTRACE_PID"
-sleep 3
-
-info "=== Step 11: Generate I/O traffic using rbd bench ==="
+info "=== Step 10: Generate I/O traffic using rbd bench ==="
 # Run rbd bench for write operations
 info "Running rbd bench write..."
-microceph.rbd bench --io-type write --io-size 4M --io-threads 4 --io-total 100M test_pool/testimage &
+microceph.rbd bench --io-type write --io-size 4M --io-threads 4 --io-total 400M test_pool/testimage &
 RBD_BENCH_PID=$!
 
-# Wait a bit for some I/O to occur
-sleep 10
+info "=== Step 11: Start radostrace in background ==="
+# radostrace will trace all librados clients, including the rbd bench command
+timeout 30 $PROJECT_ROOT/radostrace -p $RBD_BENCH_PID -i $RADOS_DWARF --skip-version-check >$RADOSTRACE_LOG 2>&1 &
+sleep 2 # ensure radostrace starts before we get its PID
+RADOSTRACE_PID=$(pidof radostrace)
+info "Started radosdtrace with PID $RADOSTRACE_PID"
 
 # Run some rados operations to generate more librados traffic
 info "Performing rados operations..."
@@ -239,7 +234,7 @@ fi
 
 # 14.3 Check the correct pool id is used
 TEST_POOL_ID=$(microceph.ceph osd pool ls detail | grep "^pool.*'test_pool'" | grep -oP "pool \K\d+")
-pool_id_err=$(awk -v p_id=$TEST_POOL_ID '$1=="osd" && $2=="pg"{split($4, a, "."); if (a[0] != p_id) {print a[0]; exit}}' $OSDTRACE_LOG)
+pool_id_err=$(awk -v p_id=$TEST_POOL_ID '$1=="osd" && $2=="pg"{split($4, a, "."); if (a[1] != p_id) {print a[1]; exit}}' $OSDTRACE_LOG)
 if [ -n "$pool_id_err" ]; then
     err "Unexpected pool id found in osdtrace, $pool_id_err"
     exit 1
@@ -247,7 +242,7 @@ fi
 
 # 14.4 Check PG ranges in the test pool
 TOT_PG=$(microceph.ceph osd pool get test_pool pg_num | awk '{print $2}')
-pg_range_err=$(awk -v tot=$TOT_PG '$1=="osd" && $2=="pg"{split($4, a, "."); pg=strtonum(a[1]); if (pg < 0 || pg >= tot)print a[1]}' $OSDTRACE_LOG)
+pg_range_err=$(awk -v tot=$TOT_PG '$1=="osd" && $2=="pg"{split($4, a, "."); pg=strtonum(a[2]); if (pg < 0 || pg >= tot)print a[2]}' $OSDTRACE_LOG)
 if [[ -n $pg_range_err ]]; then
     err "Found PGs outside the expected range: $pg_range_err"
     exit 1
@@ -278,7 +273,6 @@ info "✓ radostrace successfully captured trace data"
 info "=== Test Summary ==="
 info "✓ MicroCeph cluster deployed successfully"
 info "✓ osdtrace captured $OSD_LINE_COUNT lines of trace data"
-info "✓ osdtrace output validated: $LINES_VALIDATED lines checked, 0 errors"
 info "✓ radostrace captured $RADOS_LINE_COUNT lines of trace data"
 info "✓ All functional tests passed!"
 
