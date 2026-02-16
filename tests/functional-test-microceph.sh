@@ -234,9 +234,9 @@ echo "✓ radostrace captured $RADOS_LINE_COUNT lines of trace data"
 echo "✓ All functional tests passed!"
 echo ""
 echo "Sample osdtrace output (first 10 lines):"
-head -10 /tmp/osdtrace.log
+cat /tmp/osdtrace.log
 echo ""
 echo "Sample radostrace output (first 10 lines):"
-head -10 /tmp/radostrace.log
+cat /tmp/radostrace.log
 
 exit 0
