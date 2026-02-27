@@ -32,12 +32,17 @@ cleanup() {
     pkill -f radostrace || true
     pkill -f "rbd bench" || true
 
-    info "OSD trace output:"
-    cat /tmp/osdtrace.log
-    info " === END of OSD trace === "
-    info "RADOS trace output:"
-    cat /tmp/radostrace.log
-    info " === END of RADOS trace === "
+    if [[ -e $OSDTRACE_LOG ]]; then
+        info "OSD trace output:"
+        cat $OSDTRACE_LOG
+        info " === END of OSD trace === "
+    fi
+
+    if [[ -e $RADOSTRACE_LOG ]]; then
+        info "RADOS trace output:"
+        cat $RADOSTRACE_LOG
+        info " === END of RADOS trace === "
+    fi
 
     # Remove test files
     rm -f $OSDTRACE_LOG $RADOSTRACE_LOG
