@@ -204,21 +204,12 @@ microceph.rados -p test_pool put testobj /etc/hostname || true
 microceph.rados -p test_pool get testobj /tmp/testobj || true
 microceph.rados -p test_pool rm testobj || true
 
-info "=== Step 12: Wait for rbd bench to complete ==="
-wait $RBD_BENCH_PID 2>/dev/null || true
+info "=== Step 12: Wait for all traces to complete"
+wait
 
-info "=== Step 13: Wait for traces to complete ==="
-sleep 5
+info "=== Step 13: Verify osdtrace output ==="
 
-# Kill trace processes gracefully
-kill $OSDTRACE_PID 2>/dev/null || true
-kill $RADOSTRACE_PID 2>/dev/null || true
-wait $OSDTRACE_PID 2>/dev/null || true
-wait $RADOSTRACE_PID 2>/dev/null || true
-
-info "=== Step 14: Verify osdtrace output ==="
-
-# 14.1 Check trace exists
+# 13.1 Check trace exists
 OSD_LINE_COUNT=$(wc -l < $OSDTRACE_LOG)
 info "osdtrace captured $OSD_LINE_COUNT lines"
 if [ $OSD_LINE_COUNT -lt 5 ]; then
@@ -226,7 +217,7 @@ if [ $OSD_LINE_COUNT -lt 5 ]; then
     exit 1
 fi
 
-# 14.2 Check OSD IDs range is within the expected limit
+# 13.2 Check OSD IDs range is within the expected limit
 MAX_OSD_ID=$(microceph.ceph osd stat | grep -oP '\d+(?= osds:)' || echo "0")
 MAX_OSD_ID=$((MAX_OSD_ID - 1))  # Convert count to max ID (0-indexed)
 info "Max OSD ID in cluster: $MAX_OSD_ID"
@@ -237,7 +228,7 @@ if [ -n "$osd_id_err" ]; then
     exit 1
 fi
 
-# 14.3 Check the correct pool id is used
+# 13.3 Check the correct pool id is used
 TEST_POOL_ID=$(microceph.ceph osd pool ls detail | grep "^pool.*'test_pool'" | grep -oP "pool \K\d+")
 pool_id_err=$(awk -v p_id=$TEST_POOL_ID '$1=="osd" && $2=="pg"{split($4, a, "."); if (a[1] != p_id) {print a[1]; exit}}' $OSDTRACE_LOG)
 if [ -n "$pool_id_err" ]; then
@@ -245,7 +236,7 @@ if [ -n "$pool_id_err" ]; then
     exit 1
 fi
 
-# 14.4 Check PG ranges in the test pool
+# 13.4 Check PG ranges in the test pool
 TOT_PG=$(microceph.ceph osd pool get test_pool pg_num | awk '{print $2}')
 pg_range_err=$(awk -v tot=$TOT_PG '$1=="osd" && $2=="pg"{split($4, a, "."); pg=strtonum(a[2]); if (pg < 0 || pg >= tot)print a[2]}' $OSDTRACE_LOG)
 if [[ -n $pg_range_err ]]; then
@@ -253,7 +244,7 @@ if [[ -n $pg_range_err ]]; then
     exit 1
 fi
 
-# 14.5 Check for high latencies
+# 13.5 Check for high latencies
 # Maximum acceptable latency value (in microseconds) = 100s
 MAX_LATENCY=100000000
 high_lat=$(awk -v lmax=$MAX_LATENCY '$1=="osd" && $2=="pg" && $NF > lmax' $OSDTRACE_LOG)
@@ -264,16 +255,71 @@ fi
 
 info "✓ All osdtrace output fields validated successfully"
 
-info "===Step 15: Verify radostrace output ==="
+info "===Step 14: Verify radostrace output ==="
 RADOS_LINE_COUNT=$(wc -l < $RADOSTRACE_LOG)
 info "radostrace captured $RADOS_LINE_COUNT lines"
 
-if [ $RADOS_LINE_COUNT -lt 3 ]; then
-    err "radostrace did not capture enough trace data (expected at least 3 lines)"
+# 14.1 Check that at least 50 log lines start with 'osd'
+RADOS_DATA_LINES=$(awk '$1=="osd"{n++}END{print n}' $RADOSTRACE_LOG)
+info "radostrace captured $RADOS_DATA_LINES data lines"
+
+if [ "$RADOS_DATA_LINES" -lt 50 ]; then
+    err "radostrace did not capture enough trace data (expected at least 50 lines starting with 'osd')"
     exit 1
 fi
 
-info "✓ radostrace successfully captured trace data"
+# 14.2 Check pool IDs match test_pool
+# radostrace output columns: pid client tid pool pg acting WR size latency object[ops]
+# Pool ID is field 4 (1-indexed in awk)
+if [ -z "$TEST_POOL_ID" ]; then
+    TEST_POOL_ID=$(microceph.ceph osd pool ls detail | grep "^pool.*'test_pool'" | grep -oP "pool \K\d+")
+fi
+rados_pool_err=$(awk -v p_id="$TEST_POOL_ID" \
+    '/^[[:space:]]+[0-9]/ && NF >= 9 { if ($4 != p_id) { print $4; exit } }' \
+    $RADOSTRACE_LOG)
+if [ -n "$rados_pool_err" ]; then
+    err "Unexpected pool id $rados_pool_err found in radostrace output (expected pool $TEST_POOL_ID)"
+    exit 1
+fi
+
+# 14.3 Check OSD IDs in the acting set are within the valid range (0 to MAX_OSD_ID)
+# Acting field ($6) has the form [x,y,z]
+rados_osd_err=$(awk -v max_osd="$MAX_OSD_ID" \
+    '/^[[:space:]]+[0-9]/ && NF >= 9 {
+        acting = $6
+        gsub(/[\[\]]/, "", acting)
+        n = split(acting, osds, ",")
+        for (i = 1; i <= n; i++) {
+            osd_id = osds[i] + 0
+            if (osd_id < 0 || osd_id > max_osd) { print osd_id; exit }
+        }
+    }' $RADOSTRACE_LOG)
+if [ -n "$rados_osd_err" ]; then
+    err "Found OSD id $rados_osd_err outside the expected range in radostrace output"
+    exit 1
+fi
+
+# 14.4 Check for unreasonably high latencies
+# Maximum acceptable latency value (in microseconds) = 100s
+MAX_LATENCY=100000000
+rados_high_lat=$(awk -v lmax="$MAX_LATENCY" \
+    '/^[[:space:]]+[0-9]/ && NF >= 9 { if ($9 + 0 > lmax) print $9 }' \
+    $RADOSTRACE_LOG)
+if [ -n "$rados_high_lat" ]; then
+    err "Found latencies over $MAX_LATENCY μs in radostrace output"
+    exit 1
+fi
+
+# 14.5 Check that the WR flag field contains only valid values (W or R)
+rados_flag_err=$(awk \
+    '/^[[:space:]]+[0-9]/ && NF >= 9 { if ($7 != "W" && $7 != "R") { print $7; exit } }' \
+    $RADOSTRACE_LOG)
+if [ -n "$rados_flag_err" ]; then
+    err "Found invalid WR flag '$rados_flag_err' in radostrace output (expected W or R)"
+    exit 1
+fi
+
+info "✓ All radostrace output fields validated successfully"
 
 info "=== Test Summary ==="
 info "✓ MicroCeph cluster deployed successfully"
