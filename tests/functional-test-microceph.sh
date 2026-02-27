@@ -94,17 +94,21 @@ done
 
 microceph.ceph status
 
-echo "=== Step 5: Get Ceph version from snap manifest ==="
-CEPH_VERSION=$(cat /snap/microceph/current/snap/manifest.yaml | grep "^ceph-osd:" | awk '{print $2}')
-LIBRADOS_VERSION=$(cat /snap/microceph/current/snap/manifest.yaml | grep "^librados2:" | awk '{print $2}')
+echo "=== Step 5: Get Ceph version from snap metadata ==="
+# Primary: read from snap's metadata.yaml
+CEPH_VERSION=$(grep '^ceph-version:' /snap/microceph/current/share/metadata.yaml 2>/dev/null | awk '{print $2}')
 
-echo "Ceph OSD version: $CEPH_VERSION"
-echo "Librados version: $LIBRADOS_VERSION"
+# Fallback: parse from snap's manifest.yaml
+if [ -z "$CEPH_VERSION" ]; then
+    CEPH_VERSION=$(grep 'ceph-osd=' /snap/microceph/current/snap/manifest.yaml | sed 's/.*ceph-osd=//')
+fi
+
+echo "Ceph version: $CEPH_VERSION"
 
 echo "=== Step 6: Locate DWARF JSON files in repository ==="
 # Look for matching DWARF files in the repository
 OSD_DWARF="$PROJECT_ROOT/files/ubuntu/osdtrace/osd-${CEPH_VERSION}_dwarf.json"
-RADOS_DWARF="$PROJECT_ROOT/files/ubuntu/radostrace/${LIBRADOS_VERSION}_dwarf.json"
+RADOS_DWARF="$PROJECT_ROOT/files/ubuntu/radostrace/${CEPH_VERSION}_dwarf.json"
 
 if [ ! -f "$OSD_DWARF" ]; then
     echo "Warning: OSD DWARF file not found at $OSD_DWARF"
