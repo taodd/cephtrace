@@ -14,14 +14,15 @@ jobs:
         os: [ubuntu-22.04, ubuntu-24.04, ubuntu-latest]
     steps:
       - name: Checkout code and submodules
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           submodules: recursive
+          fetch-depth: 0
 
       - name: Ensure submodules are updated
         run: |
+            sudo apt-get update
             sudo apt-get install g++ clang libelf-dev libc6-dev-i386 libdw-dev
-            git submodule update --init --recursive
 
       - name: Run Makefile build
         run: make -j all
@@ -42,17 +43,15 @@ jobs:
     runs-on: ubuntu-24.04-arm
     steps:
       - name: Checkout code and submodules
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           submodules: recursive
+          fetch-depth: 0
 
       - name: Install dependencies
         run: |
             sudo apt-get update
             sudo apt-get install -y g++ clang libelf-dev libdw-dev
-
-      - name: Ensure submodules are updated
-        run: git submodule update --init --recursive
 
       - name: Run Makefile build
         run: make -j all
@@ -70,15 +69,13 @@ jobs:
           dnf install -y git gcc gcc-c++ clang make elfutils-libelf-devel elfutils-devel glibc-devel glibc-devel.i686
 
       - name: Checkout code and submodules
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           submodules: recursive
+          fetch-depth: 0
 
       - name: Configure git safe directory
         run: git config --global --add safe.directory /__w/cephtrace/cephtrace
-
-      - name: Ensure submodules are updated
-        run: git submodule update --init --recursive
 
       - name: Run Makefile build
         run: make -j radostrace osdtrace
@@ -96,15 +93,13 @@ jobs:
           dnf install -y git gcc gcc-c++ clang make elfutils-libelf-devel elfutils-devel glibc-devel glibc-devel.i686
 
       - name: Checkout code and submodules
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           submodules: recursive
+          fetch-depth: 0
 
       - name: Configure git safe directory
         run: git config --global --add safe.directory /__w/cephtrace/cephtrace
-
-      - name: Ensure submodules are updated
-        run: git submodule update --init --recursive
 
       - name: Run Makefile build
         run: make -j radostrace osdtrace
