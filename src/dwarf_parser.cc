@@ -85,9 +85,9 @@ Dwarf_Die *DwarfParser::resolve_typedecl(Dwarf_Die *type) {
   string type_name = cache_type_prefix(type) + string(name);
 
   for (auto &p : global_type_cache) {
-    auto cus = p.second;
+    auto &cus = p.second;
     for (auto i = cus.begin(); i != cus.end(); ++i) {
-      auto v = (*i).second;
+      auto &v = (*i).second;
       if (v.find(type_name) != v.end()) return &(v[type_name]);
     }
   }
