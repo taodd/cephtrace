@@ -766,8 +766,7 @@ static int handle_module(Dwfl_Module *dwflmod, void **userdata,
 int DwarfParser::parse() {
   if(getenv("DEBUGINFOD_URLS") == NULL) {
     //If the DEBUGINFOD_URLS is not set, set it to https://debuginfod.ubuntu.com as default
-    char envs[] = "DEBUGINFOD_URLS=https://debuginfod.ubuntu.com";
-    putenv(envs);
+    setenv("DEBUGINFOD_URLS", "https://debuginfod.ubuntu.com", 0);
   }
 
   for (auto dwfl: dwfls) {
