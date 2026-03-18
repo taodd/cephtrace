@@ -39,10 +39,10 @@ const volatile __u32 CEPH_OSD_OP_BUFFER_CARRIAGE_OFFSET = 0;
 const volatile __u32 CEPH_OSD_OP_BUFFER_RAW_OFFSET = 0;
 const volatile __u32 CEPH_OSD_OP_BUFFER_DATA_OFFSET = 0;
 
+static struct client_op_v zero_val = {};
+
 void initialize_value(struct client_op_k key) {
-  struct client_op_v val;
-  memset(&val, 0, sizeof(val));
-  bpf_map_update_elem(&ops, &key, &val, 0);
+  bpf_map_update_elem(&ops, &key, &zero_val, 0);
 }
 
 SEC("uprobe")
@@ -198,7 +198,7 @@ int uprobe_send_op(struct pt_regs *ctx) {
     return 0;
   }
 
-  for (int i = 0 ; i < 8; ++i) {
+  for (int i = 0 ; i < MAX_ACTING; ++i) {
     val->acting[i] = -1;
     if (M_start < m_finish) {
 	bpf_probe_read_user(&(val->acting[i]), sizeof(int), (void *)M_start);
