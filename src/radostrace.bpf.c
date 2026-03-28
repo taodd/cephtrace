@@ -320,7 +320,7 @@ int uprobe_finish_op(struct pt_regs *ctx) {
   opv->finish_stamp = bpf_ktime_get_boot_ns();
   opv->pid = get_pid();
   // submit to ringbuf
-  struct client_op_v *e = bpf_ringbuf_reserve(&rb, sizeof(struct op_v), 0);
+  struct client_op_v *e = bpf_ringbuf_reserve(&rb, sizeof(struct client_op_v), 0);
   if (NULL == e) {
     return 0;
   }
