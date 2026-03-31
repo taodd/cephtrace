@@ -282,7 +282,7 @@ static int handle_event(void *ctx, void *data, size_t size) {
     acting_osd_list << "[";
     {
         bool first = true;
-        for (int i = 0; i < 8; ++i) {
+        for (int i = 0; i < MAX_ACTING; ++i) {
             if (op_v->acting[i] < 0) break;
             if (!first) acting_osd_list << ",";
             acting_osd_list << op_v->acting[i];

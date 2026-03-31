@@ -12,6 +12,8 @@
 #define MSG_OSD_EC_READ 110
 #define MSG_OSD_EC_READ_REPLY 111
 
+#define MAX_ACTING 16
+
 #define CEPH_OSD_FLAG_READ 0x0010
 #define CEPH_OSD_FLAG_WRITE 0x0020
 
@@ -54,7 +56,7 @@ struct client_op_v {
   char object_name[128];
   __u64 m_pool;
   __u32 m_seed;
-  int acting[6];
+  int acting[MAX_ACTING];
   __u64 offset;
   __u64 length;
   __u16 ops[3];
