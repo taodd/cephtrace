@@ -28,6 +28,7 @@ extern "C" {
 }
 #include "bpf_ceph_types.h"
 #include "dwarf_parser.h"
+#include "embedded_dwarf_data.h"
 #include "utils.h"
 
 using namespace std;
@@ -965,6 +966,78 @@ bool DwarfParser::import_from_json(const std::string& filename, const std::strin
         std::cerr << "Error importing from JSON: " << e.what() << std::endl;
         return false;
     }
+}
+
+bool DwarfParser::import_from_embedded(const std::string& expected_version, const std::string& trace_type) {
+    const EmbeddedVersion* versions = nullptr;
+    int count = 0;
+
+    if (trace_type == "osdtrace") {
+        versions = EMBEDDED_OSDTRACE_VERSIONS;
+        count = EMBEDDED_OSDTRACE_COUNT;
+    } else if (trace_type == "radostrace") {
+        versions = EMBEDDED_RADOSTRACE_VERSIONS;
+        count = EMBEDDED_RADOSTRACE_COUNT;
+    } else {
+        std::cerr << "Unknown trace type: " << trace_type << std::endl;
+        return false;
+    }
+
+    // Find matching version
+    const EmbeddedVersion* match = nullptr;
+    for (int i = 0; i < count; ++i) {
+        if (expected_version == versions[i].version) {
+            match = &versions[i];
+            break;
+        }
+    }
+
+    if (!match) {
+        return false;
+    }
+
+    std::clog << "Found embedded DWARF data for version: " << expected_version << std::endl;
+
+    // Clear existing data
+    mod_func2pc.clear();
+    mod_func2vf.clear();
+
+    // Populate from embedded data
+    for (int m = 0; m < match->num_modules; ++m) {
+        const auto& mod = match->modules[m];
+        std::string mod_name(mod.module_name);
+
+        // Import func2pc
+        for (int f = 0; f < mod.num_func2pc; ++f) {
+            mod_func2pc[mod_name][mod.func2pc[f].func_name] = mod.func2pc[f].addr;
+        }
+
+        // Import func2vf
+        for (int f = 0; f < mod.num_func2vf; ++f) {
+            const auto& fvf = mod.func2vf[f];
+            std::vector<VarField> var_fields;
+
+            for (int v = 0; v < fvf.num_var_fields; ++v) {
+                VarField vf;
+                vf.varloc.reg = fvf.var_fields[v].location.reg;
+                vf.varloc.offset = fvf.var_fields[v].location.offset;
+                vf.varloc.stack = fvf.var_fields[v].location.stack;
+
+                for (int fi = 0; fi < fvf.var_fields[v].num_fields; ++fi) {
+                    Field field;
+                    field.offset = fvf.var_fields[v].fields[fi].offset;
+                    field.pointer = fvf.var_fields[v].fields[fi].pointer;
+                    vf.fields.push_back(field);
+                }
+
+                var_fields.push_back(vf);
+            }
+
+            mod_func2vf[mod_name][fvf.func_name] = var_fields;
+        }
+    }
+
+    return true;
 }
 
 const char* DwarfParser::dwarf_attr_string(unsigned int attrnum) {

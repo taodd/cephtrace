@@ -1300,9 +1300,17 @@ int main(int argc, char **argv) {
     }
     clog << "Successfully imported dwarf data from " << json_input_file << endl;
   } else {
-    // Normal dwarf parsing path
-    dwarfparser.add_module(osd_path);
-    dwarfparser.parse();
+    // When -j is used to export JSON, force live parsing so the output reflects
+    // the installed binary (not a re-dump of the embedded data the header came
+    // from). Otherwise try embedded DWARF data first.
+    std::string version = get_package_version(osd_path);
+    if (!export_json && version != "unknown" && dwarfparser.import_from_embedded(version, "osdtrace")) {
+      clog << "Using embedded DWARF data for version: " << version << endl;
+    } else {
+      clog << "Start to parse dwarf info" << endl;
+      dwarfparser.add_module(osd_path);
+      dwarfparser.parse();
+    }
   }
 
   // Export dwarf parsing results to JSON if requested

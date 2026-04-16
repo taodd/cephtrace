@@ -546,24 +546,30 @@ int main(int argc, char **argv) {
           return 1;
       }
   } else {
-      clog << "Start to parse dwarf info" << endl;
-      dwarfparser.add_module(librbd_path);
-      dwarfparser.add_module(librados_path);
-      dwarfparser.add_module(libceph_common_path);
-      dwarfparser.parse();
+      // When -j is used to export JSON, force live parsing so the output reflects
+      // the installed binary (not a re-dump of the embedded data the header came
+      // from). Otherwise try embedded DWARF data first.
+      std::string version = get_package_version(librados_path);
+      if (!export_json && version != "unknown" && dwarfparser.import_from_embedded(version, "radostrace")) {
+          clog << "Using embedded DWARF data for version: " << version << endl;
+      } else {
+          clog << "Start to parse dwarf info" << endl;
+          dwarfparser.add_module(librbd_path);
+          dwarfparser.add_module(librados_path);
+          dwarfparser.add_module(libceph_common_path);
+          dwarfparser.parse();
+      }
 
       // Export DWARF info to JSON if requested
       if (export_json) {
           clog << "Exporting DWARF info to " << json_output_file << endl;
-          
-          // Get version information from the primary library (librados)
-          std::string version = get_package_version(librados_path);
+
           if (version != "unknown") {
               clog << "Detected package version: " << version << endl;
           } else {
               clog << "Could not determine package version for librados2, using 'unknown'" << endl;
           }
-          
+
           dwarfparser.export_to_json(json_output_file, version);
           clog << "Dwarf parsing data exported to " << json_output_file << endl;
           return 0;
