@@ -8,7 +8,7 @@ The fastest way to start tracing on Ubuntu is using pre-built binaries and DWARF
 
 ### Prerequisites
 
-- Ubuntu 20.04, 22.04, or 24.04
+- Ubuntu 20.04, 22.04, 24.04, or 26.04
 - Kernel version 5.8 or higher
 - Sudo/root access
 - A running Ceph cluster
