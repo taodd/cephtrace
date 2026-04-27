@@ -1022,7 +1022,7 @@ std::string json_output_file;
 bool import_json = false;
 bool export_json = false;
 bool skip_version_check = false;
-int process_id = -1;  // Default to -1
+std::set<int> process_ids;  // Support multiple PIDs (set ensures deduplication)
 int parse_args(int argc, char **argv) {
   static struct option long_options[] = {
     {"skip-version-check", no_argument, 0, 0},
@@ -1082,11 +1082,24 @@ int parse_args(int argc, char **argv) {
         }
         break;
       case 'p':
-        process_id = stoi(optarg);
+        {
+          std::string pid_str(optarg);
+          std::stringstream ss(pid_str);
+          std::string token;
+          while (std::getline(ss, token, ',')) {
+            try {
+              int pid = stoi(token);
+              process_ids.insert(pid);
+            } catch (...) {
+              std::cerr << "Invalid PID value: " << token << std::endl;
+              return -1;
+            }
+          }
+        }
         break;
       case '?':
       case 'h':
-        std::cout << "Usage: " << argv[0] << "[-d <seconds>] [-m <avg|max>] [-l <milliseconds>] [-o <osd-id>] [-x] [-b] [-j] [-i <filename>] [-t <seconds>] [-p <pid>] [--skip-version-check]\n";
+        std::cout << "Usage: " << argv[0] << "[-d <seconds>] [-m <avg|max>] [-l <milliseconds>] [-o <osd-id>] [-x] [-b] [-j] [-i <filename>] [-t <seconds>] [-p <pid1,pid2,...>] [--skip-version-check]\n";
         std::cout << "  -d <seconds>              Set probe duration in seconds to calculate average latency\n";
         std::cout << "  -m <avg|max>              Set operation latency collection mode\n";
         std::cout << "  -l <milliseconds>         Set operation latency threshold to capture\n";
@@ -1096,7 +1109,7 @@ int parse_args(int argc, char **argv) {
         std::cout << "  -j                        Export DWARF info to JSON file\n";
         std::cout << "  -i <filename>             Import DWARF info from JSON file\n";
         std::cout << "  -t <seconds>              Set execution timeout in seconds\n";
-        std::cout << "  -p <pid>                  Probe using a Process ID (Mandatory for tracing containerized processes)\n";
+        std::cout << "  -p <pid1,pid2,...>        Probe using Process IDs (comma-separated, mandatory for tracing containerized processes)\n";
         std::cout << "  --skip-version-check      Skip version check when importing DWARF JSON (currently needed for containers)\n";
         std::cout << "  -h                        Show this help message\n";
         std::cout << "----------------------------------------------------------------------------------------------------------------------------------------\n";
@@ -1149,11 +1162,6 @@ int attach_uprobe(struct osdtrace_bpf *skel,
                  std::string funcname,
                  int v = 0) {
 
-  std::string pid_path = path;
-  if (process_id != -1) {
-    pid_path = "/proc/" + std::to_string(process_id) + "/root/" + path;
-  }
-
   std::string path_basename = get_basename(path);
   auto &func2pc = dp.mod_func2pc[path_basename];
   size_t func_addr = func2pc[funcname];
@@ -1164,23 +1172,46 @@ int attach_uprobe(struct osdtrace_bpf *skel,
   if (v > 0)
       funcname = funcname + "_v" + std::to_string(v);
   int pid = func_progid[funcname];
+
+  std::string attach_path = (process_id == -1) ? path : "/proc/" + std::to_string(process_id) + "/root/" + path;
   struct bpf_link *ulink = bpf_program__attach_uprobe(
       *skel->skeleton->progs[pid].prog,
       false /* not uretprobe */,
       process_id,
-      pid_path.c_str(), func_addr);
+      attach_path.c_str(), func_addr);
   if (!ulink) {
-    cerr << "Failed to attach uprobe to " << funcname << endl;
+    if (process_id == -1)
+      cerr << "Failed to attach uprobe to " << funcname << endl;
+    else
+      cerr << "Failed to attach uprobe to " << funcname << " for PID " << process_id << endl;
     return -errno;
   }
+  if (process_id == -1)
+    clog << "uprobe " << funcname << " attached to all processes" << endl;
+  else
+    clog << "uprobe " << funcname << " attached to PID " << process_id << endl;
+  return 0;
+}
 
-  clog << "uprobe " << funcname <<  " attached" << endl;
+int attach_uprobes(struct osdtrace_bpf *skel,
+                  DwarfParser &dp,
+                  std::string path,
+                  const std::set<int> &process_ids,
+                  std::string funcname,
+                  int v = 0) {
+  if (process_ids.empty())
+    return attach_uprobe(skel, dp, path, -1, funcname, v);
+  for (auto pid : process_ids) {
+    int ret = attach_uprobe(skel, dp, path, pid, funcname, v);
+    if (ret < 0) return ret;
+  }
   return 0;
 }
 
 int attach_retuprobe(struct osdtrace_bpf *skel,
 	           DwarfParser &dp,
 	           std::string path,
+                   int process_id,
 		   std::string funcname,
 		   int v = 0) {
   std::string path_basename = get_basename(path);
@@ -1193,17 +1224,39 @@ int attach_retuprobe(struct osdtrace_bpf *skel,
   if (v > 0)
       funcname = funcname + "_v" + std::to_string(v);
   int pid = func_progid[funcname];
+
+  std::string attach_path = (process_id == -1) ? path : "/proc/" + std::to_string(process_id) + "/root/" + path;
   struct bpf_link *ulink = bpf_program__attach_uprobe(
-      *skel->skeleton->progs[pid].prog, 
+      *skel->skeleton->progs[pid].prog,
       true /* uretprobe */,
       process_id,
-      path.c_str(), func_addr);
+      attach_path.c_str(), func_addr);
   if (!ulink) {
-    cerr << "Failed to attach uretprobe to " << funcname << endl;
+    if (process_id == -1)
+      cerr << "Failed to attach uretprobe to " << funcname << endl;
+    else
+      cerr << "Failed to attach uretprobe to " << funcname << " for PID " << process_id << endl;
     return -errno;
   }
+  if (process_id == -1)
+    clog << "uretprobe " << funcname << " attached to all processes" << endl;
+  else
+    clog << "uretprobe " << funcname << " attached to PID " << process_id << endl;
+  return 0;
+}
 
-  clog << "uretprobe " << funcname <<  " attached" << endl;
+int attach_retuprobes(struct osdtrace_bpf *skel,
+                     DwarfParser &dp,
+                     std::string path,
+                     const std::set<int> &process_ids,
+                     std::string funcname,
+                     int v = 0) {
+  if (process_ids.empty())
+    return attach_retuprobe(skel, dp, path, -1, funcname, v);
+  for (auto pid : process_ids) {
+    int ret = attach_retuprobe(skel, dp, path, pid, funcname, v);
+    if (ret < 0) return ret;
+  }
   return 0;
 }
 
@@ -1212,11 +1265,11 @@ int main(int argc, char **argv) {
 
   if (parse_args(argc, argv) < 0) return 0;
 
-  // Validate process_id if specified
-  if (process_id != -1) {
-    std::string proc_path = "/proc/" + std::to_string(process_id);
+  // Validate all process_ids if specified
+  for (int pid : process_ids) {
+    std::string proc_path = "/proc/" + std::to_string(pid);
     if (access(proc_path.c_str(), F_OK) != 0) {
-      std::cerr << "Error: Process ID " << process_id << " does not exist" << std::endl;
+      std::cerr << "Error: Process ID " << pid << " does not exist" << std::endl;
       return 1;
     }
   }
@@ -1229,32 +1282,38 @@ int main(int argc, char **argv) {
 
   std::string osd_path;
 
-  if (process_id != -1) {
-    // PID specified - read executable path from /proc/<pid>/exe
-    std::string exe_link = "/proc/" + std::to_string(process_id) + "/exe";
-    char exe_path[PATH_MAX];
-    ssize_t len = readlink(exe_link.c_str(), exe_path, sizeof(exe_path) - 1);
+  if (!process_ids.empty()) {
+    // PIDs specified - read executable path from /proc/<first_pid>/exe
+    // All PIDs should be running the same ceph-osd binary
+    int first_pid = *process_ids.begin();
+    osd_path = get_exe_path_for_pid(first_pid);
+    if (osd_path.empty()) {
+      std::cerr << "Error: Could not read /proc/" << first_pid << "/exe" << std::endl;
+      return 1;
+    }
+    clog << "Reading executable from process " << first_pid << ": " << osd_path << endl;
 
-    if (len != -1) {
-      exe_path[len] = '\0';
-      std::string target(exe_path);
-      // Remove "(deleted)" suffix if present
-      size_t deleted_pos = target.find(" (deleted)");
-      if (deleted_pos != std::string::npos) {
-        target = target.substr(0, deleted_pos);
-      }
-      osd_path = target;
-      clog << "Reading executable from process " << process_id << ": " << osd_path << endl;
+    // Validate that the process is actually running ceph-osd
+    if (osd_path.find("ceph-osd") == std::string::npos) {
+      std::cerr << "Error: Process ID " << first_pid << " is not running ceph-osd" << std::endl;
+      std::cerr << "Process is running: " << osd_path << std::endl;
+      return 1;
+    }
 
-      // Validate that the process is actually running ceph-osd
-      if (osd_path.find("ceph-osd") == std::string::npos) {
-        std::cerr << "Error: Process ID " << process_id << " is not running ceph-osd" << std::endl;
-        std::cerr << "Process is running: " << osd_path << std::endl;
+    // Validate that all PIDs are running the same executable
+    for (auto it = std::next(process_ids.begin()); it != process_ids.end(); ++it) {
+      int pid = *it;
+      std::string pid_exe = get_exe_path_for_pid(pid);
+      if (pid_exe.empty()) {
+        std::cerr << "Error: Could not read /proc/" << pid << "/exe" << std::endl;
         return 1;
       }
-    } else {
-      std::cerr << "Error: Could not read /proc/" << process_id << "/exe" << std::endl;
-      return 1;
+      if (pid_exe != osd_path) {
+        std::cerr << "Error: Process ID " << pid << " is running a different executable" << std::endl;
+        std::cerr << "Expected: " << osd_path << std::endl;
+        std::cerr << "Got: " << pid_exe << std::endl;
+        return 1;
+      }
     }
   } else {
     // No PID specified - search for ceph-osd on the system
@@ -1342,40 +1401,40 @@ int main(int argc, char **argv) {
 
   //Start to load the probes
   if (probe_mode == OP_SINGLE_PROBE) {
-    attach_uprobe(skel, dwarfparser, osd_path, process_id, "PrimaryLogPG::log_op_stats", 2);
+    attach_uprobes(skel, dwarfparser, osd_path, process_ids, "PrimaryLogPG::log_op_stats", 2);
   }
 
   if (probe_mode & OP_FULL_PROBE) {
-    attach_uprobe(skel, dwarfparser, osd_path, process_id, "OSD::dequeue_op");
+    attach_uprobes(skel, dwarfparser, osd_path, process_ids, "OSD::dequeue_op");
 
-    attach_uprobe(skel, dwarfparser, osd_path, process_id, "PrimaryLogPG::execute_ctx");
+    attach_uprobes(skel, dwarfparser, osd_path, process_ids, "PrimaryLogPG::execute_ctx");
 
-    attach_uprobe(skel, dwarfparser, osd_path, process_id, "ECBackend::submit_transaction");
+    attach_uprobes(skel, dwarfparser, osd_path, process_ids, "ECBackend::submit_transaction");
 
-    attach_uprobe(skel, dwarfparser, osd_path, process_id, "OpRequest::mark_flag_point_string");
+    attach_uprobes(skel, dwarfparser, osd_path, process_ids, "OpRequest::mark_flag_point_string");
 
-    attach_uprobe(skel, dwarfparser, osd_path, process_id, "OpRequest::mark_flag_point");
+    attach_uprobes(skel, dwarfparser, osd_path, process_ids, "OpRequest::mark_flag_point");
 
-    attach_uprobe(skel, dwarfparser, osd_path, process_id, "ReplicatedBackend::generate_subop");
+    attach_uprobes(skel, dwarfparser, osd_path, process_ids, "ReplicatedBackend::generate_subop");
 
-    attach_uprobe(skel, dwarfparser, osd_path, process_id, "ReplicatedBackend::do_repop_reply");
+    attach_uprobes(skel, dwarfparser, osd_path, process_ids, "ReplicatedBackend::do_repop_reply");
 
-    attach_uprobe(skel, dwarfparser, osd_path, process_id, "BlueStore::queue_transactions");
+    attach_uprobes(skel, dwarfparser, osd_path, process_ids, "BlueStore::queue_transactions");
 
-    attach_uprobe(skel, dwarfparser, osd_path, process_id, "BlueStore::_txc_calc_cost");
+    attach_uprobes(skel, dwarfparser, osd_path, process_ids, "BlueStore::_txc_calc_cost");
 
-    attach_uprobe(skel, dwarfparser, osd_path, process_id, "BlueStore::_txc_state_proc");
+    attach_uprobes(skel, dwarfparser, osd_path, process_ids, "BlueStore::_txc_state_proc");
 
-    attach_uprobe(skel, dwarfparser, osd_path, process_id, "PrimaryLogPG::log_op_stats");
+    attach_uprobes(skel, dwarfparser, osd_path, process_ids, "PrimaryLogPG::log_op_stats");
 
-    attach_uprobe(skel, dwarfparser, osd_path, process_id, "ReplicatedBackend::repop_commit");
+    attach_uprobes(skel, dwarfparser, osd_path, process_ids, "ReplicatedBackend::repop_commit");
 
-    attach_uprobe(skel, dwarfparser, osd_path, process_id, "OSD::enqueue_op");
+    attach_uprobes(skel, dwarfparser, osd_path, process_ids, "OSD::enqueue_op");
   }
 
   if (probe_mode & BLUESTORE_PROBE) {
-    attach_uprobe(skel, dwarfparser, osd_path, process_id, "BlueStore::log_latency");
-    attach_uprobe(skel, dwarfparser, osd_path, process_id, "BlueStore::log_latency_fn");
+    attach_uprobes(skel, dwarfparser, osd_path, process_ids, "BlueStore::log_latency");
+    attach_uprobes(skel, dwarfparser, osd_path, process_ids, "BlueStore::log_latency_fn");
   }
 
   bootstamp = get_bootstamp();
