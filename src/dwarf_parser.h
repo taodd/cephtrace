@@ -96,6 +96,13 @@ class DwarfParser {
    * @return bool Returns true if import was successful, false otherwise
    */
   bool import_from_json(const std::string& filename, const std::string& expected_version = "");
+  /**
+   * Imports module function data from compiled-in embedded DWARF data
+   * @param expected_version Version string to match against embedded data
+   * @param trace_type "osdtrace" or "radostrace"
+   * @return bool Returns true if a matching version was found and imported
+   */
+  bool import_from_embedded(const std::string& expected_version, const std::string& trace_type);
 
   static const char* dwarf_attr_string(unsigned int attrnum);
   static const char* dwarf_form_string(unsigned int form);

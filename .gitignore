@@ -8,3 +8,6 @@ debian/tmp/
 # python related
 __pycache__/
 
+# auto-generated
+src/embedded_dwarf_data.h
+

@@ -34,6 +34,13 @@ PROG_OBJS := osdtrace radostrace kfstrace
 PROG_SRCS := $(addprefix $(OSDTRACE_SRC)/,$(addsuffix .cc,$(PROG_OBJS)))
 PROG_BPF_SRCS := $(addprefix $(OSDTRACE_SRC)/,$(addsuffix .bpf.c,$(PROG_OBJS)))
 
+# Auto-generated embedded DWARF data header.
+# JSON paths may contain ':' (Ceph epoch notation) which Make treats as the
+# target/prereq separator — escape with backslash so it's a literal filename.
+EMBEDDED_DWARF_HDR := $(OSDTRACE_SRC)/embedded_dwarf_data.h
+EMBEDDED_DWARF_GEN := tools/generate_embedded_dwarf.py
+EMBEDDED_DWARF_JSON := $(shell find files -name '*.json' 2>/dev/null | sed 's/:/\\:/g')
+
 # Include paths
 INCLUDES := -I$(OUTPUT) \
            -I$(LIBBPF_TOP)/include/uapi \
@@ -58,7 +65,7 @@ endif
 
 # Main targets
 .PHONY: all clean
-all: $(OSDTRACE_SRC)/ceph_btf_local.h $(PROG_OBJS)
+all: $(OSDTRACE_SRC)/ceph_btf_local.h $(EMBEDDED_DWARF_HDR) $(PROG_OBJS)
 
 install:
 	$(call msg,INSTALL)
@@ -93,7 +100,7 @@ src-pkg:
 
 clean:
 	$(call msg,CLEAN)
-	$(Q)rm -rf $(OUTPUT) $(PROG_OBJS) $(DOCDIR)/*.8.gz $(DOCDIR)/*.in $(OSDTRACE_SRC)/ceph_btf_local.h
+	$(Q)rm -rf $(OUTPUT) $(PROG_OBJS) $(DOCDIR)/*.8.gz $(DOCDIR)/*.in $(OSDTRACE_SRC)/ceph_btf_local.h $(EMBEDDED_DWARF_HDR)
 
 $(OUTPUT) $(OUTPUT)/libbpf $(BPFTOOL_OUTPUT):
 	$(call msg,MKDIR,$@)
@@ -147,8 +154,13 @@ $(OUTPUT)/%.o: $(OSDTRACE_SRC)/%.cc $(OSDTRACE_SRC)/*.h $(OUTPUT)/%.skel.h | $(O
 	$(call msg,CXX,$@)
 	$(Q)$(CXX) $(CXXFLAGS) -c -o $@ $<
 
+# Generate embedded DWARF data header from JSON files in files/
+$(EMBEDDED_DWARF_HDR): $(EMBEDDED_DWARF_GEN) $(EMBEDDED_DWARF_JSON)
+	$(call msg,GEN-DWARF,$@)
+	$(Q)python3 $(EMBEDDED_DWARF_GEN)
+
 # Special rule for dwarf_parser.o since it doesn't need a skel.h
-$(OUTPUT)/dwarf_parser.o: $(OSDTRACE_SRC)/dwarf_parser.cc $(OUTPUT)/osdtrace.skel.h $(OSDTRACE_SRC)/*.h | $(OUTPUT) $(LIBBPF_OBJ)
+$(OUTPUT)/dwarf_parser.o: $(OSDTRACE_SRC)/dwarf_parser.cc $(OUTPUT)/osdtrace.skel.h $(EMBEDDED_DWARF_HDR) $(OSDTRACE_SRC)/*.h | $(OUTPUT) $(LIBBPF_OBJ)
 	$(call msg,CXX,$@)
 	$(Q)$(CXX) $(CXXFLAGS) -c -o $@ $<
 
