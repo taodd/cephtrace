@@ -1031,7 +1031,10 @@ int parse_args(int argc, char **argv) {
   };
 
   int option_index = 0;
-  char opt;
+  // getopt_long() returns int and uses -1 to signal end-of-options; storing
+  // it in a plain char is unsafe on platforms where char is unsigned by
+  // default (the `!= -1` test can then loop forever).  Match kfstrace.
+  int opt;
   while ((opt = getopt_long(argc, argv, ":d:m:t:o:xbj:i:l:p:V", long_options, &option_index)) != -1) {
     switch (opt) {
       case 0:
