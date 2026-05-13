@@ -45,6 +45,21 @@ install_dbgsyms_from_launchpad() {
     for pkg in $pkgs; do
         wget --no-verbose "${base_url}/${pkg}_${ceph_ver}_${arch}.ddeb"
     done
+
+    # The .ddebs pin the matching main packages by exact version.  The CI
+    # runner only has ceph-common installed up to this point — the apt
+    # path would have pulled ceph-osd in transitively, but `dpkg -i` does
+    # not resolve dependencies, so ensure every main package whose dbgsym
+    # we're about to install is present first.
+    #
+    # Derive the main package name by stripping the "-dbgsym" suffix.
+    local main_pkgs=""
+    for pkg in $pkgs; do
+        main_pkgs="$main_pkgs ${pkg%-dbgsym}"
+    done
+    # shellcheck disable=SC2086  # word-splitting on $main_pkgs is intended
+    sudo apt install -y $main_pkgs
+
     sudo dpkg -i ./*.ddeb
     popd >/dev/null
     rm -rf "$workdir"
