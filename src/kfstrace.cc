@@ -23,6 +23,7 @@
 
 #include "kfstrace.skel.h"
 #include "bpf_ceph_types.h"
+#include "version_utils.h"
 
 #define CEPH_PG_MAX_SIZE 8
 #define CEPH_OID_INLINE_LEN 24
@@ -293,6 +294,7 @@ static void print_usage(const char *prog)
     printf("Usage: %s [OPTIONS]\n", prog);
     printf("\nOPTIONS:\n");
     printf("  -h, --help                   Show this help message\n");
+    printf("  -V, --version                Print version information and exit\n");
     printf("  -t, --timeout <s>            Set execution timeout (default: no timeout)\n");
     printf("  -m, --mode <mode>            Tracing mode: osd, mds, or all (default: mds)\n");
     printf("  -l, --latency <microseconds> Set operation latency threshold to capture (default: 0)\n");
@@ -323,6 +325,7 @@ int main(int argc, char **argv)
 
     static const struct option long_options[] = {
         {"help", no_argument, NULL, 'h'},
+        {"version", no_argument, NULL, 'V'},
         {"timeout", required_argument, NULL, 't'},
         {"mode", required_argument, NULL, 'm'},
         {"latency", required_argument, NULL, 'l'},
@@ -331,10 +334,13 @@ int main(int argc, char **argv)
 
     // Parse command line arguments
     int opt;
-    while ((opt = getopt_long(argc, argv, "ht:m:l:", long_options, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "hVt:m:l:", long_options, NULL)) != -1) {
         switch (opt) {
         case 'h':
             print_usage(argv[0]);
+            return 0;
+        case 'V':
+            print_tool_version("kfstrace");
             return 0;
         case 't':
             timeout_seconds = atoi(optarg);

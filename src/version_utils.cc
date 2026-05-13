@@ -16,6 +16,23 @@
 
 using json = nlohmann::json;
 
+// Build-time metadata. The Makefile injects these via -D flags when
+// compiling this translation unit. The fallbacks here let the file still
+// compile if it is built outside the project Makefile (e.g. for IDE
+// indexing), in which case the --version output simply reports "unknown".
+#ifndef CEPHTRACE_VERSION
+#define CEPHTRACE_VERSION "unknown"
+#endif
+#ifndef CEPHTRACE_BUILD_DATE
+#define CEPHTRACE_BUILD_DATE "unknown"
+#endif
+#ifndef CEPHTRACE_GIT_DESCRIBE
+#define CEPHTRACE_GIT_DESCRIBE ""
+#endif
+#ifndef CEPHTRACE_GIT_BRANCH
+#define CEPHTRACE_GIT_BRANCH ""
+#endif
+
 std::string get_package_version(const std::string& library_path) {
     // Extract the library name from the path
     std::string lib_name;
@@ -495,6 +512,35 @@ bool check_executable_deleted(int process_id, const std::string& exe_name) {
     }
 
     return false;
+}
+
+void print_tool_version(const char* tool_name) {
+    const std::string version = CEPHTRACE_VERSION;
+    const std::string git_describe = CEPHTRACE_GIT_DESCRIBE;
+    const std::string git_branch = CEPHTRACE_GIT_BRANCH;
+    const std::string build_date = CEPHTRACE_BUILD_DATE;
+
+    // A development build is anything built from a git checkout — the
+    // Makefile only populates GIT_DESCRIBE when `git` succeeds. Release
+    // tarballs / .deb builds ship without .git and so produce an empty
+    // string, which we treat as the release-build path.
+    const bool is_dev_build = !git_describe.empty();
+
+    std::cout << tool_name << " " << version;
+    if (is_dev_build) {
+        std::cout << " (development build)";
+    }
+    std::cout << "\n";
+
+    if (is_dev_build) {
+        std::cout << "Based on:  cephtrace " << version << "\n";
+        std::cout << "Git:       " << git_describe;
+        if (!git_branch.empty() && git_branch != "HEAD") {
+            std::cout << " (branch " << git_branch << ")";
+        }
+        std::cout << "\n";
+    }
+    std::cout << "Built:     " << build_date << std::endl;
 }
 
 std::string get_version_from_json(const std::string& json_file) {

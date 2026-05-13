@@ -97,4 +97,26 @@ bool is_ceph_version_squid_or_above(const std::string& version);
  */
 std::string get_version_from_json(const std::string& json_file);
 
+/**
+ * Print the version banner for a cephtrace tool to stdout.
+ *
+ * For a tagged release tarball (no embedded git metadata) prints just the
+ * point release, e.g.
+ *
+ *     osdtrace 1.4
+ *     Built: 2026-05-13
+ *
+ * For a development build (compiled from a git checkout) it additionally
+ * shows which point release the build is derived from plus the git locator,
+ * e.g.
+ *
+ *     osdtrace 1.4 (development build)
+ *     Based on:  cephtrace 1.4
+ *     Git:       v1.4-3-gabc1234-dirty (branch main)
+ *     Built:     2026-05-13
+ *
+ * @param tool_name The name to display (e.g. "osdtrace", "radostrace").
+ */
+void print_tool_version(const char* tool_name);
+
 #endif // VERSION_UTILS_H
