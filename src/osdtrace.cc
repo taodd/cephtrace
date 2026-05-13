@@ -1026,12 +1026,13 @@ std::set<int> process_ids;  // Support multiple PIDs (set ensures deduplication)
 int parse_args(int argc, char **argv) {
   static struct option long_options[] = {
     {"skip-version-check", no_argument, 0, 0},
+    {"version", no_argument, 0, 'V'},
     {0, 0, 0, 0}
   };
 
   int option_index = 0;
   char opt;
-  while ((opt = getopt_long(argc, argv, ":d:m:t:o:xbj:i:l:p:", long_options, &option_index)) != -1) {
+  while ((opt = getopt_long(argc, argv, ":d:m:t:o:xbj:i:l:p:V", long_options, &option_index)) != -1) {
     switch (opt) {
       case 0:
         // Handle long options
@@ -1039,6 +1040,9 @@ int parse_args(int argc, char **argv) {
           skip_version_check = true;
         }
         break;
+      case 'V':
+        print_tool_version("osdtrace");
+        exit(0);
       case 'd':
         period = optarg[0] - '0';
         break;
@@ -1111,6 +1115,7 @@ int parse_args(int argc, char **argv) {
         std::cout << "  -t <seconds>              Set execution timeout in seconds\n";
         std::cout << "  -p <pid1,pid2,...>        Probe using Process IDs (comma-separated, mandatory for tracing containerized processes)\n";
         std::cout << "  --skip-version-check      Skip version check when importing DWARF JSON (currently needed for containers)\n";
+        std::cout << "  -V, --version             Print version information and exit\n";
         std::cout << "  -h                        Show this help message\n";
         std::cout << "----------------------------------------------------------------------------------------------------------------------------------------\n";
         std::cout << "                                                SUPPORTED PROBE MODE DETAILS\n";

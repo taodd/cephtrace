@@ -1,6 +1,20 @@
-VERSION := 1.4
+VERSION := 1.6
 DATE ?= $(shell date +%Y-%m-%d)
 SRC_TGT := release
+
+# Git metadata for the --version banner. These resolve to empty strings on
+# release-tarball builds (no .git/ present) which is exactly what
+# print_tool_version() uses to distinguish "release" from "development".
+GIT_DESCRIBE := $(shell git describe --tags --dirty --always 2>/dev/null)
+GIT_BRANCH   := $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
+
+# Defines applied only when compiling src/version_utils.cc — keeps every
+# other translation unit cache-friendly even when git state changes.
+VERSION_DEFINES := \
+    -DCEPHTRACE_VERSION='"$(VERSION)"' \
+    -DCEPHTRACE_BUILD_DATE='"$(DATE)"' \
+    -DCEPHTRACE_GIT_DESCRIBE='"$(GIT_DESCRIBE)"' \
+    -DCEPHTRACE_GIT_BRANCH='"$(GIT_BRANCH)"'
 # Populate Source Package Name
 ifeq ($(SRC_TGT),debian)
 	SRC_PKG := cephtrace_$(VERSION).orig.tar.gz
@@ -164,10 +178,16 @@ $(OUTPUT)/dwarf_parser.o: $(OSDTRACE_SRC)/dwarf_parser.cc $(OUTPUT)/osdtrace.ske
 	$(call msg,CXX,$@)
 	$(Q)$(CXX) $(CXXFLAGS) -c -o $@ $<
 
-# Special rule for version_utils.o since it doesn't need a skel.h
-$(OUTPUT)/version_utils.o: $(OSDTRACE_SRC)/version_utils.cc $(OSDTRACE_SRC)/*.h | $(OUTPUT) $(LIBBPF_OBJ)
+# Special rule for version_utils.o since it doesn't need a skel.h.
+# Depends on FORCE so the git describe / build-date macros are always
+# re-evaluated — otherwise an unchanged source file would keep stale
+# metadata in the binary across commits.
+.PHONY: FORCE
+FORCE:
+
+$(OUTPUT)/version_utils.o: $(OSDTRACE_SRC)/version_utils.cc $(OSDTRACE_SRC)/*.h FORCE | $(OUTPUT) $(LIBBPF_OBJ)
 	$(call msg,CXX,$@)
-	$(Q)$(CXX) $(CXXFLAGS) -c -o $@ $<
+	$(Q)$(CXX) $(CXXFLAGS) $(VERSION_DEFINES) -c -o $@ $<
 
 
 # Special rule for kfstrace.o since it doesn't need dwarf_parser
@@ -182,10 +202,11 @@ $(1): $(OUTPUT)/$(1).o $(COMMON_OBJS) $(OUTPUT)/$(1).skel.h $(LIBBPF_OBJ) | $(OU
 	$(Q)$$(CXX) $$(CXXFLAGS) -o $$@ $$< $$(COMMON_OBJS) $$(LIBS)
 endef
 
-# Special rule for kfstrace - doesn't need dwarf_parser
-kfstrace: $(OUTPUT)/kfstrace.o $(OUTPUT)/kfstrace.skel.h $(LIBBPF_OBJ) | $(OUTPUT)
+# Special rule for kfstrace - doesn't need dwarf_parser, but does pull in
+# version_utils for the shared --version banner.
+kfstrace: $(OUTPUT)/kfstrace.o $(OUTPUT)/version_utils.o $(OUTPUT)/kfstrace.skel.h $(LIBBPF_OBJ) | $(OUTPUT)
 	$(call msg,LINK,$@)
-	$(Q)$(CXX) $(CXXFLAGS) -o $(DESTDIR)$@ $< $(LIBBPF_OBJ) -lelf -lz -ldl
+	$(Q)$(CXX) $(CXXFLAGS) -o $(DESTDIR)$@ $< $(OUTPUT)/version_utils.o $(LIBBPF_OBJ) -lelf -lz -ldl
 
 # Apply build rule to other programs (osdtrace and radostrace)
 $(foreach prog,$(filter-out kfstrace,$(PROG_OBJS)),$(eval $(call build_rule,$(prog))))

@@ -472,6 +472,9 @@ int main(int argc, char **argv) {
           }
       } else if (arg == "--skip-version-check") {
           skip_version_check = true;
+      } else if (arg == "-V" || arg == "--version") {
+          print_tool_version("radostrace");
+          return 0;
       } else if (arg == "-h" || arg == "--help") {
           std::cout << "Usage: " << argv[0] << " [-t <timeout seconds>] [-j [filename]] [-i <filename>] [-o [filename]] [-p <pid>] [--skip-version-check]\n";
           std::cout << "  -t, --timeout <seconds>    Set execution timeout in seconds\n";
@@ -480,6 +483,7 @@ int main(int argc, char **argv) {
           std::cout << "  -o, --output <file>        Export events data info to CSV (default: radostrace_events.csv)\n";
           std::cout << "  -p, --pid <pid>            Attach uprobes only to the specified process ID (Mandatory for container based process tracing)\n";
           std::cout << "  --skip-version-check       Skip version check when importing DWARF JSON (currently needed for containers)\n";
+          std::cout << "  -V, --version              Print version information and exit\n";
           std::cout << "  -h, --help                 Show this help message\n";
           return 0;
       }
