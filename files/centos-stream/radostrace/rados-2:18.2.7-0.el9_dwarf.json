@@ -1,6 +1,8 @@
 {
   "version": "2:18.2.7-0.el9",
+  "arch": "amd64",
   "libceph-common.so.2": {
+    "build_id": "45c9fc9d45c392ed96f6ed2283fc4af3112c988f",
     "func2pc": {
       "Objecter::_finish_op": 5875648,
       "Objecter::_send_op": 5911280
@@ -384,6 +386,7 @@
     }
   },
   "librados.so.2": {
+    "build_id": "1cc1de0162303fe049602ddeb7dff08bd5b3be95",
     "func2pc": {
       "Objecter::_finish_op": 949904,
       "Objecter::_send_op": 953376
@@ -767,6 +770,7 @@
     }
   },
   "librbd.so.1": {
+    "build_id": "d811a761bad04cf251df2eb54e9f90549e8287da",
     "func2pc": {
       "Objecter::_finish_op": 4932624
     },

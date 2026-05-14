@@ -12,6 +12,9 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <sys/utsname.h>
+#include <elf.h>
+#include <gelf.h>
 #include "nlohmann/json.hpp"
 
 using json = nlohmann::json;
@@ -512,6 +515,84 @@ bool check_executable_deleted(int process_id, const std::string& exe_name) {
     }
 
     return false;
+}
+
+std::string get_elf_build_id(const std::string& path) {
+    if (elf_version(EV_CURRENT) == EV_NONE) {
+        return "";
+    }
+
+    int fd = open(path.c_str(), O_RDONLY | O_CLOEXEC);
+    if (fd < 0) {
+        return "";
+    }
+
+    Elf* elf = elf_begin(fd, ELF_C_READ, nullptr);
+    if (!elf) {
+        close(fd);
+        return "";
+    }
+
+    std::string result;
+    size_t shstrndx = 0;
+
+    if (elf_getshdrstrndx(elf, &shstrndx) != 0) {
+        elf_end(elf);
+        close(fd);
+        return "";
+    }
+
+    // Walk SHT_NOTE sections, look for ".note.gnu.build-id".  This is
+    // typically the only build-id note in cephtrace's target binaries; if
+    // the binary was unusually stripped to PT_NOTE-only the lookup will
+    // miss and the caller falls back to live DWARF parsing — that's fine.
+    for (Elf_Scn* scn = elf_nextscn(elf, nullptr); scn != nullptr;
+         scn = elf_nextscn(elf, scn)) {
+        GElf_Shdr shdr;
+        if (gelf_getshdr(scn, &shdr) != &shdr) continue;
+        if (shdr.sh_type != SHT_NOTE) continue;
+
+        const char* name = elf_strptr(elf, shstrndx, shdr.sh_name);
+        if (!name || strcmp(name, ".note.gnu.build-id") != 0) continue;
+
+        Elf_Data* data = elf_getdata(scn, nullptr);
+        if (!data || !data->d_buf) continue;
+
+        size_t off = 0, name_off = 0, desc_off = 0;
+        GElf_Nhdr nhdr;
+        while ((off = gelf_getnote(data, off, &nhdr, &name_off, &desc_off)) > 0) {
+            if (nhdr.n_type != NT_GNU_BUILD_ID) continue;
+            const unsigned char* desc =
+                static_cast<const unsigned char*>(data->d_buf) + desc_off;
+            char hex[3];
+            result.reserve(nhdr.n_descsz * 2);
+            for (size_t i = 0; i < nhdr.n_descsz; ++i) {
+                std::snprintf(hex, sizeof(hex), "%02x", desc[i]);
+                result += hex;
+            }
+            break;
+        }
+        if (!result.empty()) break;
+    }
+
+    elf_end(elf);
+    close(fd);
+    return result;
+}
+
+std::string get_host_arch() {
+    struct utsname u;
+    if (uname(&u) != 0) return "";
+    std::string m = u.machine;
+    // Match dpkg --print-architecture's naming so values round-trip with
+    // package metadata and with the existing per-distro file layout.
+    if (m == "x86_64") return "amd64";
+    if (m == "aarch64") return "arm64";
+    if (m == "ppc64le") return "ppc64el";
+    if (m == "s390x") return "s390x";
+    if (m == "armv7l" || m == "armv6l") return "armhf";
+    if (m == "i686" || m == "i386") return "i386";
+    return m;
 }
 
 void print_tool_version(const char* tool_name) {

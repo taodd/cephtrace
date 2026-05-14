@@ -1,6 +1,8 @@
 {
   "version": "20.2.0-0ubuntu2",
+  "arch": "amd64",
   "ceph-osd": {
+    "build_id": "0e6c06a0aefaddbe0d5aea7b7d5b94f5befd3ce3",
     "func2pc": {
       "BlueStore::_do_write": 15514720,
       "BlueStore::_txc_apply_kv": 15095392,

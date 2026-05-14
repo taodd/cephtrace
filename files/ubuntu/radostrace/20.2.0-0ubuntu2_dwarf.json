@@ -1,6 +1,8 @@
 {
   "version": "20.2.0-0ubuntu2",
+  "arch": "amd64",
   "libceph-common.so.2": {
+    "build_id": "0f51328e7a9b17cf038a8acfb9ef4e06fa7bbb0c",
     "func2pc": {
       "Objecter::_finish_op": 9783056,
       "Objecter::_send_op": 9720816

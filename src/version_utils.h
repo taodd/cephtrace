@@ -98,6 +98,36 @@ bool is_ceph_version_squid_or_above(const std::string& version);
 std::string get_version_from_json(const std::string& json_file);
 
 /**
+ * Read the GNU build-id from an ELF binary's `.note.gnu.build-id` section.
+ *
+ * Used as the lookup key for the embedded DWARF data registry.  Build-id is
+ * unique per (source, toolchain, arch) build and is always present in
+ * non-stripped binaries — and even survives `strip` by default because the
+ * note lives in an allocated segment.
+ *
+ * @param path Absolute path to an ELF file.
+ * @return Hex-encoded build-id (typically 40 chars for GNU ld's 160-bit SHA1,
+ *         32 chars for LLD's xxhash variant), or empty string on any error
+ *         (file unreadable, not an ELF, no build-id note).
+ */
+std::string get_elf_build_id(const std::string& path);
+
+/**
+ * Return the running host's architecture using `dpkg --print-architecture`'s
+ * naming convention so the value round-trips with package metadata:
+ *   x86_64  → "amd64"
+ *   aarch64 → "arm64"
+ *   ppc64le → "ppc64el"
+ *   s390x   → "s390x"
+ *   armv7l  → "armhf"
+ *   i686    → "i386"
+ *   anything else → uname.machine verbatim
+ *
+ * @return Architecture string, or empty string if uname(2) fails.
+ */
+std::string get_host_arch();
+
+/**
  * Print the version banner for a cephtrace tool to stdout.
  *
  * For a tagged release tarball (no embedded git metadata) prints just the

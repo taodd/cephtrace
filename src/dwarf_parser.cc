@@ -10,6 +10,7 @@
 #include <ctime>
 #include <iostream>
 #include <map>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -30,6 +31,7 @@ extern "C" {
 #include "dwarf_parser.h"
 #include "embedded_dwarf_data.h"
 #include "utils.h"
+#include "version_utils.h"
 
 using namespace std;
 
@@ -785,7 +787,11 @@ void DwarfParser::add_module(string path) {
   if (fd == -1) {
     cerr << "cannot open input file " << fname;
   }
-  
+
+  // Remember the full path keyed by basename so export_to_json() can locate
+  // the on-disk ELF later for build-id extraction without re-resolving it.
+  mod_path[get_basename(path)] = path;
+
   Dwfl *dwfl = create_dwfl(fd, fname);
   dwfls.push_back(dwfl);
 }
@@ -809,10 +815,30 @@ void DwarfParser::export_to_json(const std::string& filename, const std::string&
         j["version"] = version;
     }
 
+    // Record the host architecture so the consumer can refuse the JSON on a
+    // mismatched target (build-id keying is per-arch by construction, but
+    // tooling that looks at the file as data still benefits from the field).
+    std::string arch = get_host_arch();
+    if (!arch.empty()) {
+        j["arch"] = arch;
+    }
+
     // Convert both maps to JSON structure
     for (const auto& mod_pair : mod_func2vf) {
         const std::string& module = mod_pair.first;
         json module_obj;
+
+        // Read the on-disk ELF build-id for this module.  mod_path is
+        // populated by add_module(); empty if the JSON was loaded from a
+        // file (export-then-export round-trip), in which case we cannot
+        // compute a build-id and the field is omitted.
+        auto path_it = mod_path.find(module);
+        if (path_it != mod_path.end()) {
+            std::string bid = get_elf_build_id(path_it->second);
+            if (!bid.empty()) {
+                module_obj["build_id"] = bid;
+            }
+        }
 
         // Add function addresses (mod_func2pc)
         json pc_obj;
@@ -909,11 +935,17 @@ bool DwarfParser::import_from_json(const std::string& filename, const std::strin
 
         // Parse JSON structure
         for (const auto& [module, module_data] : j.items()) {
-            // Skip the version field as it's not a module
-            if (module == "version") {
+            // Skip top-level metadata (version, arch, future additions).
+            // Only iterate entries that look like module objects, i.e. have
+            // func2pc and/or func2vf children.  More robust than a hard-coded
+            // skip-list as new metadata fields are added.
+            if (!module_data.is_object()) {
                 continue;
             }
-            
+            if (!module_data.contains("func2pc") && !module_data.contains("func2vf")) {
+                continue;
+            }
+
             // Convert absolute path to basename for backward compatibility
             // Legacy JSON files use full paths (e.g., "/usr/bin/ceph-osd")
             // New code expects basenames (e.g., "ceph-osd")
@@ -968,7 +1000,10 @@ bool DwarfParser::import_from_json(const std::string& filename, const std::strin
     }
 }
 
-bool DwarfParser::import_from_embedded(const std::string& expected_version, const std::string& trace_type) {
+bool DwarfParser::import_from_embedded(
+    const std::vector<std::pair<std::string, std::string>>& modules,
+    const std::string& trace_type,
+    std::string* matched_version_out) {
     const EmbeddedVersion* versions = nullptr;
     int count = 0;
 
@@ -983,11 +1018,40 @@ bool DwarfParser::import_from_embedded(const std::string& expected_version, cons
         return false;
     }
 
-    // Find matching version
+    // Build the caller's (basename, build-id) set.  An empty build-id on
+    // the caller side means we couldn't read the note from the target
+    // binary (snap-mounted readonly squashfs that lacks one, stripped
+    // image, etc.) — refuse the lookup in that case so we don't accept a
+    // partial match against an embedded entry whose own build-id is also
+    // empty (legacy JSON).
+    std::set<std::pair<std::string, std::string>> want;
+    for (const auto& m : modules) {
+        if (m.second.empty()) {
+            return false;
+        }
+        want.emplace(m.first, m.second);
+    }
+    if (want.empty()) {
+        return false;
+    }
+
+    // Linear scan: an entry matches iff its modules[] set equals `want`
+    // exactly.  Any empty build-id in the embedded data disqualifies that
+    // entry (legacy JSONs predating the build-id scheme).
     const EmbeddedVersion* match = nullptr;
     for (int i = 0; i < count; ++i) {
-        if (expected_version == versions[i].version) {
-            match = &versions[i];
+        const EmbeddedVersion& v = versions[i];
+        if (static_cast<size_t>(v.num_modules) != want.size()) continue;
+
+        bool all_match = true;
+        for (int m = 0; m < v.num_modules; ++m) {
+            const char* bid = v.modules[m].build_id;
+            if (!bid || *bid == '\0') { all_match = false; break; }
+            auto it = want.find({v.modules[m].module_name, bid});
+            if (it == want.end()) { all_match = false; break; }
+        }
+        if (all_match) {
+            match = &v;
             break;
         }
     }
@@ -996,7 +1060,18 @@ bool DwarfParser::import_from_embedded(const std::string& expected_version, cons
         return false;
     }
 
-    std::clog << "Found embedded DWARF data for version: " << expected_version << std::endl;
+    // Marker line preserves the "Using embedded DWARF data" prefix that
+    // tests (and downstream log consumers) grep for; the detailed
+    // per-module build-ids follow so a failing trace can be correlated
+    // with the exact embedded entry that was used.
+    std::clog << "Using embedded DWARF data (version "
+              << (match->version ? match->version : "?")
+              << ", arch " << (match->arch && *match->arch ? match->arch : "unspecified")
+              << "):" << std::endl;
+    for (int m = 0; m < match->num_modules; ++m) {
+        std::clog << "  " << match->modules[m].module_name
+                  << " build-id " << match->modules[m].build_id << std::endl;
+    }
 
     // Clear existing data
     mod_func2pc.clear();
@@ -1035,6 +1110,10 @@ bool DwarfParser::import_from_embedded(const std::string& expected_version, cons
 
             mod_func2vf[mod_name][fvf.func_name] = var_fields;
         }
+    }
+
+    if (matched_version_out && match->version) {
+        *matched_version_out = match->version;
     }
 
     return true;

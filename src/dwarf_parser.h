@@ -39,6 +39,10 @@ class DwarfParser {
   typedef std::map<std::string, std::vector<std::vector<std::string>>> probes_t;
   mod_func2vf_t mod_func2vf;
   mod_func2pc_t mod_func2pc;
+  // basename → full path on disk for every add_module() call.  Lets
+  // export_to_json() read each module's ELF build-id without the caller
+  // needing to re-derive the path.
+  std::map<std::string, std::string> mod_path;
   global_mod_cu_type_cache_t global_type_cache;
   std::vector<std::string> probe_units;
   probes_t probes;
@@ -97,12 +101,31 @@ class DwarfParser {
    */
   bool import_from_json(const std::string& filename, const std::string& expected_version = "");
   /**
-   * Imports module function data from compiled-in embedded DWARF data
-   * @param expected_version Version string to match against embedded data
-   * @param trace_type "osdtrace" or "radostrace"
-   * @return bool Returns true if a matching version was found and imported
+   * Imports module function data from compiled-in embedded DWARF data,
+   * matching the target binary by ELF GNU build-id.
+   *
+   * An embedded entry matches iff the set of (module basename, build-id)
+   * pairs the caller supplies equals the entry's `modules[]` set exactly
+   * (same size, same content).  Any empty build-id on either side
+   * prevents that entry from matching — legacy JSONs without build-id
+   * data are therefore never selected by this path.
+   *
+   * @param modules            Vector of (basename, hex-encoded build-id)
+   *                           pairs identifying the target binaries.
+   *                           For osdtrace: {{"ceph-osd", <hex>}}.
+   *                           For radostrace: three entries (librbd.so.1,
+   *                           librados.so.2, libceph-common.so.2).
+   * @param trace_type         "osdtrace" or "radostrace".
+   * @param matched_version_out If non-null, set to the matched entry's
+   *                           version string on success (used by
+   *                           radostrace's squid-or-above gate so it can
+   *                           avoid a separate dpkg/rpm shell-out).
+   * @return true if a matching entry was found and imported.
    */
-  bool import_from_embedded(const std::string& expected_version, const std::string& trace_type);
+  bool import_from_embedded(
+      const std::vector<std::pair<std::string, std::string>>& modules,
+      const std::string& trace_type,
+      std::string* matched_version_out = nullptr);
 
   static const char* dwarf_attr_string(unsigned int attrnum);
   static const char* dwarf_form_string(unsigned int form);

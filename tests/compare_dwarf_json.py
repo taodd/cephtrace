@@ -240,14 +240,22 @@ def compare_dwarf_json(file1_path: str, file2_path: str,
         print(colored(f"Error: Invalid JSON in {file2_path}: {e}", Colors.RED))
         return False
 
-    # Compare top-level keys
-    keys1 = set(data1.keys())
-    keys2 = set(data2.keys())
+    # Top-level metadata keys are informational; only module-content keys
+    # matter for offset-correctness.  A module-content key has a dict value
+    # carrying func2pc and/or func2vf.
+    meta_keys = ("version", "arch")
 
-    if keys1 != keys2:
-        print(colored("Different top-level keys:", Colors.RED))
-        only_in_1 = keys1 - keys2
-        only_in_2 = keys2 - keys1
+    def is_module_key(d, k):
+        v = d.get(k)
+        return isinstance(v, dict) and ("func2pc" in v or "func2vf" in v)
+
+    mod_keys1 = {k for k in data1 if is_module_key(data1, k)}
+    mod_keys2 = {k for k in data2 if is_module_key(data2, k)}
+
+    if mod_keys1 != mod_keys2:
+        print(colored("Different module-content keys:", Colors.RED))
+        only_in_1 = mod_keys1 - mod_keys2
+        only_in_2 = mod_keys2 - mod_keys1
 
         if only_in_1:
             print(f"  Only in {file1_path}: {only_in_1}")
@@ -255,20 +263,21 @@ def compare_dwarf_json(file1_path: str, file2_path: str,
             print(f"  Only in {file2_path}: {only_in_2}")
         return False
 
-    # Compare version (informational only, not a failure)
-    if "version" in data1 and "version" in data2:
-        if data1["version"] != data2["version"]:
+    # Surface metadata differences as informational only — they exist in
+    # the JSONs (arch, version) but never cause a comparison failure.
+    for meta in meta_keys:
+        if meta in data1 and meta in data2 and data1[meta] != data2[meta]:
             if verbose:
                 print(colored(
-                    "Note: Version difference (informational only):",
+                    f"Note: {meta} difference (informational only):",
                     Colors.BLUE
                 ))
-                print(f"  {file1_path}: {data1['version']}")
-                print(f"  {file2_path}: {data2['version']}")
+                print(f"  {file1_path}: {data1[meta]}")
+                print(f"  {file2_path}: {data2[meta]}")
 
-    # Compare each binary path
+    # Compare each module
     all_success = True
-    binary_paths = [k for k in keys1 if k != "version"]
+    binary_paths = list(mod_keys1)
 
     for binary_path in sorted(binary_paths):
         success, errors = compare_binary_data(
