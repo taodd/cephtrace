@@ -14,7 +14,7 @@ jobs:
         os: [ubuntu-22.04, ubuntu-24.04, ubuntu-latest]
     steps:
       - name: Checkout code and submodules
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           submodules: recursive
           fetch-depth: 0
@@ -46,7 +46,7 @@ jobs:
     runs-on: ubuntu-24.04-arm
     steps:
       - name: Checkout code and submodules
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           submodules: recursive
           fetch-depth: 0
@@ -72,7 +72,7 @@ jobs:
           dnf install -y git gcc gcc-c++ clang make elfutils-libelf-devel elfutils-devel glibc-devel glibc-devel.i686 python3 openssl-devel
 
       - name: Checkout code and submodules
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           submodules: recursive
           fetch-depth: 0
@@ -96,7 +96,7 @@ jobs:
           dnf install -y git gcc gcc-c++ clang make elfutils-libelf-devel elfutils-devel glibc-devel glibc-devel.i686 python3 openssl-devel
 
       - name: Checkout code and submodules
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           submodules: recursive
           fetch-depth: 0
