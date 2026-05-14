@@ -78,7 +78,7 @@ else
 endif
 
 # Main targets
-.PHONY: all clean
+.PHONY: all clean clang-tidy
 all: $(OSDTRACE_SRC)/ceph_btf_local.h $(EMBEDDED_DWARF_HDR) $(PROG_OBJS)
 
 install:
@@ -115,6 +115,21 @@ src-pkg:
 clean:
 	$(call msg,CLEAN)
 	$(Q)rm -rf $(OUTPUT) $(PROG_OBJS) $(DOCDIR)/*.8.gz $(DOCDIR)/*.in $(OSDTRACE_SRC)/ceph_btf_local.h $(EMBEDDED_DWARF_HDR)
+
+# clang-tidy static analysis (requires skeleton headers in .output/)
+CLANG_TIDY ?= clang-tidy
+TIDY_SRCS := $(OSDTRACE_SRC)/osdtrace.cc \
+             $(OSDTRACE_SRC)/radostrace.cc \
+             $(OSDTRACE_SRC)/kfstrace.cc \
+             $(OSDTRACE_SRC)/dwarf_parser.cc \
+             $(OSDTRACE_SRC)/version_utils.cc
+
+clang-tidy: $(OUTPUT)/osdtrace.skel.h $(OUTPUT)/radostrace.skel.h $(OUTPUT)/kfstrace.skel.h $(EMBEDDED_DWARF_HDR)
+	$(call msg,TIDY)
+	$(Q)for src in $(TIDY_SRCS); do \
+		printf '  %-8s %s\n' "TIDY" "$$src"; \
+		$(CLANG_TIDY) $$src -- $(CXXFLAGS) $(VERSION_DEFINES) || exit 1; \
+	done
 
 $(OUTPUT) $(OUTPUT)/libbpf $(BPFTOOL_OUTPUT):
 	$(call msg,MKDIR,$@)

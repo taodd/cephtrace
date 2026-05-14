@@ -106,3 +106,20 @@ jobs:
 
       - name: Run Makefile build
         run: make -j radostrace osdtrace
+
+  clang-tidy:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code and submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++ clang clang-tidy libelf-dev libc6-dev-i386 libdw-dev
+
+      - name: Run clang-tidy
+        run: make -j clang-tidy
