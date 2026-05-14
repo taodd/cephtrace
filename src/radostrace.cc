@@ -559,10 +559,23 @@ int main(int argc, char **argv) {
       // the installed binary (not a re-dump of the embedded data the header came
       // from). Otherwise try embedded DWARF data first, keyed by the on-disk
       // ELF build-id of each library.
+      //
+      // The library paths are reported as they appear inside the target's
+      // mount namespace; for containerized rbd clients (podman / docker)
+      // those paths don't exist on the host.  Read the build-ids through
+      // /proc/<pid>/root/ when a target PID is specified so the read sees
+      // the same files the uprobe will attach to.
+      auto bid_path = [process_id](const std::string& p) -> std::string {
+          if (process_id == -1) return p;
+          return "/proc/" + std::to_string(process_id) + "/root" + p;
+      };
       std::vector<std::pair<std::string, std::string>> rados_mods = {
-          {get_basename(librbd_path),         get_elf_build_id(librbd_path)},
-          {get_basename(librados_path),       get_elf_build_id(librados_path)},
-          {get_basename(libceph_common_path), get_elf_build_id(libceph_common_path)},
+          {get_basename(librbd_path),
+              get_elf_build_id(bid_path(librbd_path))},
+          {get_basename(librados_path),
+              get_elf_build_id(bid_path(librados_path))},
+          {get_basename(libceph_common_path),
+              get_elf_build_id(bid_path(libceph_common_path))},
       };
       if (!export_json && dwarfparser.import_from_embedded(
               rados_mods, "radostrace", &embedded_matched_version)) {

@@ -1371,7 +1371,17 @@ int main(int argc, char **argv) {
     // the installed binary (not a re-dump of the embedded data the header came
     // from). Otherwise try embedded DWARF data first, keyed by the on-disk
     // ELF build-id (arch-safe, snap-safe, custom-rebuild-safe).
-    std::string osd_buildid = get_elf_build_id(osd_path);
+    //
+    // osd_path is the in-process view ("/usr/bin/ceph-osd"), which for a
+    // containerized OSD doesn't exist on the host.  Reach into the target's
+    // mount namespace via /proc/<pid>/root/ so the build-id read sees the
+    // same binary the kernel uprobe will attach to.
+    std::string osd_buildid_path = osd_path;
+    if (!process_ids.empty()) {
+      osd_buildid_path = "/proc/" + std::to_string(*process_ids.begin())
+                         + "/root" + osd_path;
+    }
+    std::string osd_buildid = get_elf_build_id(osd_buildid_path);
     if (!export_json && !osd_buildid.empty() &&
         dwarfparser.import_from_embedded(
             {{get_basename(osd_path), osd_buildid}}, "osdtrace")) {
