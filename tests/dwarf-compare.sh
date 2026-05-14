@@ -102,11 +102,20 @@ fi
 # Get the ceph version for reference file lookup
 matching_ref_version=$(dpkg -l | awk '$2=="ceph-common" {print $3}')
 
+# Reference filenames may carry an optional architecture suffix
+# (e.g. osd-19.2.3-0ubuntu0.24.04.3_arm64_dwarf.json) when the same
+# package version is checked in for more than one arch.  Glob and pick
+# the first match instead of hard-coding the filename.
+find_ref() {
+    local dir="$1" prefix="$2"
+    ls "${dir}/${prefix}${matching_ref_version}"*_dwarf.json 2>/dev/null | head -1
+}
+
 # Test osdtrace dwarf json generation
 echo "Testing osdtrace dwarf json generation..."
 osd_new_dwarf="generated-osd-dwarf.json"
 ./osdtrace -j $osd_new_dwarf
-osd_ref_file="./files/ubuntu/osdtrace/osd-${matching_ref_version}_dwarf.json"
+osd_ref_file=$(find_ref ./files/ubuntu/osdtrace osd-)
 ./tests/compare_dwarf_json.py $osd_ref_file $osd_new_dwarf
 echo "osdtrace dwarf json comparison passed!"
 
@@ -114,7 +123,7 @@ echo "osdtrace dwarf json comparison passed!"
 echo "Testing radostrace dwarf json generation..."
 rados_new_dwarf="generated-rados-dwarf.json"
 ./radostrace -j $rados_new_dwarf
-rados_ref_file="./files/ubuntu/radostrace/${matching_ref_version}_dwarf.json"
+rados_ref_file=$(find_ref ./files/ubuntu/radostrace "")
 ./tests/compare_dwarf_json.py $rados_ref_file $rados_new_dwarf
 echo "radostrace dwarf json comparison passed!"
 

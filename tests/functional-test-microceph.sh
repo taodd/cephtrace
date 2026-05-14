@@ -93,12 +93,14 @@ fi
 info "Ceph version: $CEPH_VERSION"
 
 info "=== Step 3: Locate DWARF JSON files in repository ==="
-# Look for matching DWARF files in the repository
-OSD_DWARF="$PROJECT_ROOT/files/ubuntu/osdtrace/osd-${CEPH_VERSION}_dwarf.json"
-RADOS_DWARF="$PROJECT_ROOT/files/ubuntu/radostrace/${CEPH_VERSION}_dwarf.json"
+# Reference filenames may carry an optional architecture suffix
+# (e.g. osd-19.2.3-0ubuntu0.24.04.3_arm64_dwarf.json) when multiple arches
+# of the same package version are checked in.  Glob and pick the first match.
+OSD_DWARF=$(ls "$PROJECT_ROOT/files/ubuntu/osdtrace/osd-${CEPH_VERSION}"*_dwarf.json 2>/dev/null | head -1)
+RADOS_DWARF=$(ls "$PROJECT_ROOT/files/ubuntu/radostrace/${CEPH_VERSION}"*_dwarf.json 2>/dev/null | head -1)
 
-if [ ! -f "$OSD_DWARF" ]; then
-    info "OSD DWARF file not found at $OSD_DWARF"
+if [ -z "$OSD_DWARF" ]; then
+    info "OSD DWARF file not found for version ${CEPH_VERSION}"
     info "Looking for any available OSD DWARF files..."
     OSD_DWARF=$(find "$PROJECT_ROOT/files/ubuntu/osdtrace/" -name "*_dwarf.json" | head -1)
     if [ -z "$OSD_DWARF" ]; then
@@ -108,8 +110,8 @@ if [ ! -f "$OSD_DWARF" ]; then
     info "Using: $OSD_DWARF"
 fi
 
-if [ ! -f "$RADOS_DWARF" ]; then
-    info "Rados DWARF file not found at $RADOS_DWARF"
+if [ -z "$RADOS_DWARF" ]; then
+    info "Rados DWARF file not found for version ${CEPH_VERSION}"
     info "Looking for any available radostrace DWARF files..."
     RADOS_DWARF=$(find "$PROJECT_ROOT/files/ubuntu/radostrace/" -name "*_dwarf.json" | head -1)
     if [ -z "$RADOS_DWARF" ]; then
