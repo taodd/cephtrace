@@ -1369,10 +1369,13 @@ int main(int argc, char **argv) {
   } else {
     // When -j is used to export JSON, force live parsing so the output reflects
     // the installed binary (not a re-dump of the embedded data the header came
-    // from). Otherwise try embedded DWARF data first.
-    std::string version = get_package_version(osd_path);
-    if (!export_json && version != "unknown" && dwarfparser.import_from_embedded(version, "osdtrace")) {
-      clog << "Using embedded DWARF data for version: " << version << endl;
+    // from). Otherwise try embedded DWARF data first, keyed by the on-disk
+    // ELF build-id (arch-safe, snap-safe, custom-rebuild-safe).
+    std::string osd_buildid = get_elf_build_id(osd_path);
+    if (!export_json && !osd_buildid.empty() &&
+        dwarfparser.import_from_embedded(
+            {{get_basename(osd_path), osd_buildid}}, "osdtrace")) {
+      // Detailed match info already logged inside import_from_embedded.
     } else {
       clog << "Start to parse dwarf info" << endl;
       dwarfparser.add_module(osd_path);

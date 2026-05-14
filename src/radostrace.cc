@@ -527,6 +527,11 @@ int main(int argc, char **argv) {
      return 1;
    }
 
+  // Set by the embedded path on success; used later by the squid-version
+  // gate so it doesn't need a separate dpkg/rpm shell-out.
+  bool used_embedded = false;
+  std::string embedded_matched_version;
+
   if (import_json) {
       clog << "Importing DWARF info from " << json_input_file << endl;
 
@@ -552,10 +557,17 @@ int main(int argc, char **argv) {
   } else {
       // When -j is used to export JSON, force live parsing so the output reflects
       // the installed binary (not a re-dump of the embedded data the header came
-      // from). Otherwise try embedded DWARF data first.
-      std::string version = get_package_version(librados_path);
-      if (!export_json && version != "unknown" && dwarfparser.import_from_embedded(version, "radostrace")) {
-          clog << "Using embedded DWARF data for version: " << version << endl;
+      // from). Otherwise try embedded DWARF data first, keyed by the on-disk
+      // ELF build-id of each library.
+      std::vector<std::pair<std::string, std::string>> rados_mods = {
+          {get_basename(librbd_path),         get_elf_build_id(librbd_path)},
+          {get_basename(librados_path),       get_elf_build_id(librados_path)},
+          {get_basename(libceph_common_path), get_elf_build_id(libceph_common_path)},
+      };
+      if (!export_json && dwarfparser.import_from_embedded(
+              rados_mods, "radostrace", &embedded_matched_version)) {
+          used_embedded = true;
+          // Detailed match info already logged inside import_from_embedded.
       } else {
           clog << "Start to parse dwarf info" << endl;
           dwarfparser.add_module(librbd_path);
@@ -564,10 +576,13 @@ int main(int argc, char **argv) {
           dwarfparser.parse();
       }
 
-      // Export DWARF info to JSON if requested
+      // Export DWARF info to JSON if requested.  Live-parse path only (we
+      // forced export_json off the embedded branch above), so resolve the
+      // version string from the package manager — the squid gate's path.
       if (export_json) {
           clog << "Exporting DWARF info to " << json_output_file << endl;
 
+          std::string version = get_package_version(librados_path);
           if (version != "unknown") {
               clog << "Detected package version: " << version << endl;
           } else {
@@ -600,11 +615,17 @@ int main(int argc, char **argv) {
    * Values differ between Ceph versions due to struct layout changes.
    */
 
-  // Determine Ceph version: from JSON file if importing, otherwise from package
+  // Determine Ceph version for the squid struct-offset gate, in priority order:
+  //   1. The "version" field of the JSON we just imported (-i path).
+  //   2. The matched embedded entry's version (build-id-keyed fast path).
+  //   3. dpkg/rpm package metadata for the live-parsed binary (live-parse path).
   std::string ceph_version;
   if (import_json) {
     ceph_version = get_version_from_json(json_input_file);
     clog << "Using version from JSON file: " << ceph_version << endl;
+  } else if (used_embedded && !embedded_matched_version.empty()) {
+    ceph_version = embedded_matched_version;
+    clog << "Using version from embedded match: " << ceph_version << endl;
   } else {
     ceph_version = get_package_version(librados_path);
     clog << "Using version from package: " << ceph_version << endl;
