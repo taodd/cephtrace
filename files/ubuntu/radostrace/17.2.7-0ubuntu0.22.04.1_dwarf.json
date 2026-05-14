@@ -1,6 +1,8 @@
 {
   "version": "17.2.7-0ubuntu0.22.04.1",
+  "arch": "amd64",
   "librados.so.2": {
+    "build_id": "cafadffdf5eb235b5d18c6c05f48a3c378ee4b69",
     "func2pc": {
       "Objecter::_finish_op": 911504,
       "Objecter::_send_op": 856240
@@ -384,6 +386,7 @@
     }
   },
   "librbd.so.1": {
+    "build_id": "868313943d1043b82b0b2e5cc8c60874a32cc98b",
     "func2pc": {
       "Objecter::_finish_op": 6648928,
       "Objecter::_send_op": 6593664
@@ -767,6 +770,7 @@
     }
   },
   "libceph-common.so.2": {
+    "build_id": "d8d28791be0c47901ede5933d2b05a9d3f0d4683",
     "func2pc": {
       "Objecter::_finish_op": 8029888,
       "Objecter::_send_op": 7974624
