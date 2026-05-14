@@ -39,6 +39,10 @@ class DwarfParser {
   typedef std::map<std::string, std::vector<std::vector<std::string>>> probes_t;
   mod_func2vf_t mod_func2vf;
   mod_func2pc_t mod_func2pc;
+  // basename → full path on disk for every add_module() call.  Lets
+  // export_to_json() read each module's ELF build-id without the caller
+  // needing to re-derive the path.
+  std::map<std::string, std::string> mod_path;
   global_mod_cu_type_cache_t global_type_cache;
   std::vector<std::string> probe_units;
   probes_t probes;

@@ -785,7 +785,11 @@ void DwarfParser::add_module(string path) {
   if (fd == -1) {
     cerr << "cannot open input file " << fname;
   }
-  
+
+  // Remember the full path keyed by basename so export_to_json() can locate
+  // the on-disk ELF later for build-id extraction without re-resolving it.
+  mod_path[get_basename(path)] = path;
+
   Dwfl *dwfl = create_dwfl(fd, fname);
   dwfls.push_back(dwfl);
 }
