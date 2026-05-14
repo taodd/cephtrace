@@ -220,7 +220,8 @@ struct EmbeddedFuncPC {{
 
 struct EmbeddedModule {{
     const char* module_name;
-    const char* build_id;       // Hex-encoded GNU build-id; "" for legacy entries.
+    // Hex-encoded GNU build-id; "" for legacy entries.
+    const char* build_id;
     int num_func2pc;
     EmbeddedFuncPC func2pc[EMB_MAX_FUNCS];
     int num_func2vf;
@@ -229,7 +230,8 @@ struct EmbeddedModule {{
 
 struct EmbeddedVersion {{
     const char* version;
-    const char* arch;           // dpkg --print-architecture style; "" for legacy entries.
+    // dpkg --print-architecture style; "" for legacy entries.
+    const char* arch;
     int num_modules;
     EmbeddedModule modules[EMB_MAX_MODULES];
 }};

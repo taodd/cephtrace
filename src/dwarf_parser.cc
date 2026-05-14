@@ -1060,9 +1060,11 @@ bool DwarfParser::import_from_embedded(
         return false;
     }
 
-    // Log every matched module's (basename, build-id) so failures further
-    // downstream can be correlated with the exact embedded entry used.
-    std::clog << "Found embedded DWARF data (version "
+    // Marker line preserves the "Using embedded DWARF data" prefix that
+    // tests (and downstream log consumers) grep for; the detailed
+    // per-module build-ids follow so a failing trace can be correlated
+    // with the exact embedded entry that was used.
+    std::clog << "Using embedded DWARF data (version "
               << (match->version ? match->version : "?")
               << ", arch " << (match->arch && *match->arch ? match->arch : "unspecified")
               << "):" << std::endl;
