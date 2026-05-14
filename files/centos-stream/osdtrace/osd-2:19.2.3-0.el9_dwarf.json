@@ -1,6 +1,8 @@
 {
   "version": "2:19.2.3-0.el9",
+  "arch": "amd64",
   "ceph-osd": {
+    "build_id": "39ec76a70203385f8c9fbf812b95f32821290c8b",
     "func2pc": {
       "BlueStore::_do_write": 10466544,
       "BlueStore::_txc_apply_kv": 10347168,
