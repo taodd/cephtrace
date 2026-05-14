@@ -243,7 +243,7 @@ def compare_dwarf_json(file1_path: str, file2_path: str,
     # Top-level metadata keys are informational; only module-content keys
     # matter for offset-correctness.  A module-content key has a dict value
     # carrying func2pc and/or func2vf.
-    META_KEYS = {"version", "arch"}
+    meta_keys = ("version", "arch")
 
     def is_module_key(d, k):
         v = d.get(k)
@@ -265,7 +265,7 @@ def compare_dwarf_json(file1_path: str, file2_path: str,
 
     # Surface metadata differences as informational only — they exist in
     # the JSONs (arch, version) but never cause a comparison failure.
-    for meta in META_KEYS:
+    for meta in meta_keys:
         if meta in data1 and meta in data2 and data1[meta] != data2[meta]:
             if verbose:
                 print(colored(
