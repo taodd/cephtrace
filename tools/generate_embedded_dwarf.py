@@ -38,6 +38,18 @@ def load_json_files(base_dir):
     return osdtrace, radostrace
 
 
+def is_module_entry(val):
+    """Return True if a top-level JSON value looks like a module entry.
+
+    Top-level keys in the per-version JSON are either metadata
+    (``version``, ``arch``, future additions) or per-module dicts that
+    contain ``func2pc`` / ``func2vf``.  This predicate identifies the
+    latter so the rest of the generator doesn't need a hard-coded
+    metadata-key skip-list.
+    """
+    return isinstance(val, dict) and ("func2pc" in val or "func2vf" in val)
+
+
 def analyze_limits(all_data):
     """Find maximum array sizes needed across all JSON files."""
     max_modules = 0
@@ -47,8 +59,8 @@ def analyze_limits(all_data):
 
     for data in all_data:
         num_modules = 0
-        for key, val in data.items():
-            if key == "version":
+        for _key, val in data.items():
+            if not is_module_entry(val):
                 continue
             num_modules += 1
             if "func2pc" in val:
@@ -102,6 +114,10 @@ def _generate_module(mod_name, mod_data, indent):
     lines = []
     lines.append(f'{indent}    {{ // module: {mod_name}')
     lines.append(f'{indent}      {_c_str(mod_name)},')
+    # Per-module ELF build-id (empty for legacy JSONs that pre-date the
+    # build-id keying scheme; the embedded loader treats "" as
+    # never-matches so legacy entries stay inert to the new lookup path).
+    lines.append(f'{indent}      {_c_str(mod_data.get("build_id", ""))},')
 
     func2pc = mod_data.get("func2pc", {})
     lines.append(f'{indent}      {len(func2pc)}, // num_func2pc')
@@ -134,12 +150,15 @@ def _generate_module(mod_name, mod_data, indent):
 def generate_version_entry(data, indent="    "):
     """Generate C++ initializer for one version entry."""
     version = data.get("version", "unknown")
+    arch = data.get("arch", "")
     lines = [f'{indent}{{']
     lines.append(f'{indent}  {_c_str(version)},')
+    # Per-version target architecture (empty for legacy JSONs).
+    lines.append(f'{indent}  {_c_str(arch)},')
 
     modules = [
         (os.path.basename(k), v)
-        for k, v in data.items() if k != "version"
+        for k, v in data.items() if is_module_entry(v)
     ]
 
     lines.append(f'{indent}  {len(modules)}, // num_modules')
@@ -201,6 +220,7 @@ struct EmbeddedFuncPC {{
 
 struct EmbeddedModule {{
     const char* module_name;
+    const char* build_id;       // Hex-encoded GNU build-id; "" for legacy entries.
     int num_func2pc;
     EmbeddedFuncPC func2pc[EMB_MAX_FUNCS];
     int num_func2vf;
@@ -209,6 +229,7 @@ struct EmbeddedModule {{
 
 struct EmbeddedVersion {{
     const char* version;
+    const char* arch;           // dpkg --print-architecture style; "" for legacy entries.
     int num_modules;
     EmbeddedModule modules[EMB_MAX_MODULES];
 }};
