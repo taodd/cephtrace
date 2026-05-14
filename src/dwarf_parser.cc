@@ -30,6 +30,7 @@ extern "C" {
 #include "dwarf_parser.h"
 #include "embedded_dwarf_data.h"
 #include "utils.h"
+#include "version_utils.h"
 
 using namespace std;
 
@@ -813,10 +814,30 @@ void DwarfParser::export_to_json(const std::string& filename, const std::string&
         j["version"] = version;
     }
 
+    // Record the host architecture so the consumer can refuse the JSON on a
+    // mismatched target (build-id keying is per-arch by construction, but
+    // tooling that looks at the file as data still benefits from the field).
+    std::string arch = get_host_arch();
+    if (!arch.empty()) {
+        j["arch"] = arch;
+    }
+
     // Convert both maps to JSON structure
     for (const auto& mod_pair : mod_func2vf) {
         const std::string& module = mod_pair.first;
         json module_obj;
+
+        // Read the on-disk ELF build-id for this module.  mod_path is
+        // populated by add_module(); empty if the JSON was loaded from a
+        // file (export-then-export round-trip), in which case we cannot
+        // compute a build-id and the field is omitted.
+        auto path_it = mod_path.find(module);
+        if (path_it != mod_path.end()) {
+            std::string bid = get_elf_build_id(path_it->second);
+            if (!bid.empty()) {
+                module_obj["build_id"] = bid;
+            }
+        }
 
         // Add function addresses (mod_func2pc)
         json pc_obj;
