@@ -934,11 +934,17 @@ bool DwarfParser::import_from_json(const std::string& filename, const std::strin
 
         // Parse JSON structure
         for (const auto& [module, module_data] : j.items()) {
-            // Skip the version field as it's not a module
-            if (module == "version") {
+            // Skip top-level metadata (version, arch, future additions).
+            // Only iterate entries that look like module objects, i.e. have
+            // func2pc and/or func2vf children.  More robust than a hard-coded
+            // skip-list as new metadata fields are added.
+            if (!module_data.is_object()) {
                 continue;
             }
-            
+            if (!module_data.contains("func2pc") && !module_data.contains("func2vf")) {
+                continue;
+            }
+
             // Convert absolute path to basename for backward compatibility
             // Legacy JSON files use full paths (e.g., "/usr/bin/ceph-osd")
             // New code expects basenames (e.g., "ceph-osd")
