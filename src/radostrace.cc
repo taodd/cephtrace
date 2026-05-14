@@ -2,6 +2,7 @@
 //observe the client <-> osds latency for each request.
 
 #include <bpf/libbpf.h>
+#include <bpf/bpf.h>
 #include <errno.h>
 #include <getopt.h>
 #include <stdio.h>
@@ -85,10 +86,19 @@ DwarfParser::probes_t rados_probes = {
 };
 
 volatile sig_atomic_t timeout_occurred = 0;
+volatile sig_atomic_t got_sigint = 0;
 
 // CSV Output
 bool export_csv = false;
 std::string csv_output_file = "radostrace_events.csv";
+
+static __u64 get_boottime_ns() {
+    struct timespec ts;
+    if (clock_gettime(CLOCK_BOOTTIME, &ts) != 0) {
+        return 0;
+    }
+    return (__u64)ts.tv_sec * 1000000000ULL + (__u64)ts.tv_nsec;
+}
 
 const char * ceph_osd_op_str(int opc) {
     const char *op_str = NULL;
@@ -124,11 +134,11 @@ void fill_map_hprobes(std::string mod_path, DwarfParser &dwarfparser, struct bpf
 }
 
 void signal_handler(int signum){
-  clog << "Caught signal " << signum << endl;
   if (signum == SIGINT) {
-      clog << "process killed" << endl;
+      got_sigint = 1;
+  } else {
+            _exit(signum);
   }
-  exit(signum);
 }
 
 void timeout_handler(int signum) {
@@ -221,6 +231,65 @@ int attach_retuprobe(struct radostrace_bpf *skel,
     clog << "uretprobe " << funcname << " attached to all processes" << endl;
   }
   return 0;
+}
+
+static int report_hung_ops(struct radostrace_bpf *skel,
+                           __u64 min_duration_ns = 0,
+                           const char *title = "\n--- Pending ops (never completed) ---\n",
+                           const char *empty_msg = "\nNo pending ops detected.\n") {
+    __u64 now_ns = get_boottime_ns();
+    if (now_ns == 0) {
+        fprintf(stderr, "\nFailed to read CLOCK_BOOTTIME.\n");
+        return -1;
+    }
+
+    int map_fd = bpf_map__fd(skel->maps.ops);
+    struct client_op_k current_key, next_key;
+    struct client_op_v val;
+    struct client_op_k *key_ptr = NULL;
+    int found = 0;
+
+    while (bpf_map_get_next_key(map_fd, key_ptr, &next_key) == 0) {
+        if (bpf_map_lookup_elem(map_fd, &next_key, &val) == 0) {
+            if (val.sent_stamp == 0) {
+                current_key = next_key;
+                key_ptr = &current_key;
+                continue;
+            }
+            __u64 duration_ns = now_ns - val.sent_stamp;
+            if (duration_ns < min_duration_ns) {
+                current_key = next_key;
+                key_ptr = &current_key;
+                continue;
+            }
+            if (found == 0) {
+                fprintf(stderr, "%s", title);
+                fprintf(stderr, "%8s %8s %8s %8s  %-20s  WR\n",
+                        "client", "tid", "osd", "dur(s)", "object");
+            }
+            long long dur_sec = (long long)(duration_ns / 1000000000ULL);
+            const char *wr_str = (val.rw & CEPH_OSD_FLAG_WRITE) ? "W" : "R";
+            char safe_name[sizeof(val.object_name) + 1];
+            memcpy(safe_name, val.object_name, sizeof(val.object_name));
+            safe_name[sizeof(val.object_name)] = '\0';
+            fprintf(stderr, "%8lld %8lld %8d %8lld  %-20s  %s\n",
+                    (long long)val.cid,
+                    (long long)val.tid,
+                    (int)val.target_osd,
+                    dur_sec,
+                    safe_name,
+                    wr_str);
+            found++;
+        }
+        current_key = next_key;
+        key_ptr = &current_key;
+    }
+    if (found == 0) {
+        fprintf(stderr, "%s", empty_msg);
+    } else {
+        fprintf(stderr, "Total reported ops: %d\n", found);
+    }
+    return found;
 }
 
 int digitnum(int x) {
@@ -477,7 +546,7 @@ int main(int argc, char **argv) {
           return 0;
       } else if (arg == "-h" || arg == "--help") {
           std::cout << "Usage: " << argv[0] << " [-t <timeout seconds>] [-j [filename]] [-i <filename>] [-o [filename]] [-p <pid>] [--skip-version-check]\n";
-          std::cout << "  -t, --timeout <seconds>    Set execution timeout in seconds\n";
+          std::cout << "  -t, --timeout <seconds>    Set execution timeout in seconds and report pending ops before exit\n";
           std::cout << "  -j, --export-json <file>   Export DWARF info to JSON (default: radostrace_dwarf.json)\n";
           std::cout << "  -i, --import-json <file>   Import DWARF info from JSON file\n";
           std::cout << "  -o, --output <file>        Export events data info to CSV (default: radostrace_events.csv)\n";
@@ -486,6 +555,9 @@ int main(int argc, char **argv) {
           std::cout << "  -V, --version              Print version information and exit\n";
           std::cout << "  -h, --help                 Show this help message\n";
           return 0;
+      } else {
+          std::cerr << "Unknown argument: " << arg << "\n";
+          return 1;
       }
   }
 
@@ -501,7 +573,8 @@ int main(int argc, char **argv) {
   struct radostrace_bpf *skel;
   // long uprobe_offset;
   int ret = 0;
-  struct ring_buffer *rb;
+    int exit_code = 0;
+    struct ring_buffer *rb = nullptr;
 
   DwarfParser dwarfparser(rados_probes, probe_units);
 
@@ -664,6 +737,7 @@ int main(int argc, char **argv) {
   rb = ring_buffer__new(bpf_map__fd(skel->maps.rb), handle_event, NULL, NULL);
   if (!rb) {
     cerr << "failed to setup ring_buffer" << endl;
+        exit_code = 1;
     goto cleanup;
   }
 
@@ -678,18 +752,28 @@ int main(int argc, char **argv) {
 
   clog << "Started to poll from ring buffer" << endl;
 
-  while ((!timeout_occurred || timeout == -1) && (ret = ring_buffer__poll(rb, 1000)) >= 0) {
-      // Continue polling while timeout hasn't occurred or if unlimited execution time
+  while (!got_sigint && (!timeout_occurred || timeout == -1) && (ret = ring_buffer__poll(rb, 1000)) >= 0) {
+  }
+
+  if (ret == -EINTR && (got_sigint || timeout_occurred)) {
+      ret = 0;
+  }
+
+  if (ret < 0 && ret != -EINTR) {
+      exit_code = 1;
+      cerr << "Error polling ring buffer: " << -ret << endl;
   }
 
   if (timeout_occurred) {
-      cerr << "Timeout occurred. Exiting." << endl;
+      cerr << "Timeout occurred. Reporting pending ops before exit." << endl;
   }
+
+  report_hung_ops(skel);
 
 cleanup:
   clog << "Clean up the eBPF program" << endl;
   ring_buffer__free(rb);
   radostrace_bpf__destroy(skel);
-  return timeout_occurred ? -1 : -errno;
+  return exit_code;
 }
 
