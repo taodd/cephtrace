@@ -82,7 +82,6 @@ int uprobe_send_op(struct pt_regs *ctx) {
     return 0;
   }
   memset(val, 0, sizeof(struct client_op_v));
-  val->sent_stamp = bpf_ktime_get_boot_ns();
   val->tid = key.tid;
   val->cid = key.cid;
   val->rw = 0;
@@ -127,8 +126,14 @@ int uprobe_send_op(struct pt_regs *ctx) {
     bpf_printk("uprobe_send_op got NULL vf at varid %d\n", varid);
   }
 
-  name_len &= 127;
-  bpf_probe_read_user(val->object_name, name_len, (void *)name_base);
+  if (name_len < 0) {
+    name_len = 0;
+  } else if (name_len > (int)(sizeof(val->object_name) - 1)) {
+    name_len = sizeof(val->object_name) - 1;
+  }
+  if (name_len > 0) {
+    bpf_probe_read_user(val->object_name, name_len, (void *)name_base);
+  }
   // read op flags
   ++varid;
   vf = bpf_map_lookup_elem(&hprobes, &varid);
@@ -180,6 +185,7 @@ int uprobe_send_op(struct pt_regs *ctx) {
     bpf_printk("uprobe_send_op got M_start %d\n", M_start);
   } else {
     bpf_printk("uprobe_send_op got NULL vf at varid %d\n", varid);
+    bpf_map_delete_elem(&ops, &key);
     return 0;
   }
 
@@ -195,6 +201,7 @@ int uprobe_send_op(struct pt_regs *ctx) {
     bpf_printk("uprobe_send_op got m_finish %d\n", m_finish);
   } else {
     bpf_printk("uprobe_send_op got NULL vf at varid %d\n", varid);
+    bpf_map_delete_elem(&ops, &key);
     return 0;
   }
 
@@ -220,6 +227,7 @@ int uprobe_send_op(struct pt_regs *ctx) {
     bpf_printk("uprobe_send_op got m_start %lld\n", m_start);
   } else {
     bpf_printk("uprobe_send_op got NULL vf at varid %d\n", varid);
+    bpf_map_delete_elem(&ops, &key);
     return 0;
   }
 
@@ -234,10 +242,13 @@ int uprobe_send_op(struct pt_regs *ctx) {
     bpf_printk("uprobe_send_op got m_start %d\n", val->ops_size);
   } else {
     bpf_printk("uprobe_send_op got NULL vf at varid %d\n", varid);
+    bpf_map_delete_elem(&ops, &key);
     return 0;
   }
 
-  val->ops_size &= 3;
+  if (val->ops_size > 3) {
+    val->ops_size = 3;
+  }
   val->offset = 0;
   val->length = 0;
   for (__u32 i = 0; i  < 3; ++i) {
@@ -275,6 +286,8 @@ int uprobe_send_op(struct pt_regs *ctx) {
       break;
     }
   }
+
+  val->sent_stamp = bpf_ktime_get_boot_ns();
 
   //bpf_map_update_elem(&ops, &key, val, 0);// no need to update again here
   return 0;
@@ -322,6 +335,7 @@ int uprobe_finish_op(struct pt_regs *ctx) {
   // submit to ringbuf
   struct client_op_v *e = bpf_ringbuf_reserve(&rb, sizeof(struct client_op_v), 0);
   if (NULL == e) {
+    bpf_map_delete_elem(&ops, &key);
     return 0;
   }
   *e = *opv;
