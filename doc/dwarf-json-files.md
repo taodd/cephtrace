@@ -41,6 +41,7 @@ Available versions include:
 - Ubuntu 20.04: Ceph 15.2.17, 17.2.x series
 - Ubuntu 22.04: Ceph 17.2.x, 19.2.x series
 - Ubuntu 24.04: Ceph 19.2.x series
+- Ubuntu 26.04: Ceph 20.x series
 
 File naming format: `<version>_dwarf.json`
 - Example: `17.2.6-0ubuntu0.22.04.2_dwarf.json`
