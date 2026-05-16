@@ -13,6 +13,7 @@ sudo apt-get install \
     libc6-dev \
     libc6-dev-i386 \
     libdw-dev \
+    libssl-dev \
     make
 ```
 
@@ -27,6 +28,7 @@ sudo dnf install \
     glibc-devel \
     glibc-devel.i686 \
     elfutils-devel \
+    openssl-devel \
     make
 ```
 
