@@ -12,7 +12,8 @@ sudo apt-get install \
     libelf-dev \
     libc6-dev \
     libc6-dev-i386 \
-    libdw-dev
+    libdw-dev \
+    make
 ```
 
 ### RHEL/CentOS/Rocky Linux/Fedora
@@ -25,7 +26,8 @@ sudo dnf install \
     elfutils-libelf-devel \
     glibc-devel \
     glibc-devel.i686 \
-    elfutils-devel
+    elfutils-devel \
+    make
 ```
 
 ## Build
