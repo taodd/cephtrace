@@ -1112,11 +1112,13 @@ void print_discovered_osds(const std::vector<OsdProcessInfo>& processes) {
 }
 
 std::set<int> process_ids;  // Support multiple PIDs (set ensures deduplication)
+std::set<int> target_osd_ids; // Support multiple OSD IDs
 int parse_args(int argc, char **argv) {
   static struct option long_options[] = {
     {"skip-version-check", no_argument, 0, 0},
     {"version", no_argument, 0, 'V'},
     {"list", no_argument, 0, 0},
+    {"id", required_argument, 0, 0},
     {0, 0, 0, 0}
   };
 
@@ -1133,6 +1135,19 @@ int parse_args(int argc, char **argv) {
           skip_version_check = true;
         } else if (strcmp(long_options[option_index].name, "list") == 0) {
           list_only = true;
+        } else if (strcmp(long_options[option_index].name, "id") == 0) {
+          std::string id_str(optarg);
+          std::stringstream ss(id_str);
+          std::string token;
+          while (std::getline(ss, token, ',')) {
+            try {
+              int osd_id = stoi(token);
+              target_osd_ids.insert(osd_id);
+            } catch (...) {
+              std::cerr << "Invalid OSD ID value: " << token << std::endl;
+              return -1;
+            }
+          }
         }
         break;
       case 'V':
@@ -1198,11 +1213,11 @@ int parse_args(int argc, char **argv) {
         break;
       case '?':
       case 'h':
-        std::cout << "Usage: " << argv[0] << " [-d <seconds>] [-m <avg|max>] [-l <milliseconds>] [-o <osd-id>] [-x] [-b] [-j] [-i <filename>] [-t <seconds>] [-p <pid1,pid2,...>] [--skip-version-check] [--list]\n";
+        std::cout << "Usage: " << argv[0] << " [-d <seconds>] [-m <avg|max>] [-l <milliseconds>] [-o <osd-id>] [-x] [-b] [-j] [-i <filename>] [-t <seconds>] [-p <pid1,pid2,...>] [--skip-version-check] [--list] [--id <osd-id1,osd-id2,...>]\n";
         std::cout << "  -d <seconds>              Set probe duration in seconds to calculate average latency\n";
         std::cout << "  -m <avg|max>              Set operation latency collection mode\n";
         std::cout << "  -l <milliseconds>         Set operation latency threshold to capture\n";
-        std::cout << "  -o <osd-id>               Only probe a specific OSD\n";
+        std::cout << "  -o <osd-id>               Filter captured events to only show a specific OSD ID (uprobes still attached globally or to PIDs)\n";
         std::cout << "  -x                        Set probe mode to Full OPs. See below for details\n";
         std::cout << "  -b                        Set probe mode to Bluestore. See below for details\n";
         std::cout << "  -j                        Export DWARF info to JSON file\n";
@@ -1211,6 +1226,7 @@ int parse_args(int argc, char **argv) {
         std::cout << "  -p <pid1,pid2,...>        Probe using Process IDs (comma-separated, mandatory for tracing containerized processes)\n";
         std::cout << "  --skip-version-check      Skip version check when importing DWARF JSON (currently needed for containers)\n";
         std::cout << "  --list                    List active ceph-osd processes on the host, their PIDs and OSD IDs, and exit\n";
+        std::cout << "  --id <osd-id1,...>        Trace specific OSD ID(s) by automatically discovering and attaching uprobes to their PIDs\n";
         std::cout << "  -V, --version             Print version information and exit\n";
         std::cout << "  -h                        Show this help message\n";
         std::cout << "----------------------------------------------------------------------------------------------------------------------------------------\n";
@@ -1378,6 +1394,37 @@ int main(int argc, char **argv) {
       print_discovered_osds(processes);
     }
     return 0;
+  }
+
+  if (!target_osd_ids.empty()) {
+    // Resolve target OSD IDs to process PIDs using the process discovery helper
+    if (geteuid() != 0) {
+      std::cout << "Warning: Running without root privileges. Containerized status/OSD IDs of OSDs owned by other users may not be accurately detected." << std::endl << std::endl;
+    }
+    auto processes = discover_ceph_osd_processes();
+    std::set<int> resolved_pids;
+    for (int target_id : target_osd_ids) {
+      bool found = false;
+      for (const auto& proc : processes) {
+        if (proc.osd_id == target_id) {
+          process_ids.insert(proc.pid);
+          resolved_pids.insert(proc.pid);
+          found = true;
+        }
+      }
+      if (!found) {
+        std::cerr << "Error: No active ceph-osd process found for OSD ID " << target_id << std::endl;
+        return 1;
+      }
+    }
+    if (!resolved_pids.empty()) {
+      std::cout << "Resolved OSD ID(s) to PID(s): ";
+      for (auto it = resolved_pids.begin(); it != resolved_pids.end(); ++it) {
+        if (it != resolved_pids.begin()) std::cout << ", ";
+        std::cout << *it;
+      }
+      std::cout << std::endl << std::endl;
+    }
   }
 
   // Validate all process_ids if specified
