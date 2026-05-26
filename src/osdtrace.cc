@@ -213,7 +213,6 @@ static __u64 bootstamp = 0;
 
 __u64 threshold = 0; //in millisecond
 int timeout = -1; //in seconds
-int probe_osdid = -1;
 
 volatile sig_atomic_t timeout_occurred = 0;
 
@@ -983,24 +982,21 @@ static int handle_event(void *ctx, void *data, size_t size) {
     pid = val->pid;
     osd_id = osd_pid_to_id(pid);
 
-    if (probe_osdid == -1 || probe_osdid == osd_id) {
-      if (probe_mode == OP_SINGLE_PROBE) {
-        handle_single(val, osd_id);
-      } else if (probe_mode & OP_FULL_PROBE) {
-        if (mode == MODE_AVG) {
-          clog << "avg mode needs to be refined" << endl;
-          //handle_avg(val, osd_id);
-        } else if (mode == MODE_ALL){
-          handle_full(val, osd_id);
-        }
+    if (probe_mode == OP_SINGLE_PROBE) {
+      handle_single(val, osd_id);
+    } else if (probe_mode & OP_FULL_PROBE) {
+      if (mode == MODE_AVG) {
+        clog << "avg mode needs to be refined" << endl;
+        //handle_avg(val, osd_id);
+      } else if (mode == MODE_ALL){
+        handle_full(val, osd_id);
       }
     }
   } else if (is_bluestore_event && (probe_mode & BLUESTORE_PROBE)) {
     struct bluestore_lat_v *val = (struct bluestore_lat_v *) data;
     pid = val->pid;
     osd_id = osd_pid_to_id(pid);
-    if (probe_osdid == -1 || probe_osdid == osd_id)
-      handle_bluestore(val, osd_id);
+    handle_bluestore(val, osd_id);
   }
 
   if (!exists(osd_id)) {
@@ -1127,7 +1123,7 @@ int parse_args(int argc, char **argv) {
   // it in a plain char is unsafe on platforms where char is unsigned by
   // default (the `!= -1` test can then loop forever).  Match kfstrace.
   int opt;
-  while ((opt = getopt_long(argc, argv, ":d:m:t:o:xbj:i:l:p:V", long_options, &option_index)) != -1) {
+  while ((opt = getopt_long(argc, argv, ":d:m:t:xbj:i:l:p:V", long_options, &option_index)) != -1) {
     switch (opt) {
       case 0:
         // Handle long options
@@ -1175,9 +1171,6 @@ int parse_args(int argc, char **argv) {
       case 'b':
         probe_mode |= BLUESTORE_PROBE;
         break;
-      case 'o':
-        probe_osdid = stoi(optarg);
-        break;
       case 'j':
         export_json = true;
         json_output_file = optarg;
@@ -1213,11 +1206,10 @@ int parse_args(int argc, char **argv) {
         break;
       case '?':
       case 'h':
-        std::cout << "Usage: " << argv[0] << " [-d <seconds>] [-m <avg|max>] [-l <milliseconds>] [-o <osd-id>] [-x] [-b] [-j] [-i <filename>] [-t <seconds>] [-p <pid1,pid2,...>] [--skip-version-check] [--list] [--id <osd-id1,osd-id2,...>]\n";
+        std::cout << "Usage: " << argv[0] << " [-d <seconds>] [-m <avg|max>] [-l <milliseconds>] [-x] [-b] [-j] [-i <filename>] [-t <seconds>] [-p <pid1,pid2,...>] [--skip-version-check] [--list] [--id <osd-id1,osd-id2,...>]\n";
         std::cout << "  -d <seconds>              Set probe duration in seconds to calculate average latency\n";
         std::cout << "  -m <avg|max>              Set operation latency collection mode\n";
         std::cout << "  -l <milliseconds>         Set operation latency threshold to capture\n";
-        std::cout << "  -o <osd-id>               Filter captured events to only show a specific OSD ID (uprobes still attached globally or to PIDs)\n";
         std::cout << "  -x                        Set probe mode to Full OPs\n";
         std::cout << "  -b                        Set probe mode to Bluestore\n";
         std::cout << "  -j                        Export DWARF info to JSON file\n";
