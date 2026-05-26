@@ -1218,8 +1218,8 @@ int parse_args(int argc, char **argv) {
         std::cout << "  -m <avg|max>              Set operation latency collection mode\n";
         std::cout << "  -l <milliseconds>         Set operation latency threshold to capture\n";
         std::cout << "  -o <osd-id>               Filter captured events to only show a specific OSD ID (uprobes still attached globally or to PIDs)\n";
-        std::cout << "  -x                        Set probe mode to Full OPs. See below for details\n";
-        std::cout << "  -b                        Set probe mode to Bluestore. See below for details\n";
+        std::cout << "  -x                        Set probe mode to Full OPs\n";
+        std::cout << "  -b                        Set probe mode to Bluestore\n";
         std::cout << "  -j                        Export DWARF info to JSON file\n";
         std::cout << "  -i <filename>             Import DWARF info from JSON file\n";
         std::cout << "  -t <seconds>              Set execution timeout in seconds\n";
@@ -1229,16 +1229,6 @@ int parse_args(int argc, char **argv) {
         std::cout << "  --id <osd-id1,...>        Trace specific OSD ID(s) by automatically discovering and attaching uprobes to their PIDs\n";
         std::cout << "  -V, --version             Print version information and exit\n";
         std::cout << "  -h                        Show this help message\n";
-        std::cout << "----------------------------------------------------------------------------------------------------------------------------------------\n";
-        std::cout << "                                                SUPPORTED PROBE MODE DETAILS\n";
-        std::cout << "----------------------------------------------------------------------------------------------------------------------------------------\n";
-        std::cout << "  Default:\n    PrimaryLogPG::log_op_stats\n";
-        std::cout << "  \n  Full Ops (-x):\n    OSD::dequeue_op\n";
-        std::cout << "    PrimaryLogPG::execute_ctx\n    ECBackend::submit_transaction\n    OpRequest::mark_flag_point_string\n";
-        std::cout << "    PrimaryLogPG::log_op_stats\n    ReplicatedBackend::generate_subop\n    ReplicatedBackend::do_repop_reply\n";
-        std::cout << "    BlueStore::queue_transactions\n    BlueStore::_txc_calc_cost\n    BlueStore::_txc_state_proc\n";
-        std::cout << "    ReplicatedBackend::repop_commit\n    OSD::enqueue_op\n";
-        std::cout << "  \n  Bluestore (-b):\n    BlueStore::log_latency\n";
         exit(0);
       case ':':
         clog << "Missing arg for " << optopt << endl;
