@@ -985,9 +985,8 @@ static int handle_event(void *ctx, void *data, size_t size) {
     if (probe_mode == OP_SINGLE_PROBE) {
       handle_single(val, osd_id);
     } else if (probe_mode & OP_FULL_PROBE) {
-      if (mode == MODE_AVG) {
-        clog << "avg mode needs to be refined" << endl;
-        //handle_avg(val, osd_id);
+      if (mode == MODE_AVG || mode == MODE_MAX) {
+        handle_avg(val, osd_id);
       } else if (mode == MODE_ALL){
         handle_full(val, osd_id);
       }
