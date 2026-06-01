@@ -26,7 +26,7 @@ OSDTRACE_LOG="/tmp/osdtrace.log"
 OSDTRACE_ID_LOG="/tmp/osdtrace-id.log"
 RADOSTRACE_LOG="/tmp/radostrace.log"
 
-# OSD id targeted by the --id-based osdtrace run.  Must differ from the OSD
+# OSD id targeted by the -n-based osdtrace run.  Must differ from the OSD
 # the -p-based run attaches to (osd.1) so the two runs exercise distinct
 # ceph-osd PIDs; microceph creates osd.0/osd.1/osd.2 in this test's setup.
 TARGET_OSD_ID=2
@@ -46,9 +46,9 @@ cleanup() {
     fi
 
     if [[ -e $OSDTRACE_ID_LOG ]]; then
-        info "OSD trace (--id $TARGET_OSD_ID) output:"
+        info "OSD trace (-n $TARGET_OSD_ID) output:"
         cat $OSDTRACE_ID_LOG
-        info " === END of OSD trace (--id) === "
+        info " === END of OSD trace (-n) === "
     fi
 
     if [[ -e $RADOSTRACE_LOG ]]; then
@@ -177,14 +177,14 @@ OSDTRACE_PID=$(pidof osdtrace)
 info "Started osdtrace with PID $OSDTRACE_PID"
 sleep 3
 
-info "=== Step 6b: Start a second osdtrace targeting OSD $TARGET_OSD_ID via --id ==="
+info "=== Step 6b: Start a second osdtrace targeting OSD $TARGET_OSD_ID via -n ==="
 # Two osdtrace processes can attach uprobes to disjoint PIDs without
 # interference (each owns its own BPF maps/ringbuf).  This run validates
-# the --id resolver: it must enumerate ceph-osd processes, map OSD ID
+# the -n resolver: it must enumerate ceph-osd processes, map OSD ID
 # $TARGET_OSD_ID to its PID, and attach to *only* that PID — which the
 # verifier then proves by checking that every captured row carries
 # osd_id=$TARGET_OSD_ID (using verify_osdtrace_targets_only).
-timeout 30 $PROJECT_ROOT/osdtrace -i $OSD_DWARF --id $TARGET_OSD_ID --skip-version-check >$OSDTRACE_ID_LOG 2>&1 &
+timeout 30 $PROJECT_ROOT/osdtrace -i $OSD_DWARF -n $TARGET_OSD_ID --skip-version-check >$OSDTRACE_ID_LOG 2>&1 &
 OSDTRACE_ID_BG_PID=$!
 sleep 3
 
@@ -249,16 +249,16 @@ info "=== Step 11: Verify osdtrace output ==="
 # row total is several hundred.
 verify_osdtrace_output "$OSDTRACE_LOG" "$TEST_POOL_ID" "$MAX_OSD_ID" "$TOT_PG" 50
 
-info "=== Step 11b: Verify --id-based osdtrace output ==="
-# Anchor the resolver: stdout/stderr of the --id run must report the
+info "=== Step 11b: Verify -n-based osdtrace output ==="
+# Anchor the resolver: stdout/stderr of the -n run must report the
 # OSD id → PID mapping.  Then run the standard per-row invariant check
 # (lower min_rows: a single OSD sees a fraction of the bench traffic,
 # but still hundreds of subop_w + op_r rows over 20 s).  Finally pin
 # the targets-only invariant: every captured row's osd_id must equal
-# $TARGET_OSD_ID, which is the only thing that proves --id attached
+# $TARGET_OSD_ID, which is the only thing that proves -n attached
 # to *that* PID and no others.
-if ! grep -q "^--id $TARGET_OSD_ID resolved to PID " "$OSDTRACE_ID_LOG"; then
-    err "osdtrace --id $TARGET_OSD_ID log missing 'resolved to PID' line"
+if ! grep -q "^-n $TARGET_OSD_ID resolved to PID " "$OSDTRACE_ID_LOG"; then
+    err "osdtrace -n $TARGET_OSD_ID log missing 'resolved to PID' line"
     exit 1
 fi
 verify_osdtrace_output "$OSDTRACE_ID_LOG" "$TEST_POOL_ID" "$MAX_OSD_ID" "$TOT_PG" 10
@@ -269,7 +269,7 @@ verify_radostrace_output "$RADOSTRACE_LOG" "$TEST_POOL_ID" "$MAX_OSD_ID" 50
 
 info "=== Test Summary ==="
 info "✓ MicroCeph cluster deployed successfully"
-info "✓ osdtrace (-p and --id) and radostrace output validated"
+info "✓ osdtrace (-p and -n) and radostrace output validated"
 info "✓ All functional tests passed!"
 
 exit 0

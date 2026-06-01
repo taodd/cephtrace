@@ -470,7 +470,7 @@ _verify_radostrace_output_impl() {
 
 # verify_osdtrace_targets_only <log> <target_osd_id> [target_osd_id ...]
 #
-# Anchors --id semantics: assert the set of distinct osd_id values appearing
+# Anchors -n semantics: assert the set of distinct osd_id values appearing
 # in <log>'s data rows is a subset of the given targets.  Reuses
 # _osdtrace_rows so it shares the same NF/landmark-based row parser as the
 # main verifier (truncated tail rows are filtered upstream).
@@ -478,7 +478,7 @@ _verify_radostrace_output_impl() {
 # Fails if:
 #   - any data row carries an osd_id outside the target set (proves uprobes
 #     attached to a process the user didn't ask for), or
-#   - no data rows were captured at all (proves the --id resolution → attach
+#   - no data rows were captured at all (proves the -n resolution → attach
 #     path produced *something*; the looser min_rows check is left to
 #     verify_osdtrace_output).
 verify_osdtrace_targets_only() {
@@ -502,7 +502,7 @@ verify_osdtrace_targets_only() {
     done < <(_osdtrace_rows "$log")
 
     if (( total == 0 )); then
-        err "osdtrace log $log has zero data rows; --id resolution may have failed silently"
+        err "osdtrace log $log has zero data rows; -n resolution may have failed silently"
         return 1
     fi
 

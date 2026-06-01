@@ -1,19 +1,19 @@
 #!/bin/bash
 #
-# Negative-path / argument-parsing test for osdtrace's --id option.
+# Negative-path / argument-parsing test for osdtrace's -n option.
 # Validates the error branches that don't require a running ceph cluster:
 #
-#   - --id with a non-existent OSD ID fails with "no running ceph-osd
+#   - -n with a non-existent OSD ID fails with "no running ceph-osd
 #     process found"
-#   - --id combined with -p fails with "mutually exclusive"
-#   - --id with a non-numeric value fails with "Invalid --id value"
-#   - --id with a negative value fails with "must be non-negative"
+#   - -n combined with -p fails with "mutually exclusive"
+#   - -n with a non-numeric value fails with "Invalid -n value"
+#   - -n with a negative value fails with "must be non-negative"
 #   - the removed -o option is rejected by getopt
 #
 # Exit codes from `parse_args() < 0` get converted to `return 0` inside
 # osdtrace's `main()`, so we anchor on stderr substrings rather than the
-# numeric exit code for parse-time errors.  For main()-time errors (--id
-# resolution, --id/-p conflict) the binary exits 1 — those we check both.
+# numeric exit code for parse-time errors.  For main()-time errors (-n
+# resolution, -n/-p conflict) the binary exits 1 — those we check both.
 
 set -u
 
@@ -68,25 +68,25 @@ expect_stderr() {
 # the test host happens to have a Ceph OSD running.
 NONEXISTENT_OSD_ID=2147483600
 
-info "=== osdtrace --id option negative-path tests ==="
+info "=== osdtrace -n option negative-path tests ==="
 
 expect_stderr "not_found" \
     "no running ceph-osd process found with OSD ID $NONEXISTENT_OSD_ID" \
-    1 -- --id "$NONEXISTENT_OSD_ID"
+    1 -- -n "$NONEXISTENT_OSD_ID"
 
 expect_stderr "conflict_with_-p" \
-    "--id and -p are mutually exclusive" \
-    1 -- --id "$NONEXISTENT_OSD_ID" -p 1
+    "-n and -p are mutually exclusive" \
+    1 -- -n "$NONEXISTENT_OSD_ID" -p 1
 
 expect_stderr "non_numeric" \
-    "Invalid --id value: abc" \
-    -1 -- --id abc
+    "Invalid -n value: abc" \
+    -1 -- -n abc
 
 expect_stderr "negative" \
-    "Invalid --id value (must be non-negative): -1" \
-    -1 -- --id -1
+    "Invalid -n value (must be non-negative): -1" \
+    -1 -- -n -1
 
-# -o was removed when --id replaced it; getopt should print the standard
+# -o was removed when -n replaced it; getopt should print the standard
 # `invalid option` diagnostic.  Anchor on `?` being treated as the help
 # fall-through (which prints the usage banner that starts with "Usage:").
 expect_stderr "o_option_removed" \
