@@ -960,13 +960,12 @@ void print_discovered_osds(const std::vector<OsdProcessInfo>& processes) {
 }
 
 std::set<int> process_ids;  // Support multiple PIDs (set ensures deduplication)
-std::set<int> requested_osd_ids;  // Populated by --id; resolved to PIDs in main()
+std::set<int> requested_osd_ids;  // Populated by -n; resolved to PIDs in main()
 int parse_args(int argc, char **argv) {
   static struct option long_options[] = {
     {"skip-version-check", no_argument, 0, 0},
     {"version", no_argument, 0, 'V'},
     {"list", no_argument, 0, 0},
-    {"id", required_argument, 0, 0},
     {0, 0, 0, 0}
   };
 
@@ -975,7 +974,7 @@ int parse_args(int argc, char **argv) {
   // it in a plain char is unsafe on platforms where char is unsigned by
   // default (the `!= -1` test can then loop forever).  Match kfstrace.
   int opt;
-  while ((opt = getopt_long(argc, argv, ":st:bj:i:l:p:V", long_options, &option_index)) != -1) {
+  while ((opt = getopt_long(argc, argv, ":st:bj:i:l:p:n:V", long_options, &option_index)) != -1) {
     switch (opt) {
       case 0:
         // Handle long options
@@ -983,19 +982,22 @@ int parse_args(int argc, char **argv) {
           skip_version_check = true;
         } else if (strcmp(long_options[option_index].name, "list") == 0) {
           list_only = true;
-        } else if (strcmp(long_options[option_index].name, "id") == 0) {
+        }
+        break;
+      case 'n':
+        {
           std::stringstream ss(optarg);
           std::string token;
           while (std::getline(ss, token, ',')) {
             try {
               int id = stoi(token);
               if (id < 0) {
-                std::cerr << "Invalid --id value (must be non-negative): " << token << std::endl;
+                std::cerr << "Invalid -n value (must be non-negative): " << token << std::endl;
                 return -1;
               }
               requested_osd_ids.insert(id);
             } catch (...) {
-              std::cerr << "Invalid --id value: " << token << std::endl;
+              std::cerr << "Invalid -n value: " << token << std::endl;
               return -1;
             }
           }
@@ -1050,7 +1052,7 @@ int parse_args(int argc, char **argv) {
         break;
       case '?':
       case 'h':
-        std::cout << "Usage: " << argv[0] << " [-s] [-l <milliseconds>] [-b] [-j] [-i <filename>] [-t <seconds>] [-p <pid1,pid2,...>] [--id <osd-id1,osd-id2,...>] [--skip-version-check] [--list]\n";
+        std::cout << "Usage: " << argv[0] << " [-s] [-l <milliseconds>] [-b] [-j] [-i <filename>] [-t <seconds>] [-p <pid1,pid2,...>] [-n <osd-id1,osd-id2,...>] [--skip-version-check] [--list]\n";
         std::cout << "  -s                        Set probe mode to Single OP (logs PrimaryLogPG::log_op_stats only)\n";
         std::cout << "  -l <milliseconds>         Set operation latency threshold to capture\n";
         std::cout << "  -b                        Set probe mode to Bluestore\n";
@@ -1058,7 +1060,7 @@ int parse_args(int argc, char **argv) {
         std::cout << "  -i <filename>             Import DWARF info from JSON file\n";
         std::cout << "  -t <seconds>              Set execution timeout in seconds\n";
         std::cout << "  -p <pid1,pid2,...>        Probe using Process IDs (comma-separated, mandatory for tracing containerized processes)\n";
-        std::cout << "  --id <osd-id1,osd-id2,...> Probe by OSD ID (comma-separated; resolves to PIDs via discovery)\n";
+        std::cout << "  -n <osd-id1,osd-id2,...>  Probe by OSD ID (comma-separated; resolves to PIDs via discovery)\n";
         std::cout << "  --skip-version-check      Skip version check when importing DWARF JSON (currently needed for containers)\n";
         std::cout << "  --list                    List active ceph-osd processes on the host, their PIDs and OSD IDs, and exit\n";
         std::cout << "  -V, --version             Print version information and exit\n";
@@ -1220,10 +1222,10 @@ int main(int argc, char **argv) {
     return 0;
   }
 
-  // Resolve --id <osd-id,...> to PIDs via discovery and feed into process_ids.
+  // Resolve -n <osd-id,...> to PIDs via discovery and feed into process_ids.
   if (!requested_osd_ids.empty()) {
     if (!process_ids.empty()) {
-      std::cerr << "Error: --id and -p are mutually exclusive" << std::endl;
+      std::cerr << "Error: -n and -p are mutually exclusive" << std::endl;
       return 1;
     }
     auto processes = discover_ceph_osd_processes();
@@ -1245,7 +1247,7 @@ int main(int argc, char **argv) {
         return 1;
       }
       process_ids.insert(matches[0]);
-      clog << "--id " << want << " resolved to PID " << matches[0] << endl;
+      clog << "-n " << want << " resolved to PID " << matches[0] << endl;
     }
   }
 
