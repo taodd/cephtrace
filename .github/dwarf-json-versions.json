@@ -1,16 +1,8 @@
 {
   "latest": [
     {
-      "name": "ubuntu-20.04-archive-latest",
-      "ubuntu": "20.04"
-    },
-    {
       "name": "ubuntu-22.04-archive-latest",
       "ubuntu": "22.04"
-    },
-    {
-      "name": "ubuntu-24.04-archive-latest",
-      "ubuntu": "24.04"
     }
   ],
   "manual": [
@@ -23,6 +15,16 @@
       "name": "ubuntu-22.04-ceph-18.2.7",
       "ubuntu": "22.04",
       "version": "18.2.7"
+    },
+    {
+      "name": "ubuntu-22.04-ceph-18.2.8",
+      "ubuntu": "22.04",
+      "version": "18.2.8"
+    },
+    {
+      "name": "ubuntu-22.04-ceph-19.2.3",
+      "ubuntu": "22.04",
+      "version": "19.2.3"
     }
   ]
 }
