@@ -98,6 +98,7 @@ install_base_dependencies() {
         libc6-dev-i386 \
         libdw-dev \
         libelf-dev \
+        libssl-dev \
         make \
         python3 \
         wget \
