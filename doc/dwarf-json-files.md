@@ -78,19 +78,19 @@ Configuration file: `.github/dwarf-json-versions.json`
 The configuration has two sections:
 
 - `latest`: generate files for the latest Ceph package currently available from the Ubuntu repositories for each Ubuntu release.
-- `manual`: generate files for exact Ceph package versions listed in the config.
+- `manual`: generate files for Ceph versions listed in the config. Values like `18.2.7` use the official `https://download.ceph.com/debian-18.2.7/` repository. Full Ubuntu package versions like `17.2.6-0ubuntu0.22.04.3` use Ubuntu APT/Launchpad.
 
 Example manual entry:
 
 ```json
 {
-  "name": "ubuntu-22.04-ceph-17.2.6",
+  "name": "ubuntu-22.04-ceph-18.2.7",
   "ubuntu": "22.04",
-  "version": "17.2.6-0ubuntu0.22.04.3"
+  "version": "18.2.7"
 }
 ```
 
-If an exact historical package version is no longer installable through APT, add a `launchpad_files_url` value that points to the matching Launchpad build `+files` page:
+If an exact Ubuntu package version is no longer installable through APT, add a `launchpad_files_url` value that points to the matching Launchpad build `+files` page:
 
 ```json
 {
@@ -119,7 +119,7 @@ files/ubuntu/radostrace/<version>_dwarf.json
 
 If the expected file already exists in the repository checkout, the workflow does not overwrite it. If both the `osdtrace` and `radostrace` files for a matrix row already exist, the row skips package installation, build, and generation, then stages the existing files into the artifact.
 
-The scheduled workflow runs `latest` rows only, so exact historical versions are refreshed only when manually requested.
+The workflow is currently manual-only and runs from the GitHub Actions UI or pull request checks.
 
 ### Prerequisites
 

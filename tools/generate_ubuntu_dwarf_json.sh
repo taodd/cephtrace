@@ -9,7 +9,9 @@ Generate Ubuntu DWARF JSON files for the installed or requested Ceph version.
 
 Options:
   --ubuntu <version>              Ubuntu version label for logging
-  --ceph-version <version>        Exact Ceph package version to install
+  --ceph-version <version>        Ceph version to install. x.y.z values use
+                                  https://download.ceph.com/debian-x.y.z/;
+                                  full distro package versions use Ubuntu APT.
   --launchpad-files-url <url>     Optional Launchpad +files URL fallback
   -h, --help                      Show this help
 EOF
@@ -17,6 +19,7 @@ EOF
 
 UBUNTU_VERSION=""
 CEPH_VERSION=""
+CEPH_PACKAGE_VERSION=""
 LAUNCHPAD_FILES_URL=""
 
 while [[ $# -gt 0 ]]; do
@@ -53,7 +56,7 @@ if [[ -n "$UBUNTU_VERSION" ]]; then
 fi
 
 if [[ -n "$CEPH_VERSION" ]]; then
-    echo "Requested exact Ceph version: $CEPH_VERSION"
+    echo "Requested Ceph version: $CEPH_VERSION"
 else
     echo "Requested latest Ceph version from configured Ubuntu repositories"
 fi
@@ -91,6 +94,7 @@ install_base_dependencies() {
         curl \
         g++ \
         git \
+        gnupg \
         libc6-dev-i386 \
         libdw-dev \
         libelf-dev \
@@ -119,6 +123,78 @@ EOF
     fi
 
     apt_update
+}
+
+is_upstream_ceph_version() {
+    [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+}
+
+expected_upstream_package_version() {
+    local version="$1"
+    local codename
+
+    codename=$(ubuntu_codename)
+    printf '%s-1%s\n' "$version" "$codename"
+}
+
+configure_ceph_repository() {
+    local version="$1"
+    local codename keyring sources_file
+
+    codename=$(ubuntu_codename)
+    keyring="/usr/share/keyrings/ceph.gpg"
+    sources_file="/etc/apt/sources.list.d/ceph.sources"
+
+    curl -fsSL https://download.ceph.com/keys/release.asc \
+        | "${SUDO[@]}" gpg --dearmor --yes -o "$keyring"
+
+    "${SUDO[@]}" tee "$sources_file" >/dev/null <<EOF
+Types: deb
+URIs: https://download.ceph.com/debian-$version/
+Suites: $codename
+Components: main
+Signed-by: $keyring
+EOF
+
+    apt_update
+}
+
+resolve_ceph_package_version() {
+    local requested="$1"
+
+    python3 - "$requested" <<'PY'
+import subprocess
+import sys
+
+requested = sys.argv[1]
+try:
+    output = subprocess.check_output(
+        ["apt-cache", "madison", "ceph-osd"], text=True
+    )
+except subprocess.CalledProcessError as exc:
+    raise SystemExit(exc.returncode)
+
+versions = []
+for line in output.splitlines():
+    parts = [part.strip() for part in line.split("|")]
+    if len(parts) >= 2:
+        versions.append(parts[1])
+
+if requested in versions:
+    print(requested)
+    raise SystemExit(0)
+
+prefix = f"{requested}-"
+matches = [version for version in versions if version.startswith(prefix)]
+if matches:
+    print(matches[0])
+    raise SystemExit(0)
+
+raise SystemExit(
+    f"no ceph-osd package version matching {requested!r}; candidates: "
+    + ", ".join(versions)
+)
+PY
 }
 
 launchpad_source_page() {
@@ -221,6 +297,17 @@ install_dbgsyms_from_launchpad() {
 
 install_ceph_packages() {
     if [[ -n "$CEPH_VERSION" ]]; then
+        if is_upstream_ceph_version "$CEPH_VERSION"; then
+            CEPH_PACKAGE_VERSION=$(resolve_ceph_package_version "$CEPH_VERSION")
+            apt_install \
+                ceph-common="$CEPH_PACKAGE_VERSION" \
+                ceph-osd="$CEPH_PACKAGE_VERSION" \
+                librados2="$CEPH_PACKAGE_VERSION" \
+                librbd1="$CEPH_PACKAGE_VERSION"
+            echo "Installed Ceph packages from download.ceph.com at $CEPH_PACKAGE_VERSION"
+            return 0
+        fi
+
         if apt_install \
             ceph-common="$CEPH_VERSION" \
             ceph-osd="$CEPH_VERSION" \
@@ -239,6 +326,16 @@ install_ceph_packages() {
 install_debug_symbols() {
     local installed_version="$1"
     local dbgsyms=(ceph-osd-dbgsym librados2-dbgsym librbd1-dbgsym)
+
+    if [[ -n "$CEPH_VERSION" ]] && is_upstream_ceph_version "$CEPH_VERSION"; then
+        apt_install \
+            ceph-common-dbg="$installed_version" \
+            ceph-osd-dbg="$installed_version" \
+            librados2-dbg="$installed_version" \
+            librbd1-dbg="$installed_version"
+        echo "Installed Ceph debug packages from download.ceph.com"
+        return 0
+    fi
 
     configure_ddeb_repository
 
@@ -328,7 +425,11 @@ stage_artifacts() {
 }
 
 if [[ -n "$CEPH_VERSION" ]]; then
-    set_dwarf_paths "$CEPH_VERSION"
+    if is_upstream_ceph_version "$CEPH_VERSION"; then
+        set_dwarf_paths "$(expected_upstream_package_version "$CEPH_VERSION")"
+    else
+        set_dwarf_paths "$CEPH_VERSION"
+    fi
     if both_dwarf_files_exist; then
         echo "Both DWARF JSON files already exist; skipping package install, build, and generation:"
         echo "  $OSD_DWARF"
@@ -339,14 +440,26 @@ if [[ -n "$CEPH_VERSION" ]]; then
 fi
 
 install_base_dependencies
+
+if [[ -n "$CEPH_VERSION" ]] && is_upstream_ceph_version "$CEPH_VERSION"; then
+    configure_ceph_repository "$CEPH_VERSION"
+fi
+
 install_ceph_packages
 
 INSTALLED_VERSION=$(installed_ceph_version)
 echo "Installed ceph-osd version: $INSTALLED_VERSION"
 
-if [[ -n "$CEPH_VERSION" && "$INSTALLED_VERSION" != "$CEPH_VERSION" ]]; then
-    echo "ERROR: installed ceph-osd version $INSTALLED_VERSION does not match requested $CEPH_VERSION" >&2
-    exit 1
+if [[ -n "$CEPH_VERSION" ]]; then
+    if is_upstream_ceph_version "$CEPH_VERSION"; then
+        if [[ "$INSTALLED_VERSION" != "$CEPH_PACKAGE_VERSION" ]]; then
+            echo "ERROR: installed ceph-osd version $INSTALLED_VERSION does not match requested $CEPH_PACKAGE_VERSION" >&2
+            exit 1
+        fi
+    elif [[ "$INSTALLED_VERSION" != "$CEPH_VERSION" ]]; then
+        echo "ERROR: installed ceph-osd version $INSTALLED_VERSION does not match requested $CEPH_VERSION" >&2
+        exit 1
+    fi
 fi
 
 set_dwarf_paths "$INSTALLED_VERSION"
