@@ -12,8 +12,6 @@ on:
           - latest
           - manual
           - all
-  schedule:
-    - cron: '17 3 * * 1'
 
 permissions:
   contents: read
@@ -33,7 +31,7 @@ jobs:
       - name: Generate matrix
         id: matrix
         env:
-          MODE: ${{ github.event_name == 'schedule' && 'latest' || github.event.inputs.mode || 'all' }}
+          MODE: ${{ github.event.inputs.mode || 'all' }}
         run: |
           matrix=$(python3 tools/generate_dwarf_matrix.py --mode "$MODE")
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
