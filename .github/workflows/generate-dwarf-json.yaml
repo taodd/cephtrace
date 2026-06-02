@@ -1,0 +1,102 @@
+name: Generate DWARF JSON Files
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Which configured rows to run
+        required: true
+        default: all
+        type: choice
+        options:
+          - latest
+          - manual
+          - all
+  schedule:
+    - cron: '17 3 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  matrix:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - name: Checkout code and submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Generate matrix
+        id: matrix
+        env:
+          MODE: ${{ github.event_name == 'schedule' && 'latest' || github.event.inputs.mode || 'all' }}
+        run: |
+          matrix=$(python3 tools/generate_dwarf_matrix.py --mode "$MODE")
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+  generate:
+    needs: matrix
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.matrix.outputs.matrix) }}
+    # The runner host is only used to orchestrate the job.  Package install,
+    # debug-symbol install, build, and DWARF generation happen in this
+    # distro-specific container so Ubuntu 20.04 rows use Ubuntu 20.04 packages.
+    container:
+      image: ubuntu:${{ matrix.ubuntu }}
+    steps:
+      - name: Prepare checkout dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates git
+
+      - name: Checkout code and submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Generate Ubuntu DWARF JSON files
+        run: |
+          args=(--ubuntu "${{ matrix.ubuntu }}")
+          if [ -n "${{ matrix.version }}" ]; then
+            args+=(--ceph-version "${{ matrix.version }}")
+          fi
+          if [ -n "${{ matrix.launchpad_files_url }}" ]; then
+            args+=(--launchpad-files-url "${{ matrix.launchpad_files_url }}")
+          fi
+          ./tools/generate_ubuntu_dwarf_json.sh "${args[@]}"
+
+      - name: Upload DWARF JSON artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ubuntu-dwarf-json-${{ matrix.name }}
+          path: dwarf-json-artifacts/
+          retention-days: 30
+          if-no-files-found: error
+
+  aggregate:
+    needs: generate
+    if: always() && needs.generate.result == 'success'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download per-row artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ubuntu-dwarf-json-*
+          merge-multiple: true
+          path: dwarf-json-artifacts
+
+      - name: Upload combined DWARF JSON artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ubuntu-dwarf-json-files
+          path: dwarf-json-artifacts/
+          retention-days: 30
+          if-no-files-found: error

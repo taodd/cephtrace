@@ -1,0 +1,38 @@
+{
+  "latest": [
+    {
+      "name": "ubuntu-20.04-archive-latest",
+      "ubuntu": "20.04"
+    },
+    {
+      "name": "ubuntu-22.04-archive-latest",
+      "ubuntu": "22.04"
+    },
+    {
+      "name": "ubuntu-24.04-archive-latest",
+      "ubuntu": "24.04"
+    }
+  ],
+  "manual": [
+    {
+      "name": "ubuntu-20.04-ceph-15.2.17",
+      "ubuntu": "20.04",
+      "version": "15.2.17-0ubuntu0.20.04.6"
+    },
+    {
+      "name": "ubuntu-22.04-ceph-17.2.6",
+      "ubuntu": "22.04",
+      "version": "17.2.6-0ubuntu0.22.04.3"
+    },
+    {
+      "name": "ubuntu-22.04-ceph-17.2.7",
+      "ubuntu": "22.04",
+      "version": "17.2.7-0ubuntu0.22.04.2"
+    },
+    {
+      "name": "ubuntu-24.04-ceph-19.2.3",
+      "ubuntu": "24.04",
+      "version": "19.2.3-0ubuntu0.24.04.3"
+    }
+  ]
+}
