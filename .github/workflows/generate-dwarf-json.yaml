@@ -1,6 +1,9 @@
 name: Generate DWARF JSON Files
 
 on:
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       mode:
@@ -31,7 +34,7 @@ jobs:
       - name: Generate matrix
         id: matrix
         env:
-          MODE: ${{ github.event.inputs.mode || 'all' }}
+          MODE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.mode || 'all' }}
         run: |
           matrix=$(python3 tools/generate_dwarf_matrix.py --mode "$MODE")
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
