@@ -43,6 +43,9 @@ jobs:
     needs: matrix
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.matrix.outputs.matrix) }}
