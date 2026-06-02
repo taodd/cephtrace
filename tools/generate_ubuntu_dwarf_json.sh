@@ -359,6 +359,13 @@ install_debug_symbols() {
     install_dbgsyms_from_launchpad "$installed_version"
 }
 
+configure_runtime_library_path() {
+    if [[ -d /usr/lib/ceph ]]; then
+        export LD_LIBRARY_PATH="/usr/lib/ceph${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+        echo "Using Ceph private library path: /usr/lib/ceph"
+    fi
+}
+
 installed_ceph_version() {
     dpkg-query -W -f='${Version}\n' ceph-osd
 }
@@ -475,6 +482,7 @@ fi
 
 install_debug_symbols "$INSTALLED_VERSION"
 build_tools
+configure_runtime_library_path
 
 GENERATED_FILES=()
 
