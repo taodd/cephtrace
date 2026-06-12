@@ -55,7 +55,7 @@ jobs:
 
     steps:
       - name: Checkout code and submodules
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           submodules: recursive
           fetch-depth: 0
@@ -167,7 +167,7 @@ jobs:
         version: ${{ fromJson(needs.generate.outputs.versions) }}
     steps:
       - name: Checkout code and submodules
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           submodules: recursive
           fetch-depth: 0
@@ -247,7 +247,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
