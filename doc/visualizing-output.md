@@ -82,6 +82,38 @@ The **OSDs in the acting set of the slowest ops** block is a quick culprit
 pointer; for the full iterative ranking mapped to physical hosts, use the
 analyzer it points to.
 
+## Interactive HTML report
+
+For a richer, shareable view, add `--html <file>` to write a **self-contained**
+HTML report instead of terminal text:
+
+```bash
+./tools/cephtrace_report.py --html report.html osd.log
+# wrote report.html (osdtrace, 115829 ops)
+```
+
+Open it in any browser, or attach it to a ticket - it is a single file with no
+external dependencies (no CDN, works offline). It shows everything the terminal
+view does plus things a terminal can't:
+
+![osdtrace HTML report](images/report-osdtrace.png)
+
+- **Latency over the capture** - p95 per slice in arrival order, so a workload
+  that degrades over time (or runs in bursts) is visible as a shape.
+- **Interactive**: hover any bar for exact counts/latencies; click a column
+  header to sort the per-OSD / per-pool and slowest-ops tables; click a row in
+  the per-group table to **filter the histogram to that OSD or pool** (and
+  "show all" to reset).
+
+The radostrace report is the same layout with a read/write split, per-pool
+breakdown, and the object name on each slowest op:
+
+![radostrace HTML report](images/report-radostrace.png)
+
+The report embeds only **precomputed aggregates** (histograms, per-slice
+percentiles, per-group stats, the 50 slowest ops), so even a multi-hundred-
+thousand-op capture produces a ~20 KB file.
+
 ## Relationship to the analyzers
 
 This tool is the visual *glance*. It deliberately reuses the existing parsers

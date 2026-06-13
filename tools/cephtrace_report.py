@@ -18,8 +18,12 @@ analyze_radostrace_output.detect_file_format and the same column layout.
 Usage:
     radostrace -t 30 > rados.log && ./tools/cephtrace_report.py rados.log
     sudo ./osdtrace --id 0 -t 30 | ./tools/cephtrace_report.py
+
+    # write a self-contained, interactive HTML report instead of terminal text
+    ./tools/cephtrace_report.py --html report.html osd.log
 """
 import csv
+import json
 import os
 import re
 import shutil
@@ -38,6 +42,23 @@ from analyze_radostrace_output import detect_file_format  # noqa: E402
 
 # 1/8th-width cells give smooth, sub-character-resolution bars.
 _CELLS = " ▏▎▍▌▋▊▉█"
+
+# Log-scale latency buckets (microseconds), shared by the terminal histogram
+# and the HTML report so both tell the same story.
+_HIST_EDGES = [250, 500, 1000, 2000, 4000, 8000, 16000, 32000, 64000, 1e18]
+_HIST_NAMES = ["<250us", "<500us", "<1ms", "<2ms", "<4ms", "<8ms", "<16ms",
+               "<32ms", "<64ms", ">=64ms"]
+
+
+def _bucketize(lats):
+    """Count latencies into the shared log-scale buckets."""
+    buckets = [0] * len(_HIST_EDGES)
+    for value in lats:
+        for i, edge in enumerate(_HIST_EDGES):
+            if value < edge:
+                buckets[i] += 1
+                break
+    return buckets
 
 
 def _bar(frac, width):
@@ -97,21 +118,13 @@ def latency_histogram(lats, bar_w, label):
     The percentile *tables* already live in the analyzers; what they lack is
     the distribution *shape*, which is what this renders.
     """
-    edges = [250, 500, 1000, 2000, 4000, 8000, 16000, 32000, 64000, 1e18]
-    names = ["<250us", "<500us", "<1ms", "<2ms", "<4ms", "<8ms", "<16ms",
-             "<32ms", "<64ms", ">=64ms"]
-    buckets = [0] * len(edges)
-    for value in lats:
-        for i, edge in enumerate(edges):
-            if value < edge:
-                buckets[i] += 1
-                break
+    buckets = _bucketize(lats)
     ordered = sorted(lats)
     _heading(f"{label} distribution   "
              f"p50 {_us(_pct(ordered, 50))}   p95 {_us(_pct(ordered, 95))}   "
              f"p99 {_us(_pct(ordered, 99))}   max {_us(ordered[-1])}")
     peak = max(buckets) or 1
-    for name, count in zip(names, buckets):
+    for name, count in zip(_HIST_NAMES, buckets):
         if count:
             print(f"    {name:>7}  {_bar(count / peak, bar_w)} {count}")
 
@@ -270,40 +283,154 @@ def _is_osdtrace(lines):
     return any(re.match(r"osd\s+\d+\s+pg\s", ln) for ln in lines)
 
 
-def _dispatch(lines, is_csv, width):
-    """Route buffered lines to the matching report; return exit code."""
+def _load(lines, is_csv):
+    """Parse buffered lines into ('osdtrace'|'radostrace', rows)."""
     if _is_osdtrace(lines):
         rows = [d[0] for d in (parse_osd_line(ln) for ln in lines) if d]
-        if not rows:
-            print("no osdtrace rows recognized", file=sys.stderr)
-            return 1
-        report_osdtrace(rows, width)
+        return "osdtrace", rows
+    return "radostrace", _parse_radostrace(lines, is_csv)
+
+
+# ---------------------------------------------------------------------------
+# HTML report (self-contained; aggregates precomputed here, rendered by the
+# JS in report_template.html over the embedded JSON payload).
+# ---------------------------------------------------------------------------
+
+def _timeline(rows, slices=60):
+    """p50/p95 per equal slice of the capture, in arrival order."""
+    if len(rows) < slices:
+        slices = max(1, len(rows))
+    step = len(rows) / slices
+    out = []
+    for i in range(slices):
+        chunk = rows[int(i * step):int((i + 1) * step)]
+        lats = sorted(r["lat"] for r in chunk)
+        if lats:
+            out.append({"p50": round(_pct(lats, 50)),
+                        "p95": round(_pct(lats, 95)), "n": len(lats)})
+    return out
+
+
+def _group_stats(groups):
+    """Per-group {id, count, p50, p95, max} + per-group histograms."""
+    table, hists = [], {}
+    for gid, lats in groups.items():
+        ordered = sorted(lats)
+        table.append({"id": gid, "count": len(ordered),
+                      "p50": round(_pct(ordered, 50)),
+                      "p95": round(_pct(ordered, 95)), "max": ordered[-1]})
+        hists[str(gid)] = _bucketize(ordered)
+    table.sort(key=lambda g: -g["p95"])
+    return table, hists
+
+
+def _build_payload(kind, rows):
+    """Compact JSON-able aggregates for the HTML template."""
+    lats = sorted(r["lat"] for r in rows)
+    summary = {"ops": len(rows), "p50": _us(_pct(lats, 50)),
+               "p95": _us(_pct(lats, 95)), "p99": _us(_pct(lats, 99)),
+               "max": _us(lats[-1])}
+    payload = {"kind": kind, "summary": summary,
+               "histLabels": _HIST_NAMES,
+               "histOverall": _bucketize(r["lat"] for r in rows),
+               "timeline": _timeline(rows)}
+
+    if kind == "osdtrace":
+        bytype = Counter(r["op"] for r in rows)
+        summary["byType"] = bytype.most_common()
+        total = sum(r["lat"] for r in rows) or 1
+        stage = {
+            "messenger": sum(r["throttle_lat"] + r["recv_lat"]
+                             + r["dispatch_lat"] for r in rows),
+            "queue": sum(r["queue_lat"] for r in rows),
+            "osd": sum(r["osd_lat"] for r in rows),
+            "bluestore": sum(r["bluestore_lat"] for r in rows),
+        }
+        payload["stages"] = [[k, round(100 * v / total)]
+                             for k, v in stage.items()]
+        kv_commit = sum(r["bluestore_details"].get("kv_commit", 0)
+                        for r in rows)
+        payload["kvCommit"] = round(100 * kv_commit / total)
+        groups = defaultdict(list)
+        for row in rows:
+            groups[row["osd"]].append(row["lat"])
+        payload["groupLabel"] = "OSD"
+        payload["groups"], payload["histGroups"] = _group_stats(groups)
+        payload["slowest"] = [
+            {"lat": r["lat"], "op": r["op"], "osd": r["osd"], "pg": r["pg"],
+             "size": _hsize(r["size"])}
+            for r in sorted(rows, key=lambda r: -r["lat"])[:50]]
     else:
-        rows = _parse_radostrace(lines, is_csv)
-        if not rows:
-            print("no radostrace rows recognized", file=sys.stderr)
-            return 1
-        report_radostrace(rows, width)
-    return 0
+        summary["reads"] = sum(1 for r in rows if r["wr"] == "R")
+        summary["writes"] = sum(1 for r in rows if r["wr"] == "W")
+        summary["byType"] = [["read", summary["reads"]],
+                             ["write", summary["writes"]]]
+        groups = defaultdict(list)
+        for row in rows:
+            groups[row["pool"]].append(row["lat"])
+        payload["groupLabel"] = "Pool"
+        payload["groups"], payload["histGroups"] = _group_stats(groups)
+        payload["slowest"] = [
+            {"lat": r["lat"], "wr": r["wr"], "pool": r["pool"],
+             "obj": r["obj"]}
+            for r in sorted(rows, key=lambda r: -r["lat"])[:50]]
+    return payload
+
+
+def _write_html(payload, out_path):
+    """Inline the payload into the template and write a standalone .html."""
+    template = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "report_template.html")
+    with open(template, encoding="utf-8") as handle:
+        html = handle.read()
+    # Compact, and neutralize any "</script>" that could ride in on an object
+    # name by escaping "<".
+    blob = json.dumps(payload, separators=(",", ":")).replace("<", "\\u003c")
+    with open(out_path, "w", encoding="utf-8") as handle:
+        handle.write(html.replace("__CEPHTRACE_DATA__", blob))
 
 
 def main():
-    """Read a file arg or stdin, detect the tool, print a report."""
+    """Read a file arg or stdin, detect the tool, print or write a report."""
     if "-h" in sys.argv or "--help" in sys.argv:
         print(__doc__)
         return 0
-    args = [a for a in sys.argv[1:] if not a.startswith("-")]
-    width = shutil.get_terminal_size((90, 24)).columns
+    argv = sys.argv[1:]
+    html_out = None
+    if "--html" in argv:
+        idx = argv.index("--html")
+        if idx + 1 >= len(argv):
+            print("--html requires an output filename", file=sys.stderr)
+            return 2
+        html_out = argv[idx + 1]
+        del argv[idx:idx + 2]
+    positional = [a for a in argv if not a.startswith("-")]
 
-    if args:
-        path = args[0]
+    if positional:
+        path = positional[0]
         with open(path, encoding="utf-8", errors="replace") as handle:
             lines = handle.readlines()
         is_csv = detect_file_format(path) == "csv"
     else:
         lines = sys.stdin.readlines()
         is_csv = any("," in ln for ln in lines[:5] if ln.strip())
-    return _dispatch(lines, is_csv, width)
+
+    kind, rows = _load(lines, is_csv)
+    if not rows:
+        print(f"no {kind} rows recognized", file=sys.stderr)
+        return 1
+
+    if html_out:
+        _write_html(_build_payload(kind, rows), html_out)
+        print(f"wrote {html_out} ({kind}, {len(rows)} ops)")
+        return 0
+
+    width = shutil.get_terminal_size((90, 24)).columns
+    if kind == "osdtrace":
+        report_osdtrace(rows, width)
+    else:
+        report_radostrace(rows, width)
+    return 0
 
 
 if __name__ == "__main__":

@@ -6,7 +6,9 @@ they are offline and fast.  The module is imported directly (tox sets
 PYTHONPATH=tools); cephtrace_report has a hyphen-free name precisely so it is
 importable here.
 """
+import json
 import os
+import re
 import runpy
 import sys
 
@@ -68,6 +70,67 @@ def test_radostrace_csv_report(capsys):
     assert rc == 0
     assert "radostrace summary" in out
     assert "latency distribution" in out
+
+
+def _embedded_json(html):
+    """Pull the embedded payload back out of a generated report."""
+    match = re.search(r"const DATA = (\{.*?\});", html, re.S)
+    return json.loads(match.group(1))
+
+
+def test_html_osdtrace(tmp_path, capsys):
+    """--html on osdtrace writes a self-contained report with valid payload."""
+    out = tmp_path / "osd.html"
+    argv = sys.argv
+    sys.argv = ["cephtrace_report.py", "--html", str(out), OSD_LOG]
+    try:
+        rc = cephtrace_report.main()
+    finally:
+        sys.argv = argv
+    assert rc == 0
+    assert f"wrote {out}" in capsys.readouterr().out
+    html = out.read_text(encoding="utf-8")
+    # self-contained: placeholder substituted, no external script/style refs
+    assert "__CEPHTRACE_DATA__" not in html
+    assert "<script src" not in html and "http" not in html.split("foot")[0]
+    payload = _embedded_json(html)
+    assert payload["kind"] == "osdtrace"
+    assert payload["summary"]["ops"] == 11
+    # two OSDs in the sample -> per-group histograms for cross-filtering
+    assert payload["groupLabel"] == "OSD"
+    assert sorted(payload["histGroups"]) == ["0", "2"]
+    assert len(payload["histOverall"]) == len(payload["histLabels"])
+    assert payload["stages"] and payload["kvCommit"] > 0
+    assert payload["timeline"] and payload["slowest"]
+
+
+def test_html_radostrace(tmp_path):
+    """--html on radostrace (CSV input) writes a valid pool-keyed report."""
+    out = tmp_path / "rados.html"
+    argv = sys.argv
+    sys.argv = ["cephtrace_report.py", "--html", str(out), RADOS_CSV]
+    try:
+        rc = cephtrace_report.main()
+    finally:
+        sys.argv = argv
+    assert rc == 0
+    payload = _embedded_json(out.read_text(encoding="utf-8"))
+    assert payload["kind"] == "radostrace"
+    assert payload["groupLabel"] == "Pool"
+    assert "reads" in payload["summary"] and "writes" in payload["summary"]
+    assert payload["slowest"][0]["lat"] >= payload["slowest"][-1]["lat"]
+
+
+def test_html_requires_filename(capsys):
+    """--html with no following filename fails with rc=2."""
+    argv = sys.argv
+    sys.argv = ["cephtrace_report.py", "--html"]
+    try:
+        rc = cephtrace_report.main()
+    finally:
+        sys.argv = argv
+    assert rc == 2
+    assert "requires an output filename" in capsys.readouterr().err
 
 
 def test_no_rows_returns_error(tmp_path, capsys):
