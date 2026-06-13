@@ -127,6 +127,7 @@ See cephtrace in action troubleshooting real performance issues.
 | **DWARF Files** | Managing debug information for tracing | [Guide](doc/dwarf-json-files.md) |
 
 ### 📊 Analysis & Tools
+- **[Visualizing Trace Output](doc/visualizing-output.md)** - One-screen visual summary (latency histogram, where the time goes) of any capture
 - **[Analyzing Radostrace Logs](doc/analyze-radostrace.md)** - Extract insights from client traces
 - **[Analyzing Osdtrace Logs](doc/analyze-osdtrace.md)** - Deep-dive into OSD performance data
 
