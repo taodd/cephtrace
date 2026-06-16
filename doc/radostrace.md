@@ -266,7 +266,7 @@ Typical latencies:
 
 ```bash
 # On the host that the VM is running
-sudo ./radostrace -p <pid of the vm> -i <dwarf_json> -t 300 > /tmp/radostrace_output.txt
+sudo ./radostrace -p <pid of the vm> -t 300 > /tmp/radostrace_output.txt
 
 # Look for operations with high latency (over 100ms) values
 awk '$9 > 100000' /tmp/radostrace_output.txt
@@ -279,7 +279,7 @@ awk '$9 > 100000' /tmp/radostrace_output.txt
 ps aux | grep cinder-volume
 
 # Trace that specific process
-sudo ./radostrace -p <PID> -i <dwarf_json>
+sudo ./radostrace -p <PID>
 ```
 
 ### Scenario 3: Analyzing RGW traffic 
