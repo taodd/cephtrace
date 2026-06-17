@@ -17,15 +17,18 @@ source "$_LIB_DIR/log.sh"
 
 # cephadm_image_for_release <release>
 #
-# Echo the latest tracked stable point-release image tag for a major Ceph
-# release.  Bump these as upstream cuts new tags — the goal is "latest
-# point release of the named major series" per the test matrix.
+# Echo the latest stable point-release image tag for a major Ceph release.
+# Bump these as upstream cuts new tags — the goal is "latest point release of
+# the named major series" per the test matrix.  Track the latest tag that
+# actually has a quay.io/ceph/ceph container image (verify before bumping):
+# e.g. quincy stays at v17.2.8 because v17.2.9 shipped an el9 RPM but no
+# container image, and the cephadm test pulls the container.
 cephadm_image_for_release() {
     case "$1" in
-        quincy)   echo "quay.io/ceph/ceph:v17.2.8"  ;;
-        reef)     echo "quay.io/ceph/ceph:v18.2.7"  ;;
-        squid)    echo "quay.io/ceph/ceph:v19.2.3"  ;;
-        tentacle) echo "quay.io/ceph/ceph:v20.2.1"  ;;
+        quincy)   echo "quay.io/ceph/ceph:v17.2.8"  ;;  # v17.2.9 has no image
+        reef)     echo "quay.io/ceph/ceph:v18.2.8"  ;;
+        squid)    echo "quay.io/ceph/ceph:v19.2.4"  ;;
+        tentacle) echo "quay.io/ceph/ceph:v20.2.2"  ;;
         *) err "unknown release: $1"; return 1 ;;
     esac
 }
