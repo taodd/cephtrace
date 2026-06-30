@@ -74,6 +74,16 @@ class DwarfParser {
   Dwarf_Attribute *find_func_frame_base(Dwarf_Die *, Dwarf_Attribute *);
   bool translate_param_location(Dwarf_Die *, std::string, Dwarf_Addr,
                                 Dwarf_Die &, VarLocation &);
+  // Recover a parameter's incoming-argument location from the SysV-AMD64
+  // calling convention when the DWARF carries no DW_AT_location for it (the
+  // compiler can drop the location of a forwarded by-value aggregate under
+  // -march=x86-64-v3, e.g. reqid in ReplicatedBackend::submit_transaction).
+  bool abi_param_location(Dwarf_Die *func, Dwarf_Die &target, Dwarf_Addr pc,
+                          VarLocation &);
+  // Resolve the call-frame CFA at pc and add an offset, yielding a stack
+  // VarLocation (the same machinery DW_OP_fbreg uses).
+  bool abi_stack_location(Dwarf_Die *func, Dwarf_Addr pc, long cfa_off,
+                          VarLocation &);
   bool func_entrypc(Dwarf_Die *, Dwarf_Addr *);
   bool find_prologue(Dwarf_Die *func, Dwarf_Addr &pc);
   void dwarf_die_type(Dwarf_Die *, Dwarf_Die *);

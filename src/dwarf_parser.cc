@@ -217,6 +217,160 @@ Dwarf_Attribute *DwarfParser::find_func_frame_base(
   return fb_attr;
 }
 
+// --- SysV-AMD64 incoming-argument classification ---------------------------
+//
+// Used only as a fallback when a parameter's DW_AT_location is missing.  We
+// reconstruct where the argument lives at function entry from the calling
+// convention.  Only the INTEGER and (stack) MEMORY classes are handled — the
+// classes osdtrace's traced parameters actually use (pointers, references,
+// integers/enums, and large by-value aggregates such as osd_reqid_t).  Any
+// parameter we cannot classify with confidence makes the whole fallback bail,
+// so we never emit a guessed-wrong location.
+namespace {
+enum AbiClass { ABI_INTEGER, ABI_MEMORY, ABI_UNHANDLED };
+
+// Peel typedef/const/volatile/restrict down to the underlying type DIE.
+bool peel_type(Dwarf_Die *t) {
+  for (;;) {
+    switch (dwarf_tag(t)) {
+      case DW_TAG_typedef:
+      case DW_TAG_const_type:
+      case DW_TAG_volatile_type:
+      case DW_TAG_restrict_type: {
+        Dwarf_Attribute a;
+        if (dwarf_attr_integrate(t, DW_AT_type, &a) == NULL) return false;
+        if (dwarf_formref_die(&a, t) == NULL) return false;
+        break;
+      }
+      default:
+        return true;
+    }
+  }
+}
+
+// Classify a parameter by its type DIE.  Returns false if the type cannot be
+// resolved (caller treats that as ABI_UNHANDLED / bail).
+AbiClass classify_param(Dwarf_Die *param, Dwarf_Word &size) {
+  Dwarf_Attribute ta;
+  Dwarf_Die t;
+  if (dwarf_attr_integrate(param, DW_AT_type, &ta) == NULL) return ABI_UNHANDLED;
+  if (dwarf_formref_die(&ta, &t) == NULL) return ABI_UNHANDLED;
+  if (!peel_type(&t)) return ABI_UNHANDLED;
+
+  switch (dwarf_tag(&t)) {
+    case DW_TAG_pointer_type:
+    case DW_TAG_reference_type:
+    case DW_TAG_rvalue_reference_type:
+    case DW_TAG_enumeration_type:
+      size = 8;
+      return ABI_INTEGER;
+
+    case DW_TAG_base_type: {
+      Dwarf_Attribute ea;
+      Dwarf_Word enc = 0;
+      if (dwarf_attr_integrate(&t, DW_AT_encoding, &ea) != NULL)
+        dwarf_formudata(&ea, &enc);
+      // Floats go in SSE registers — not handled here.
+      if (enc == DW_ATE_float || enc == DW_ATE_complex_float) return ABI_UNHANDLED;
+      Dwarf_Word sz = 0;
+      if (dwarf_aggregate_size(&t, &sz) != 0 || sz > 8) return ABI_UNHANDLED;
+      size = sz;
+      return ABI_INTEGER;
+    }
+
+    case DW_TAG_structure_type:
+    case DW_TAG_class_type:
+    case DW_TAG_union_type:
+    case DW_TAG_array_type: {
+      Dwarf_Word sz = 0;
+      if (dwarf_aggregate_size(&t, &sz) != 0) return ABI_UNHANDLED;
+      // Aggregates > 16 bytes are MEMORY class (passed on the stack).  Smaller
+      // ones need eightbyte field classification (INTEGER/SSE) — bail.
+      if (sz > 16) {
+        size = sz;
+        return ABI_MEMORY;
+      }
+      return ABI_UNHANDLED;
+    }
+
+    default:
+      return ABI_UNHANDLED;
+  }
+}
+}  // namespace
+
+bool DwarfParser::abi_stack_location(Dwarf_Die *func, Dwarf_Addr pc,
+                                     long cfa_off, VarLocation &varloc) {
+  // Resolve the call-frame CFA at pc into a (reg, offset) pair, then add the
+  // argument's CFA-relative offset.  Identical machinery to DW_OP_fbreg.
+  Dwarf_Attribute fb_mem;
+  Dwarf_Attribute *fb = find_func_frame_base(func, &fb_mem);
+  if (fb == NULL) {
+    cerr << "abi_stack_location: function has no frame base" << endl;
+    return false;
+  }
+  Dwarf_Op *fb_expr;
+  size_t fb_len;
+  if (dwarf_getlocation_addr(fb, pc, &fb_expr, &fb_len, 1) != 1 || fb_len == 0) {
+    cerr << "abi_stack_location: frame base expr failed" << endl;
+    return false;
+  }
+  if (!translate_expr(fb, fb_expr, pc, varloc)) return false;
+  varloc.offset += cfa_off;
+  varloc.stack = true;
+  return true;
+}
+
+bool DwarfParser::abi_param_location(Dwarf_Die *func, Dwarf_Die &target,
+                                     Dwarf_Addr pc, VarLocation &varloc) {
+  // SysV-AMD64 INTEGER argument registers, in order, as DWARF register
+  // numbers: RDI=5, RSI=4, RDX=1, RCX=2, R8=8, R9=9.
+  static const int kIntArgRegs[6] = {5, 4, 1, 2, 8, 9};
+  int int_regs_used = 0;
+  long stack_off = 0;  // CFA-relative offset of the next stack argument
+  Dwarf_Off target_off = dwarf_dieoffset(&target);
+
+  Dwarf_Die child;
+  if (dwarf_child(func, &child) != 0) {
+    cerr << "abi_param_location: function has no children" << endl;
+    return false;
+  }
+  do {
+    if (dwarf_tag(&child) != DW_TAG_formal_parameter) continue;
+
+    Dwarf_Word size = 0;
+    AbiClass cls = classify_param(&child, size);
+    if (cls == ABI_UNHANDLED) {
+      cerr << "abi_param_location: unhandled parameter class; cannot recover "
+              "location" << endl;
+      return false;  // safety net: never guess
+    }
+
+    bool is_target = (dwarf_dieoffset(&child) == target_off);
+
+    if (cls == ABI_INTEGER) {
+      if (int_regs_used < 6) {
+        if (is_target) {
+          varloc.reg = kIntArgRegs[int_regs_used];
+          varloc.offset = 0;
+          varloc.stack = false;
+          return true;
+        }
+        ++int_regs_used;
+      } else {  // overflowed to the stack, one eightbyte
+        if (is_target) return abi_stack_location(func, pc, stack_off, varloc);
+        stack_off += 8;
+      }
+    } else {  // ABI_MEMORY: always on the stack, size rounded up to 8 bytes
+      if (is_target) return abi_stack_location(func, pc, stack_off, varloc);
+      stack_off += (long)((size + 7) & ~(Dwarf_Word)7);
+    }
+  } while (dwarf_siblingof(&child, &child) == 0);
+
+  cerr << "abi_param_location: target parameter not found among formals" << endl;
+  return false;
+}
+
 bool DwarfParser::translate_param_location(Dwarf_Die *func, string symbol,
                                            Dwarf_Addr pc, Dwarf_Die &vardie,
                                            VarLocation &varloc) {
@@ -227,6 +381,15 @@ bool DwarfParser::translate_param_location(Dwarf_Die *func, string symbol,
 
   Dwarf_Attribute loc_attr;
   if (dwarf_attr_integrate(&vardie, DW_AT_location, &loc_attr) == NULL) {
+    // The compiler emitted no location for this parameter.  This happens for
+    // forwarded by-value aggregates under -march=x86-64-v3 (e.g. reqid in
+    // ReplicatedBackend::submit_transaction on Ubuntu amd64v3 / CentOS el10):
+    // the value is still at its ABI incoming-argument slot, so recover it from
+    // the SysV-AMD64 calling convention instead of giving up.
+    if (abi_param_location(func, vardie, pc, varloc)) {
+      cerr << "Recovered ABI incoming location for parameter " << symbol << endl;
+      return true;
+    }
     cerr << "Parameter " << symbol << " has no DW_AT_location" << endl;
     return false;
   }
