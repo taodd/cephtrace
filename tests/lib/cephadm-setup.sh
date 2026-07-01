@@ -175,6 +175,28 @@ _orch_backend_ready() {
 }
 
 
+# _ensure_ceph_user
+#
+# cephadm bootstrap creates /var/run/ceph via `install -d -o 167 -g 167`,
+# where 167 is the ceph uid/gid baked into the ceph container images.  Ubuntu
+# 26.04 ships uutils coreutils, whose `install` rejects a numeric owner absent
+# from /etc/passwd (GNU install accepted it), so bootstrap fails there with
+# `install: invalid user: '167'`.  Create a matching ceph user/group when uid
+# 167 does not already resolve.  No-op on 22.04/24.04 and anywhere ceph is
+# already installed.
+_ensure_ceph_user() {
+    getent passwd 167 >/dev/null 2>&1 && return 0
+    # Only uid/gid 167 need a passwd/group entry (any name); prefer "ceph" but
+    # fall back to "ceph167" if that name is already taken by a differently-
+    # numbered ceph user (e.g. a host that already has apt ceph installed).
+    local g=ceph u=ceph
+    getent group  ceph >/dev/null 2>&1 && g=ceph167
+    getent passwd ceph >/dev/null 2>&1 && u=ceph167
+    getent group 167 >/dev/null 2>&1 || groupadd -g 167 "$g" 2>/dev/null || true
+    useradd -u 167 -g 167 -M -r -s /usr/sbin/nologin "$u" 2>/dev/null || true
+}
+
+
 # cephadm_bootstrap_single_host <image> <mon_ip> [cephadm_bin]
 #
 # Bootstrap the cluster and echo the new FSID.  --single-host-defaults
@@ -222,6 +244,9 @@ cephadm_bootstrap_single_host() {
     # on Ubuntu 22.04 rejects it.  CI doesn't need the inspection anyway —
     # we purge partial clusters ourselves between attempts (see below).
     local attempt rc fsid
+    # cephadm's bootstrap chowns /var/run/ceph to uid/gid 167; ensure that user
+    # exists so 26.04's uutils `install` accepts it (see _ensure_ceph_user).
+    _ensure_ceph_user
     for (( attempt=1; attempt<=max_attempts; attempt++ )); do
         # Always start from a clean slate: clears any debris left by a
         # previous failed attempt (or a stale cluster from an earlier run on
