@@ -96,7 +96,19 @@ install_cephadm() {
         err "cephadm extracted from $image does not run"
         return 1
     fi
-    info "extracted cephadm from $image"
+    # The test invokes bare `cephadm` (shell / orch / ceph -s / ...) directly in
+    # many places, which assumes a working cephadm on PATH.  We only reach this
+    # path because the distro cephadm on PATH is broken (e.g. Resolute), so
+    # point PATH at this working binary too: overwrite the broken on-PATH copy,
+    # or drop one into /usr/local/bin (which precedes /usr/sbin on PATH).
+    local onpath; onpath="$(command -v cephadm 2>/dev/null || true)"
+    if [ -n "$onpath" ]; then
+        cp "$dest" "$onpath"
+    else
+        cp "$dest" /usr/local/bin/cephadm && chmod +x /usr/local/bin/cephadm
+    fi
+    hash -r 2>/dev/null || true
+    info "extracted cephadm from $image (also installed on PATH as cephadm)"
     return 0
 }
 
