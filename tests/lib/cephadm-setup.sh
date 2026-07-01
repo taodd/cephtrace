@@ -34,15 +34,26 @@ cephadm_image_for_release() {
 }
 
 
-# install_cephadm <release> <dest_path>
+# Does the cephadm at $1 actually load and run?  `--help` forces cephadm's
+# module imports (where the Resolute package fails) yet is pure argparse: it
+# needs no root, podman, or network and exits 0 on a working binary.  Used to
+# reject a broken distro package before we commit to it.
+_cephadm_runs() { "$1" --help >/dev/null 2>&1; }
+
+# install_cephadm <release> <dest_path> <fallback_image>
 #
 # Make a working `cephadm` available at $dest.  Strategy:
 #   1. Try the distro-packaged cephadm (apt install on Ubuntu).  Ubuntu 24.04
 #      ships squid-era cephadm, which can bootstrap any v17–v20 image via
-#      `--image`.  This is the simplest and most reliable path.
-#   2. Fall back to extracting cephadm from the matching quay.io image.
-#      That guarantees the cephadm version matches the cluster image, which
-#      matters for older releases (quincy, reef) where flag names differ.
+#      `--image`.  This is the simplest and most reliable path -- BUT only if
+#      it actually runs.  The cephadm apt package on Ubuntu 26.04 (Resolute)
+#      is broken: it imports a `ceph` python module that isn't packaged, so
+#      every invocation dies with `ModuleNotFoundError: No module named
+#      'ceph'`.  We accept the distro package only after verifying it executes.
+#   2. Fall back to extracting cephadm from the matching quay.io image.  The
+#      in-image /usr/sbin/cephadm is a self-contained python zipapp (it bundles
+#      cephadmlib and all its deps), so it runs regardless of host packaging,
+#      and its bootstrap flag-set matches the image version exactly.
 #
 # Why not "curl the script from github.com/ceph/ceph/<branch>"?
 #   - Squid (and later) repackaged cephadm as a multi-file Python package
@@ -53,30 +64,38 @@ cephadm_image_for_release() {
 install_cephadm() {
     local release="$1"; local dest="${2:-/tmp/cephadm}"; local image="$3"
 
-    # Path 1: distro package.
+    # Path 1: distro package (already present, or installable via apt), but
+    # only if it actually runs -- see _cephadm_runs and the Resolute note above.
+    local sys_cephadm=""
     if command -v cephadm >/dev/null; then
-        cp "$(command -v cephadm)" "$dest"
-        chmod +x "$dest"
-        info "using distro cephadm: $(cephadm --version 2>&1 | head -1 | tr -d '\n')"
-        return 0
+        sys_cephadm="$(command -v cephadm)"
+    elif apt-get install -y -q cephadm >/dev/null 2>&1 && command -v cephadm >/dev/null; then
+        sys_cephadm="$(command -v cephadm)"
     fi
-    if apt-get install -y -q cephadm >/dev/null 2>&1; then
-        cp "$(command -v cephadm)" "$dest"
+    if [ -n "$sys_cephadm" ]; then
+        cp "$sys_cephadm" "$dest"
         chmod +x "$dest"
-        info "installed cephadm via apt: $(cephadm --version 2>&1 | head -1 | tr -d '\n')"
-        return 0
+        if _cephadm_runs "$dest"; then
+            info "using distro cephadm from $sys_cephadm"
+            return 0
+        fi
+        info "distro cephadm ($sys_cephadm) does not run (broken package, e.g. Resolute); falling back to container image"
     fi
 
     # Path 2: extract from the matching container image.  Every quay.io/ceph
     # image bundles /usr/sbin/cephadm; pulling that out yields a cephadm
     # whose bootstrap flag-set matches the image version exactly.
-    [ -n "$image" ] || { err "no fallback image supplied to install_cephadm"; return 1; }
+    [ -n "$image" ] || { err "no working distro cephadm and no fallback image supplied to install_cephadm"; return 1; }
     info "extracting cephadm from $image (cold start ~1 min for image pull)"
     podman pull "$image" >/dev/null
     local cid; cid=$(podman create --rm "$image" /bin/true)
     podman cp "${cid}:/usr/sbin/cephadm" "$dest"
     podman rm -f "$cid" >/dev/null 2>&1 || true
     chmod +x "$dest"
+    if ! _cephadm_runs "$dest"; then
+        err "cephadm extracted from $image does not run"
+        return 1
+    fi
     info "extracted cephadm from $image"
     return 0
 }
