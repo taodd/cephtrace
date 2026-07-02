@@ -99,32 +99,57 @@ else
     install_dbgsyms_from_launchpad $DBGSYM_PKGS
 fi
 
-# Get the ceph version for reference file lookup
-matching_ref_version=$(dpkg -l | awk '$2=="ceph-common" {print $3}')
-
-# Reference filenames may carry an optional architecture suffix
-# (e.g. osd-19.2.3-0ubuntu0.24.04.3_arm64_dwarf.json) when the same
-# package version is checked in for more than one arch.  Glob and pick
-# the first match instead of hard-coding the filename.
-find_ref() {
-    local dir="$1" prefix="$2"
-    ls "${dir}/${prefix}${matching_ref_version}"*_dwarf.json 2>/dev/null | head -1
+# Select the reference DWARF JSON by the ELF build-id embedded in the freshly
+# generated JSON, NOT the package version.  The amd64 and amd64v3 builds of the
+# same Ceph version (Ubuntu 26.04 publishes an amd64v3 package variant) share a
+# version string but have distinct build-ids and distinct function addresses,
+# so version-keying could pick the wrong-arch reference.  Build-id keying picks
+# the correct file automatically, whichever variant the runner installed, and
+# the caller prints exactly which file was matched.
+find_ref_by_buildid() {
+    local dir="$1" module="$2" generated="$3"
+    python3 - "$dir" "$module" "$generated" <<'PY'
+import glob, json, os, sys
+ref_dir, module, generated = sys.argv[1:4]
+want = json.load(open(generated)).get(module, {}).get("build_id")
+if not want:
+    sys.stderr.write(
+        f"ERROR: generated JSON {generated} has no build_id for module {module}\n")
+    sys.exit(1)
+for path in sorted(glob.glob(os.path.join(ref_dir, "*_dwarf.json"))):
+    try:
+        d = json.load(open(path))
+    except (OSError, ValueError):
+        continue
+    if d.get(module, {}).get("build_id") == want:
+        print(path)
+        sys.exit(0)
+sys.stderr.write(
+    f"ERROR: no reference DWARF JSON in {ref_dir} matches the installed "
+    f"{module} build-id {want}; a reference file for this exact build is "
+    f"probably missing and should be generated and checked in\n")
+sys.exit(1)
+PY
 }
 
 # Test osdtrace dwarf json generation
 echo "Testing osdtrace dwarf json generation..."
 osd_new_dwarf="generated-osd-dwarf.json"
 ./osdtrace -j $osd_new_dwarf
-osd_ref_file=$(find_ref ./files/ubuntu/osdtrace osd-)
-./tests/compare_dwarf_json.py $osd_ref_file $osd_new_dwarf
+osd_ref_file=$(find_ref_by_buildid ./files/ubuntu/osdtrace ceph-osd "$osd_new_dwarf") \
+    || { echo "osdtrace reference lookup failed"; exit 1; }
+echo "Using reference DWARF JSON (matched by ceph-osd build-id): $osd_ref_file"
+./tests/compare_dwarf_json.py "$osd_ref_file" "$osd_new_dwarf"
 echo "osdtrace dwarf json comparison passed!"
 
 # Test radostrace dwarf json generation
 echo "Testing radostrace dwarf json generation..."
 rados_new_dwarf="generated-rados-dwarf.json"
 ./radostrace -j $rados_new_dwarf
-rados_ref_file=$(find_ref ./files/ubuntu/radostrace "")
-./tests/compare_dwarf_json.py $rados_ref_file $rados_new_dwarf
+rados_ref_file=$(find_ref_by_buildid ./files/ubuntu/radostrace libceph-common.so.2 "$rados_new_dwarf") \
+    || { echo "radostrace reference lookup failed"; exit 1; }
+echo "Using reference DWARF JSON (matched by libceph-common.so.2 build-id): $rados_ref_file"
+./tests/compare_dwarf_json.py "$rados_ref_file" "$rados_new_dwarf"
 echo "radostrace dwarf json comparison passed!"
 
 echo "All dwarf json comparisons passed successfully!"

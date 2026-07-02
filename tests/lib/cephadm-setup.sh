@@ -34,15 +34,26 @@ cephadm_image_for_release() {
 }
 
 
-# install_cephadm <release> <dest_path>
+# Does the cephadm at $1 actually load and run?  `--help` forces cephadm's
+# module imports (where the Resolute package fails) yet is pure argparse: it
+# needs no root, podman, or network and exits 0 on a working binary.  Used to
+# reject a broken distro package before we commit to it.
+_cephadm_runs() { "$1" --help >/dev/null 2>&1; }
+
+# install_cephadm <release> <dest_path> <fallback_image>
 #
 # Make a working `cephadm` available at $dest.  Strategy:
 #   1. Try the distro-packaged cephadm (apt install on Ubuntu).  Ubuntu 24.04
 #      ships squid-era cephadm, which can bootstrap any v17–v20 image via
-#      `--image`.  This is the simplest and most reliable path.
-#   2. Fall back to extracting cephadm from the matching quay.io image.
-#      That guarantees the cephadm version matches the cluster image, which
-#      matters for older releases (quincy, reef) where flag names differ.
+#      `--image`.  This is the simplest and most reliable path -- BUT only if
+#      it actually runs.  The cephadm apt package on Ubuntu 26.04 (Resolute)
+#      is broken: it imports a `ceph` python module that isn't packaged, so
+#      every invocation dies with `ModuleNotFoundError: No module named
+#      'ceph'`.  We accept the distro package only after verifying it executes.
+#   2. Fall back to extracting cephadm from the matching quay.io image.  The
+#      in-image /usr/sbin/cephadm is a self-contained python zipapp (it bundles
+#      cephadmlib and all its deps), so it runs regardless of host packaging,
+#      and its bootstrap flag-set matches the image version exactly.
 #
 # Why not "curl the script from github.com/ceph/ceph/<branch>"?
 #   - Squid (and later) repackaged cephadm as a multi-file Python package
@@ -53,31 +64,51 @@ cephadm_image_for_release() {
 install_cephadm() {
     local release="$1"; local dest="${2:-/tmp/cephadm}"; local image="$3"
 
-    # Path 1: distro package.
+    # Path 1: distro package (already present, or installable via apt), but
+    # only if it actually runs -- see _cephadm_runs and the Resolute note above.
+    local sys_cephadm=""
     if command -v cephadm >/dev/null; then
-        cp "$(command -v cephadm)" "$dest"
-        chmod +x "$dest"
-        info "using distro cephadm: $(cephadm --version 2>&1 | head -1 | tr -d '\n')"
-        return 0
+        sys_cephadm="$(command -v cephadm)"
+    elif apt-get install -y -q cephadm >/dev/null 2>&1 && command -v cephadm >/dev/null; then
+        sys_cephadm="$(command -v cephadm)"
     fi
-    if apt-get install -y -q cephadm >/dev/null 2>&1; then
-        cp "$(command -v cephadm)" "$dest"
+    if [ -n "$sys_cephadm" ]; then
+        cp "$sys_cephadm" "$dest"
         chmod +x "$dest"
-        info "installed cephadm via apt: $(cephadm --version 2>&1 | head -1 | tr -d '\n')"
-        return 0
+        if _cephadm_runs "$dest"; then
+            info "using distro cephadm from $sys_cephadm"
+            return 0
+        fi
+        info "distro cephadm ($sys_cephadm) does not run (broken package, e.g. Resolute); falling back to container image"
     fi
 
     # Path 2: extract from the matching container image.  Every quay.io/ceph
     # image bundles /usr/sbin/cephadm; pulling that out yields a cephadm
     # whose bootstrap flag-set matches the image version exactly.
-    [ -n "$image" ] || { err "no fallback image supplied to install_cephadm"; return 1; }
+    [ -n "$image" ] || { err "no working distro cephadm and no fallback image supplied to install_cephadm"; return 1; }
     info "extracting cephadm from $image (cold start ~1 min for image pull)"
     podman pull "$image" >/dev/null
     local cid; cid=$(podman create --rm "$image" /bin/true)
     podman cp "${cid}:/usr/sbin/cephadm" "$dest"
     podman rm -f "$cid" >/dev/null 2>&1 || true
     chmod +x "$dest"
-    info "extracted cephadm from $image"
+    if ! _cephadm_runs "$dest"; then
+        err "cephadm extracted from $image does not run"
+        return 1
+    fi
+    # The test invokes bare `cephadm` (shell / orch / ceph -s / ...) directly in
+    # many places, which assumes a working cephadm on PATH.  We only reach this
+    # path because the distro cephadm on PATH is broken (e.g. Resolute), so
+    # point PATH at this working binary too: overwrite the broken on-PATH copy,
+    # or drop one into /usr/local/bin (which precedes /usr/sbin on PATH).
+    local onpath; onpath="$(command -v cephadm 2>/dev/null || true)"
+    if [ -n "$onpath" ]; then
+        cp "$dest" "$onpath"
+    else
+        cp "$dest" /usr/local/bin/cephadm && chmod +x /usr/local/bin/cephadm
+    fi
+    hash -r 2>/dev/null || true
+    info "extracted cephadm from $image (also installed on PATH as cephadm)"
     return 0
 }
 
@@ -156,6 +187,28 @@ _orch_backend_ready() {
 }
 
 
+# _ensure_ceph_user
+#
+# cephadm bootstrap creates /var/run/ceph via `install -d -o 167 -g 167`,
+# where 167 is the ceph uid/gid baked into the ceph container images.  Ubuntu
+# 26.04 ships uutils coreutils, whose `install` rejects a numeric owner absent
+# from /etc/passwd (GNU install accepted it), so bootstrap fails there with
+# `install: invalid user: '167'`.  Create a matching ceph user/group when uid
+# 167 does not already resolve.  No-op on 22.04/24.04 and anywhere ceph is
+# already installed.
+_ensure_ceph_user() {
+    getent passwd 167 >/dev/null 2>&1 && return 0
+    # Only uid/gid 167 need a passwd/group entry (any name); prefer "ceph" but
+    # fall back to "ceph167" if that name is already taken by a differently-
+    # numbered ceph user (e.g. a host that already has apt ceph installed).
+    local g=ceph u=ceph
+    getent group  ceph >/dev/null 2>&1 && g=ceph167
+    getent passwd ceph >/dev/null 2>&1 && u=ceph167
+    getent group 167 >/dev/null 2>&1 || groupadd -g 167 "$g" 2>/dev/null || true
+    useradd -u 167 -g 167 -M -r -s /usr/sbin/nologin "$u" 2>/dev/null || true
+}
+
+
 # cephadm_bootstrap_single_host <image> <mon_ip> [cephadm_bin]
 #
 # Bootstrap the cluster and echo the new FSID.  --single-host-defaults
@@ -203,6 +256,9 @@ cephadm_bootstrap_single_host() {
     # on Ubuntu 22.04 rejects it.  CI doesn't need the inspection anyway —
     # we purge partial clusters ourselves between attempts (see below).
     local attempt rc fsid
+    # cephadm's bootstrap chowns /var/run/ceph to uid/gid 167; ensure that user
+    # exists so 26.04's uutils `install` accepts it (see _ensure_ceph_user).
+    _ensure_ceph_user
     for (( attempt=1; attempt<=max_attempts; attempt++ )); do
         # Always start from a clean slate: clears any debris left by a
         # previous failed attempt (or a stale cluster from an earlier run on

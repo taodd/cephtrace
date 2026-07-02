@@ -75,9 +75,25 @@ Available versions include:
 - Ubuntu 20.04: Ceph 15.2.17, 17.2.x series
 - Ubuntu 22.04: Ceph 17.2.x, 19.2.x series
 - Ubuntu 24.04: Ceph 19.2.x series
+- Ubuntu 26.04: Ceph 20.2.x series (Tentacle), including `amd64v3`
+  architecture-variant builds
 
 File naming format: `<version>_dwarf.json`
 - Example: `17.2.6-0ubuntu0.22.04.2_dwarf.json`
+
+When more than one build of the same package version is checked in — a
+different architecture or microarchitecture variant — the filename carries an
+architecture suffix to keep the builds distinct. Ubuntu 26.04's `amd64v3`
+package variant (`APT::Architecture-Variants "amd64v3"`) keeps the same
+version string and `dpkg` architecture as the baseline `amd64` build but is
+compiled for `-march=x86-64-v3`, so it has different function addresses and a
+different ELF build-id and needs its own DWARF JSON:
+- Example: `osd-20.2.0-0ubuntu2_amd64v3_dwarf.json`
+- Example: `20.2.0-0ubuntu2_amd64v3_dwarf.json`
+
+The embedded-DWARF path matches the target by ELF build-id, so it selects the
+right variant automatically; the suffix only disambiguates the checked-in
+files and the `-i` import path.
 
 ### CentOS Stream
 
