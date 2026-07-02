@@ -78,6 +78,8 @@ class DwarfParser {
   // calling convention when the DWARF carries no DW_AT_location for it (the
   // compiler can drop the location of a forwarded by-value aggregate under
   // -march=x86-64-v3, e.g. reqid in ReplicatedBackend::submit_transaction).
+  // x86-64 builds only: on other architectures it always returns false, so
+  // the caller falls back to the normal missing-location failure path.
   bool abi_param_location(Dwarf_Die *func, Dwarf_Die &target, Dwarf_Addr pc,
                           VarLocation &);
   // Resolve the call-frame CFA at pc and add an offset, yielding a stack

@@ -323,6 +323,16 @@ bool DwarfParser::abi_stack_location(Dwarf_Die *func, Dwarf_Addr pc,
 
 bool DwarfParser::abi_param_location(Dwarf_Die *func, Dwarf_Die &target,
                                      Dwarf_Addr pc, VarLocation &varloc) {
+#if !defined(__x86_64__)
+  // Everything below encodes the SysV-AMD64 calling convention (INTEGER
+  // register order, MEMORY-class stack layout); on any other architecture
+  // those register numbers and offsets would be wrong (e.g. DWARF regnum 5
+  // is RDI on x86-64 but x5 on arm64).  osdtrace/radostrace always run
+  // natively on the host they trace, so a non-x86-64 build can never face an
+  // x86-64 target: decline the recovery and let the caller fail gracefully.
+  (void)func; (void)target; (void)pc; (void)varloc;
+  return false;
+#else
   // SysV-AMD64 INTEGER argument registers, in order, as DWARF register
   // numbers: RDI=5, RSI=4, RDX=1, RCX=2, R8=8, R9=9.
   static const int kIntArgRegs[6] = {5, 4, 1, 2, 8, 9};
@@ -369,6 +379,7 @@ bool DwarfParser::abi_param_location(Dwarf_Die *func, Dwarf_Die &target,
 
   cerr << "abi_param_location: target parameter not found among formals" << endl;
   return false;
+#endif  // __x86_64__
 }
 
 bool DwarfParser::translate_param_location(Dwarf_Die *func, string symbol,
