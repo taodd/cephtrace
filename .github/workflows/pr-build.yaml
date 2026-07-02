@@ -12,12 +12,33 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-22.04, ubuntu-24.04, ubuntu-26.04, ubuntu-latest]
+        # Which apt architecture variant the cell's ceph packages come from.
+        # "default" means whatever the runner image defaults to: baseline
+        # amd64 on 22.04/24.04, but amd64v3 on 26.04 (cloud images enable
+        # APT::Architecture-Variants "amd64v3" out of the box).  The extra
+        # (ubuntu-26.04, amd64) cell disables the variant so the Resolute
+        # baseline-amd64 reference DWARF JSONs get CI coverage too;
+        # dwarf-compare's build-id keying selects the matching reference
+        # automatically in both cells.
+        ceph-variant: [default]
+        include:
+          - os: ubuntu-26.04
+            ceph-variant: amd64
     steps:
       - name: Checkout code and submodules
         uses: actions/checkout@v4
         with:
           submodules: recursive
           fetch-depth: 0
+
+      - name: Force baseline amd64 packages (disable amd64v3 variant)
+        if: matrix.ceph-variant == 'amd64'
+        run: |
+            # apt.conf.d files parse in lexical order and #clear erases the
+            # option wherever an earlier file set it, so zz- wins over the
+            # cloud image's enablement snippet.
+            echo '#clear APT::Architecture-Variants;' | sudo tee /etc/apt/apt.conf.d/zz-disable-arch-variants
+            sudo apt-get update
 
       - name: Ensure submodules are updated
         run: |
@@ -30,19 +51,27 @@ jobs:
       - name: Unit test - verify dwarf output is consistent
         run: ./tests/dwarf-compare.sh
 
+      # The remaining functional tests deploy MicroCeph (a snap) and trace its
+      # bundled ceph -- independent of the host apt variant -- so they only
+      # run in the default cell; the amd64 variant cell exists purely to give
+      # dwarf-compare coverage of the baseline-amd64 reference JSONs.
       - name: Uninstall pre-installed Ceph packages
+        if: matrix.ceph-variant != 'amd64'
         run: |
           # Remove any pre-installed Ceph packages that might conflict with MicroCeph
           sudo apt-get remove --purge -y ceph ceph-common ceph-osd python3-ceph-argparse python3-ceph-common 'ceph-libboost*' || true
           sudo apt-get autoremove -y || true
 
       - name: Functional test - verify osdtrace and radostrace with MicroCeph
+        if: matrix.ceph-variant != 'amd64'
         run: sudo ./tests/functional-test-microceph.sh
 
       - name: Embedded DWARF data test - verify integrity and E2E
+        if: matrix.ceph-variant != 'amd64'
         run: sudo ./tests/functional-test-embedded-dwarf.sh
 
       - name: Functional test - radostrace tracing a qemu VM on an RBD disk
+        if: matrix.ceph-variant != 'amd64'
         run: sudo ./tests/functional-test-qemu-rbd.sh
 
   build-ubuntu-cephadm:
