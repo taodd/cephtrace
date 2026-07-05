@@ -1,5 +1,9 @@
 # Radostrace Analysis Tool
 
+> For a quick visual overview (latency histogram, read/write split, slow-OSD
+> hint) before diving into the numbers, see
+> [Visualizing trace output](visualizing-output.md).
+
 The `analyze_radostrace_output.py` script provides automated analysis of radostrace log files to identify problematic OSDs involved in high-latency operations.
 
 ## Overview
