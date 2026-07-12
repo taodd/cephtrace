@@ -105,7 +105,10 @@ DwarfParser::probes_t osd_probes = {
       {"pg", "px", "pg_id", "pgid", "m_seed"}}},
 
     {"PrimaryLogPG::execute_ctx",
-     {{"ctx", "reqid", "name", "_num"}, {"ctx", "reqid", "tid"}}},
+     {{"ctx", "reqid", "name", "_num"},
+      {"ctx", "reqid", "tid"},
+      {"ctx", "new_obs", "oi", "soid", "oid", "name", "_M_string_length"},
+      {"ctx", "new_obs", "oi", "soid", "oid", "name", "_M_dataplus", "_M_p"}}},
 
     {"ReplicatedBackend::submit_transaction",
      {{"reqid", "name", "_num"}, {"reqid", "tid"}}},
@@ -267,6 +270,8 @@ typedef struct osd_op {
 
 // op lat
   __u64 op_lat;
+
+  std::string object_name;
 } osd_op_t;
 
 int num_osd = 0;
@@ -476,13 +481,14 @@ void print_op_r(osd_op_t &op, int osd_id) {
 	 "throttle_lat %lld recv_lat %lld dispatch_lat %lld "
 	 "queue_lat %lld osd_lat %lld "
 	 "bluestore_lat %lld "
-	 "op_lat %lld \n",
+	 "op_lat %lld object %s\n",
    	  osd_id, op.pg.m_pool, pgid.c_str(), 
 	  op.rb, op.client_id, op.req_id,
 	  op.throttle_lat, op.recv_lat, op.dispatch_lat, 
 	  op.queue_lat, op.osd_lat,
-	  op.bs_lat, 
-	  op.op_lat);
+	  op.bs_lat,
+	  op.op_lat,
+	  op.object_name.empty() ? "-" : op.object_name.c_str());
   print_delayed_info(op);
 }
 
@@ -517,13 +523,14 @@ void print_op_w(osd_op_t &op, int osd_id) {
 	 "throttle_lat %lld recv_lat %lld dispatch_lat %lld "
 	 "queue_lat %lld osd_lat %lld peers [(%d, %lld), (%d, %lld)] "
 	 "bluestore_lat %lld (prepare %lld aio_wait %lld (aio_size %d) seq_wait %lld kv_commit %lld) "
-	 "op_lat %lld \n",
+	 "op_lat %lld object %s\n",
    	  osd_id, op.pg.m_pool, pgid.c_str(), 
 	  op.wb, op.client_id, op.req_id,
 	  op.throttle_lat, op.recv_lat, op.dispatch_lat, 
 	  op.queue_lat, op.osd_lat,  op.peers[0].peer, op.peers[0].latency, op.peers[1].peer, op.peers[1].latency, 
-	  op.bs_lat, op.bs_prepare_lat, op.bs_aio_wait_lat, op.aio_size, op.bs_pg_seq_lat, op.bs_kv_commit_lat, 
-	  op.op_lat);
+	  op.bs_lat, op.bs_prepare_lat, op.bs_aio_wait_lat, op.aio_size, op.bs_pg_seq_lat, op.bs_kv_commit_lat,
+	  op.op_lat,
+	  op.object_name.empty() ? "-" : op.object_name.c_str());
   print_delayed_info(op);
 }
 
@@ -554,6 +561,9 @@ osd_op_t generate_op(op_v *val) {
 
   op.pg.m_pool = val->m_pool;
   op.pg.m_seed = val->m_seed;
+
+  op.object_name.assign(val->object_name,
+                        strnlen(val->object_name, OBJECT_NAME_LEN));
 
   __u64 recv_stamp = val->recv_stamp;
   if (val->throttle_stamp < val->recv_stamp) { 

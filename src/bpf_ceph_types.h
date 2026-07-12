@@ -103,6 +103,11 @@ struct bluestore_lat_v {
   char name[BS_LAT_NAME_LEN];
 };
 
+// Truncation length for the object name captured at
+// PrimaryLogPG::execute_ctx; covers RBD (rbd_data.<image>.<objno>) and
+// most CephFS/RGW data objects, longer names are cut at 63 chars.
+#define OBJECT_NAME_LEN 64
+
 struct op_v {
   __u32 pid;
   unsigned long long owner;
@@ -131,6 +136,7 @@ struct op_v {
   __u64 rb;
   __u64 m_pool;
   __u32 m_seed;
+  char object_name[OBJECT_NAME_LEN];
 };
 
 typedef struct VarLocation {
