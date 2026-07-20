@@ -90,10 +90,18 @@ struct delay_info {
     char delays[5][32];
 };
 
+// The `name` argument passed to BlueStore::log_latency{,_fn} is a short,
+// human-readable label for the measured operation (a string literal like
+// "kv_flush" or a __func__ such as "_txc_committed_kv"). Reading it makes
+// the trace self-describing and immune to perfcounter enum drift across
+// Ceph versions (the numeric `idx` is not ABI-stable).
+#define BS_LAT_NAME_LEN 40
+
 struct bluestore_lat_v {
   __u32 pid;
-  int idx;
+  int idx;   // raw perfcounter index, kept for reference only
   __u64 lat;
+  char name[BS_LAT_NAME_LEN];
 };
 
 struct op_v {

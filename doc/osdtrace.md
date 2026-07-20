@@ -94,7 +94,10 @@ sudo ./osdtrace
 -t <seconds>               Set execution timeout in seconds
 -s                         Single OP probe mode (logs PrimaryLogPG::log_op_stats
                            only - lower overhead, one line per op)
--b                         Bluestore probe mode (BlueStore-layer probes only)
+-b                         Bluestore probe mode: log each BlueStore::log_latency
+                           / log_latency_fn call as "bluestore <name> lat <us>",
+                           where <name> is the operation label the OSD passes
+                           (e.g. _txc_committed_kv, kv_commit, _do_read, _remove)
 -l <milliseconds>          Only capture operations slower than this threshold
 -i <filename>              Import DWARF info from JSON file
 -j <filename>              Export DWARF info to JSON file and exit
