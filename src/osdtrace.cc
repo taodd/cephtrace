@@ -693,11 +693,9 @@ void handle_full(struct op_v *val, int osd_id) {
 void handle_bluestore(struct bluestore_lat_v *val, int osd_id) {
     __u64 lat_us = val->lat / 1000;
     // The `name` argument captured from the probe is the authoritative,
-    // version-stable label for the operation. The numeric `idx` is shown
-    // only as a secondary reference (its meaning shifts between Ceph
-    // releases, so it must not be relied on for identification).
+    // version-stable label for the operation.
     const char *name = val->name[0] ? val->name : "?";
-    printf("osd %d bluestore %s lat %lld us (idx %d)\n", osd_id, name, lat_us, val->idx);
+    printf("osd %d bluestore %s lat %lld us\n", osd_id, name, lat_us);
 }
 
 static int handle_event(void *ctx, void *data, size_t size) {

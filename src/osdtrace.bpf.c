@@ -922,12 +922,10 @@ int uprobe_log_latency(struct pt_regs *ctx)
   int varid = 130;
   struct bluestore_lat_v bsl;
   memset(&bsl, 0, sizeof(bsl));
-  // read idx
-  bsl.idx = PT_REGS_PARM3(ctx);
 
-  // read name (const char* first arg). It labels the measured operation
-  // and is version-stable, unlike idx. The CU carries location lists so
-  // the probe sits at the true function entry where rsi still holds name.
+  // read name (const char* first arg): the version-stable operation label.
+  // The CU carries location lists so the probe sits at the true function
+  // entry where rsi still holds name.
   bpf_probe_read_user_str(bsl.name, sizeof(bsl.name), (void *)PT_REGS_PARM2(ctx));
 
   //read l.__r
@@ -1237,8 +1235,6 @@ int uprobe_log_latency_fn(struct pt_regs *ctx)
   int varid = 190;
   struct bluestore_lat_v bsl;
   memset(&bsl, 0, sizeof(bsl));
-  // read idx (third parameter)
-  bsl.idx = PT_REGS_PARM3(ctx);
 
   // read name (first parameter, const char*): same as log_latency, PARM2
   // holds it at entry regardless of the differing trailing arguments.
