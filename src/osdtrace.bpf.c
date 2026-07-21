@@ -921,8 +921,12 @@ int uprobe_log_latency(struct pt_regs *ctx)
   bpf_printk("Entered into log_latency\n");
   int varid = 130;
   struct bluestore_lat_v bsl;
-  // read idx
-  bsl.idx = PT_REGS_PARM3(ctx);
+  memset(&bsl, 0, sizeof(bsl));
+
+  // read name (const char* first arg): the version-stable operation label.
+  // The CU carries location lists so the probe sits at the true function
+  // entry where rsi still holds name.
+  bpf_probe_read_user_str(bsl.name, sizeof(bsl.name), (void *)PT_REGS_PARM2(ctx));
 
   //read l.__r
   ++varid;
@@ -934,7 +938,7 @@ int uprobe_log_latency(struct pt_regs *ctx)
   bpf_probe_read_user(&bsl.lat, sizeof(__u64), (void *)r_addr);
 
   //set pid
-  bsl.pid = get_pid(); 
+  bsl.pid = get_pid();
 
   //submit the bs latency
   struct bluestore_lat_v *e = bpf_ringbuf_reserve(&rb, sizeof(struct bluestore_lat_v), 0);
@@ -1230,8 +1234,11 @@ int uprobe_log_latency_fn(struct pt_regs *ctx)
   bpf_printk("Entered into log_latency_fn\n");
   int varid = 190;
   struct bluestore_lat_v bsl;
-  // read idx (third parameter)
-  bsl.idx = PT_REGS_PARM3(ctx);
+  memset(&bsl, 0, sizeof(bsl));
+
+  // read name (first parameter, const char*): same as log_latency, PARM2
+  // holds it at entry regardless of the differing trailing arguments.
+  bpf_probe_read_user_str(bsl.name, sizeof(bsl.name), (void *)PT_REGS_PARM2(ctx));
 
   //read l.__r (fourth parameter, it's a ceph::timespan which is std::chrono::duration)
   ++varid;

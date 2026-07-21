@@ -38,7 +38,11 @@ OPTIONS
 
 -b
 
-   Bluestore probe mode: BlueStore-layer probes only.
+   Bluestore probe mode: trace BlueStore::log_latency and log_latency_fn,
+   printing one line per call as "bluestore <name> lat <us>". <name> is the
+   operation label the OSD itself passes to the function (e.g.
+   _txc_committed_kv, kv_commit, _do_read, _remove), so the labels stay
+   correct across Ceph versions.
 
 -l <milliseconds>
 
