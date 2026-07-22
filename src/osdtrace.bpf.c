@@ -727,6 +727,24 @@ int uprobe_repop_commit(struct pt_regs *ctx)
   vp->wb = len;
   vp->reply_stamp = bpf_ktime_get_boot_ns();
 
+  // MOSDRepOp::poid is populated by finish_decode() in do_repop(), before
+  // repop_commit runs.  The userspace resolver lowers the Message* downcast
+  // in these varpaths to ordinary offsets and pointer dereferences.
+  __u64 name_len = 0;
+  if (read_hprobe_varfield(ctx, varid++, &name_len, sizeof(name_len)) == 0 &&
+      name_len > 0) {
+    __u64 str_addr = 0;
+    if (read_hprobe_varfield(ctx, varid++, &str_addr, sizeof(str_addr)) == 0 &&
+        str_addr != 0) {
+      __u32 name_read_len = name_len;
+      if (name_read_len > OBJECT_NAME_LEN - 1)
+        name_read_len = OBJECT_NAME_LEN - 1;
+      bpf_probe_read_user(vp->object_name,
+                          name_read_len & (OBJECT_NAME_LEN - 1),
+                          (void *)str_addr);
+    }
+  }
+
   struct op_v *e = bpf_ringbuf_reserve(&rb, sizeof(struct op_v), 0);
   if (NULL == e) {
     return 0;

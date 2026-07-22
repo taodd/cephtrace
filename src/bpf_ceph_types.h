@@ -103,9 +103,9 @@ struct bluestore_lat_v {
   char name[BS_LAT_NAME_LEN];
 };
 
-// Truncation length for the object name captured at
-// PrimaryLogPG::execute_ctx; covers RBD (rbd_data.<image>.<objno>) and
-// most CephFS/RGW data objects, longer names are cut at 63 chars.
+// Truncation length for object names captured from client ops and replica
+// subops; covers RBD (rbd_data.<image>.<objno>) and most CephFS/RGW data
+// objects. Longer names are cut at 63 chars.
 #define OBJECT_NAME_LEN 64
 
 struct op_v {

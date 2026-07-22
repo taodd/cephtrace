@@ -223,6 +223,7 @@ Each operation is labeled by type:
 | **seq_wait** | Sequencer wait | μs | Write ops |
 | **kv_commit** | KV store commit | μs | Write ops |
 | **op_lat / subop_lat** | Total end-to-end latency | μs | All ops |
+| **object** | Target object name (`-` when unavailable; truncated to 63 bytes, unsafe bytes percent-encoded) | - | All ops |
 
 Note:
 1. All latencies are measured in **microseconds (μs)**.
@@ -399,4 +400,3 @@ man osdtrace
 ```
 
 Or see: [osdtrace.8](man/8/osdtrace.rst)
-

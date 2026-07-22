@@ -188,7 +188,11 @@ DwarfParser::probes_t osd_probes = {
     {"ReplicatedBackend::repop_commit",
      {{"rm", "_M_ptr", "op", "px", "reqid", "name", "_num"},
       {"rm", "_M_ptr", "op", "px", "reqid", "tid"},
-      {"rm", "_M_ptr", "op", "px", "request", "data", "_len"}}},
+      {"rm", "_M_ptr", "op", "px", "request", "data", "_len"},
+      {"rm", "_M_ptr", "op", "px", "request", "cast:MOSDRepOp",
+       "poid", "oid", "name", "_M_string_length"},
+      {"rm", "_M_ptr", "op", "px", "request", "cast:MOSDRepOp",
+       "poid", "oid", "name", "_M_dataplus", "_M_p"}}},
 
     {"OpRequest::mark_flag_point",
      {{"flag"},
@@ -271,6 +275,8 @@ typedef struct osd_op {
 // op lat
   __u64 op_lat;
 
+// object the op targets; empty when its capture point was not reached or the
+// loaded DWARF data predates object-name support
   std::string object_name;
 } osd_op_t;
 
@@ -471,10 +477,32 @@ void print_delayed_info(const osd_op_t &op) {
     printf("\n");
 }
 
+std::string format_object_name(const std::string& name) {
+  if (name.empty()) {
+    return "-";
+  }
+
+  static constexpr char hex[] = "0123456789ABCDEF";
+  std::string result;
+  result.reserve(name.size());
+  for (unsigned char c : name) {
+    if (c > 0x20 && c != 0x7f && c != '%' &&
+        (c != '-' || name.size() != 1)) {
+      result.push_back(c);
+      continue;
+    }
+    result.push_back('%');
+    result.push_back(hex[c >> 4]);
+    result.push_back(hex[c & 0x0f]);
+  }
+  return result;
+}
+
 void print_op_r(osd_op_t &op, int osd_id) {
   std::stringstream ss;
   ss << std::hex << op.pg.m_seed;
   std::string pgid(ss.str());
+  std::string object_name = format_object_name(op.object_name);
 
   printf("osd %d pg %lld.%s op_r " 
          "size %d client %lld tid %lld "
@@ -488,7 +516,7 @@ void print_op_r(osd_op_t &op, int osd_id) {
 	  op.queue_lat, op.osd_lat,
 	  op.bs_lat,
 	  op.op_lat,
-	  op.object_name.empty() ? "-" : op.object_name.c_str());
+	  object_name.c_str());
   print_delayed_info(op);
 }
 
@@ -496,19 +524,21 @@ void print_subop_w(osd_op_t &op, int osd_id) {
   std::stringstream ss;
   ss << std::hex << op.pg.m_seed;
   std::string pgid(ss.str());
+  std::string object_name = format_object_name(op.object_name);
 
   printf("osd %d pg %lld.%s subop_w " 
          "size %d client %lld tid %lld "
 	 "throttle_lat %lld recv_lat %lld dispatch_lat %lld "
 	 "queue_lat %lld osd_lat %lld "
 	 "bluestore_lat %lld (prepare %lld aio_wait %lld (aio_size %d) seq_wait %lld kv_commit %lld) "
-	 "subop_lat %lld \n",
+	 "subop_lat %lld object %s\n",
    	  osd_id, op.pg.m_pool, pgid.c_str(), 
 	  op.wb, op.client_id, op.req_id,
 	  op.throttle_lat, op.recv_lat, op.dispatch_lat, 
 	  op.queue_lat, op.osd_lat,
 	  op.bs_lat, op.bs_prepare_lat, op.bs_aio_wait_lat, op.aio_size, op.bs_pg_seq_lat, op.bs_kv_commit_lat, 
-	  op.op_lat);
+	  op.op_lat,
+	  object_name.c_str());
   print_delayed_info(op);
 }
 
@@ -517,6 +547,7 @@ void print_op_w(osd_op_t &op, int osd_id) {
   std::stringstream ss;
   ss << std::hex << op.pg.m_seed;
   std::string pgid(ss.str());
+  std::string object_name = format_object_name(op.object_name);
 
   printf("osd %d pg %lld.%s op_w " 
          "size %d client %lld tid %lld "
@@ -530,7 +561,7 @@ void print_op_w(osd_op_t &op, int osd_id) {
 	  op.queue_lat, op.osd_lat,  op.peers[0].peer, op.peers[0].latency, op.peers[1].peer, op.peers[1].latency, 
 	  op.bs_lat, op.bs_prepare_lat, op.bs_aio_wait_lat, op.aio_size, op.bs_pg_seq_lat, op.bs_kv_commit_lat,
 	  op.op_lat,
-	  op.object_name.empty() ? "-" : op.object_name.c_str());
+	  object_name.c_str());
   print_delayed_info(op);
 }
 

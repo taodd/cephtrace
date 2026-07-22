@@ -67,6 +67,7 @@ class DwarfParser {
   bool die_has_loclist(Dwarf_Die *);
   bool has_loclist();
   Dwarf_Die *resolve_typedecl(Dwarf_Die *);
+  Dwarf_Die *resolve_type_name(const std::string&);
   const char *cache_type_prefix(Dwarf_Die *);
   int iterate_types_in_cu(mod_cu_type_cache_t &, Dwarf_Die *);
   void traverse_module(Dwfl_Module *, Dwarf *, bool);

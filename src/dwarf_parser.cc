@@ -100,6 +100,25 @@ Dwarf_Die *DwarfParser::resolve_typedecl(Dwarf_Die *type) {
   return NULL;
 }
 
+Dwarf_Die *DwarfParser::resolve_type_name(const std::string& name) {
+  const std::string candidates[] = {
+      name, "struct " + name, "union " + name, "enum " + name};
+
+  for (auto &module : global_type_cache) {
+    for (auto &cu : module.second) {
+      for (const auto& candidate : candidates) {
+        auto found = cu.second.find(candidate);
+        if (found != cu.second.end()) {
+          return &found->second;
+        }
+      }
+    }
+  }
+
+  cerr << "Couldn't resolve type " << name << endl;
+  return NULL;
+}
+
 const char *DwarfParser::cache_type_prefix(Dwarf_Die *type) {
   switch (dwarf_tag(type)) {
     case DW_TAG_enumeration_type:
@@ -544,11 +563,38 @@ bool DwarfParser::translate_fields(Dwarf_Die *vardie, Dwarf_Die *typedie,
                                    Dwarf_Addr pc, vector<string> fields,
                                    vector<Field> &res) {
   int i = 1;
-  for (auto &x : res) {
-    x.pointer = false;
-    x.offset = 0;
-  }
+  Field field = {0, false};
+  res.clear();
+  res.push_back({0, false});
   while (i < (int)fields.size()) {
+    // A cast token changes only the DWARF type used to resolve subsequent
+    // members. The following real field retains the pointer dereference.
+    static const std::string cast_prefix = "cast:";
+    if (fields[i].compare(0, cast_prefix.size(), cast_prefix) == 0) {
+      while (dwarf_tag(typedie) == DW_TAG_typedef ||
+             dwarf_tag(typedie) == DW_TAG_const_type ||
+             dwarf_tag(typedie) == DW_TAG_volatile_type ||
+             dwarf_tag(typedie) == DW_TAG_restrict_type) {
+        dwarf_die_type(typedie, typedie);
+      }
+      if (dwarf_tag(typedie) != DW_TAG_pointer_type &&
+          dwarf_tag(typedie) != DW_TAG_reference_type &&
+          dwarf_tag(typedie) != DW_TAG_rvalue_reference_type) {
+        clog << "invalid cast from non-pointer type at " << fields[i] << endl;
+        return false;
+      }
+
+      Dwarf_Die *cast_type =
+          resolve_type_name(fields[i].substr(cast_prefix.size()));
+      if (cast_type == NULL) {
+        return false;
+      }
+      *typedie = *cast_type;
+      field.pointer = true;
+      ++i;
+      continue;
+    }
+
     switch (dwarf_tag(typedie)) {
       case DW_TAG_typedef:
       case DW_TAG_const_type:
@@ -560,7 +606,7 @@ bool DwarfParser::translate_fields(Dwarf_Die *vardie, Dwarf_Die *typedie,
 
       case DW_TAG_reference_type:
       case DW_TAG_rvalue_reference_type:
-        res[i].pointer = true;
+        field.pointer = true;
         dwarf_die_type(typedie, typedie);
         break;
       case DW_TAG_pointer_type:
@@ -569,7 +615,7 @@ bool DwarfParser::translate_fields(Dwarf_Die *vardie, Dwarf_Die *typedie,
           clog << "invalid access pointer " << fields[i] << endl;
           return false;
         }
-        res[i].pointer = true;
+        field.pointer = true;
         dwarf_die_type(typedie, typedie);
         break;
       case DW_TAG_array_type:
@@ -604,7 +650,9 @@ bool DwarfParser::translate_fields(Dwarf_Die *vardie, Dwarf_Die *typedie,
           clog << "failed to translate location of " << fields[i] << endl;
           return false;
         }
-        res[i].offset = varloc.offset;
+        field.offset = varloc.offset;
+        res.push_back(field);
+        field = {0, false};
 
         dwarf_die_type(vardie, typedie);
         ++i;
@@ -739,7 +787,6 @@ static int handle_function(Dwarf_Die *die, void *data) {
 
     // translate fileds
     dp->dwarf_die_type(&vardie, &typedie);
-    vf[i].fields.resize(arr[i].size());
     ok = dp->translate_fields(&vardie, &typedie, pc, arr[i], vf[i].fields);
     assert(ok);
     for (int j = 1; j < (int)vf[i].fields.size(); ++j) {
