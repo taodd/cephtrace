@@ -108,7 +108,9 @@ DwarfParser::probes_t osd_probes = {
      {{"ctx", "reqid", "name", "_num"},
       {"ctx", "reqid", "tid"},
       {"ctx", "new_obs", "oi", "soid", "oid", "name", "_M_string_length"},
-      {"ctx", "new_obs", "oi", "soid", "oid", "name", "_M_dataplus", "_M_p"}}},
+      {"ctx", "new_obs", "oi", "soid", "oid", "name", "_M_dataplus", "_M_p"},
+      {"ctx", "ops", "_M_impl", "_M_start"},
+      {"ctx", "ops", "_M_impl", "_M_finish"}}},
 
     {"ReplicatedBackend::submit_transaction",
      {{"reqid", "name", "_num"}, {"reqid", "tid"}}},
@@ -278,6 +280,8 @@ typedef struct osd_op {
 // object the op targets; empty when its capture point was not reached or the
 // loaded DWARF data predates object-name support
   std::string object_name;
+  std::vector<__u32> detail_ops;
+  __u32 detail_ops_total;
 } osd_op_t;
 
 int num_osd = 0;
@@ -498,25 +502,59 @@ std::string format_object_name(const std::string& name) {
   return result;
 }
 
+const char *ceph_osd_op_str(int opcode) {
+  switch (opcode) {
+#define GENERATE_CASE_ENTRY(op, value, str) case CEPH_OSD_OP_##op: return str;
+    __CEPH_FORALL_OSD_OPS(GENERATE_CASE_ENTRY)
+#undef GENERATE_CASE_ENTRY
+    default:
+      return nullptr;
+  }
+}
+
+std::string format_detail_ops(const osd_op_t& op) {
+  std::stringstream out;
+  out << "[";
+  for (std::size_t i = 0; i < op.detail_ops.size(); ++i) {
+    if (i != 0)
+      out << ",";
+    __u32 opcode = op.detail_ops[i];
+    const char *name = ceph_osd_op_str(opcode);
+    if (name != nullptr)
+      out << name;
+    else
+      out << "unknown-" << opcode;
+  }
+  if (op.detail_ops_total > op.detail_ops.size()) {
+    if (!op.detail_ops.empty())
+      out << ",";
+    out << "...+" << (op.detail_ops_total - op.detail_ops.size());
+  }
+  out << "]";
+  return out.str();
+}
+
 void print_op_r(osd_op_t &op, int osd_id) {
   std::stringstream ss;
   ss << std::hex << op.pg.m_seed;
   std::string pgid(ss.str());
   std::string object_name = format_object_name(op.object_name);
+  std::string detail_ops = format_detail_ops(op);
 
   printf("osd %d pg %lld.%s op_r " 
          "size %d client %lld tid %lld "
 	 "throttle_lat %lld recv_lat %lld dispatch_lat %lld "
 	 "queue_lat %lld osd_lat %lld "
 	 "bluestore_lat %lld "
-	 "op_lat %lld object %s\n",
-   	  osd_id, op.pg.m_pool, pgid.c_str(), 
+	 "op_lat %lld object %s osd_ops %s\n",
+         osd_id, op.pg.m_pool, pgid.c_str(),
 	  op.rb, op.client_id, op.req_id,
 	  op.throttle_lat, op.recv_lat, op.dispatch_lat, 
 	  op.queue_lat, op.osd_lat,
 	  op.bs_lat,
 	  op.op_lat,
-	  object_name.c_str());
+	  object_name.c_str(),
+	  detail_ops.c_str());
   print_delayed_info(op);
 }
 
@@ -532,7 +570,7 @@ void print_subop_w(osd_op_t &op, int osd_id) {
 	 "queue_lat %lld osd_lat %lld "
 	 "bluestore_lat %lld (prepare %lld aio_wait %lld (aio_size %d) seq_wait %lld kv_commit %lld) "
 	 "subop_lat %lld object %s\n",
-   	  osd_id, op.pg.m_pool, pgid.c_str(), 
+         osd_id, op.pg.m_pool, pgid.c_str(),
 	  op.wb, op.client_id, op.req_id,
 	  op.throttle_lat, op.recv_lat, op.dispatch_lat, 
 	  op.queue_lat, op.osd_lat,
@@ -548,20 +586,22 @@ void print_op_w(osd_op_t &op, int osd_id) {
   ss << std::hex << op.pg.m_seed;
   std::string pgid(ss.str());
   std::string object_name = format_object_name(op.object_name);
+  std::string detail_ops = format_detail_ops(op);
 
   printf("osd %d pg %lld.%s op_w " 
          "size %d client %lld tid %lld "
 	 "throttle_lat %lld recv_lat %lld dispatch_lat %lld "
 	 "queue_lat %lld osd_lat %lld peers [(%d, %lld), (%d, %lld)] "
 	 "bluestore_lat %lld (prepare %lld aio_wait %lld (aio_size %d) seq_wait %lld kv_commit %lld) "
-	 "op_lat %lld object %s\n",
-   	  osd_id, op.pg.m_pool, pgid.c_str(), 
+	 "op_lat %lld object %s osd_ops %s\n",
+         osd_id, op.pg.m_pool, pgid.c_str(),
 	  op.wb, op.client_id, op.req_id,
 	  op.throttle_lat, op.recv_lat, op.dispatch_lat, 
 	  op.queue_lat, op.osd_lat,  op.peers[0].peer, op.peers[0].latency, op.peers[1].peer, op.peers[1].latency, 
 	  op.bs_lat, op.bs_prepare_lat, op.bs_aio_wait_lat, op.aio_size, op.bs_pg_seq_lat, op.bs_kv_commit_lat,
 	  op.op_lat,
-	  object_name.c_str());
+	  object_name.c_str(),
+	  detail_ops.c_str());
   print_delayed_info(op);
 }
 
@@ -595,6 +635,12 @@ osd_op_t generate_op(op_v *val) {
 
   op.object_name.assign(val->object_name,
                         strnlen(val->object_name, OBJECT_NAME_LEN));
+  op.detail_ops_total = val->detail_ops_total;
+  for (__u32 i = 0;
+       i < val->detail_ops_captured && i < MAX_DETAIL_OPS;
+       ++i) {
+    op.detail_ops.push_back(val->detail_ops[i]);
+  }
 
   __u64 recv_stamp = val->recv_stamp;
   if (val->throttle_stamp < val->recv_stamp) { 
@@ -1377,32 +1423,31 @@ static int load_dwarf_data(DwarfParser &dwarfparser, const TraceTarget &target) 
       return 1;
     }
     clog << "Successfully imported dwarf data from " << json_input_file << endl;
-    return 0;
-  }
-
-  // When -j is used to export JSON, force live parsing so the output reflects
-  // the installed binary (not a re-dump of the embedded data the header came
-  // from). Otherwise try embedded DWARF data first, keyed by the on-disk
-  // ELF build-id (arch-safe, snap-safe, custom-rebuild-safe).
-  //
-  // osd_path is the in-process view ("/usr/bin/ceph-osd"), which for a
-  // containerized OSD doesn't exist on the host.  Reach into the target's
-  // mount namespace via /proc/<pid>/root/ so the build-id read sees the
-  // same binary the kernel uprobe will attach to.
-  std::string osd_buildid_path = target.osd_path;
-  if (!target.pids.empty()) {
-    osd_buildid_path = "/proc/" + std::to_string(*target.pids.begin())
-                       + "/root" + target.osd_path;
-  }
-  std::string osd_buildid = get_elf_build_id(osd_buildid_path);
-  if (!export_json && !osd_buildid.empty() &&
-      dwarfparser.import_from_embedded(
-          {{get_basename(target.osd_path), osd_buildid}}, "osdtrace")) {
-    // Detailed match info already logged inside import_from_embedded.
   } else {
-    clog << "Start to parse dwarf info" << endl;
-    dwarfparser.add_module(target.osd_path);
-    dwarfparser.parse();
+    // When -j is used to export JSON, force live parsing so the output reflects
+    // the installed binary (not a re-dump of the embedded data the header came
+    // from). Otherwise try embedded DWARF data first, keyed by the on-disk
+    // ELF build-id (arch-safe, snap-safe, custom-rebuild-safe).
+    //
+    // osd_path is the in-process view ("/usr/bin/ceph-osd"), which for a
+    // containerized OSD doesn't exist on the host.  Reach into the target's
+    // mount namespace via /proc/<pid>/root/ so the build-id read sees the
+    // same binary the kernel uprobe will attach to.
+    std::string osd_buildid_path = target.osd_path;
+    if (!target.pids.empty()) {
+      osd_buildid_path = "/proc/" + std::to_string(*target.pids.begin())
+                         + "/root" + target.osd_path;
+    }
+    std::string osd_buildid = get_elf_build_id(osd_buildid_path);
+    if (!export_json && !osd_buildid.empty() &&
+        dwarfparser.import_from_embedded(
+            {{get_basename(target.osd_path), osd_buildid}}, "osdtrace")) {
+      // Detailed match info already logged inside import_from_embedded.
+    } else {
+      clog << "Start to parse dwarf info" << endl;
+      dwarfparser.add_module(target.osd_path);
+      dwarfparser.parse();
+    }
   }
   return 0;
 }
@@ -1464,9 +1509,29 @@ static int run_tracer(DwarfParser &dwarfparser, const TraceTarget &target) {
   clog << "Start to load uprobe" << endl;
 
   std::unique_ptr<osdtrace_bpf, decltype(&osdtrace_bpf__destroy)> skel(
-      osdtrace_bpf__open_and_load(), osdtrace_bpf__destroy);
+      osdtrace_bpf__open(), osdtrace_bpf__destroy);
   if (!skel) {
-    cerr << "Failed to open and load BPF skeleton" << endl;
+    cerr << "Failed to open BPF skeleton" << endl;
+    return 1;
+  }
+
+  // sizeof(OSDOp) is the stride used to walk the decoded op vector, so a wrong
+  // value yields plausible-looking garbage opcodes rather than an error.  Only
+  // trust the exact size recorded in the DWARF data; DWARF JSONs generated
+  // before type sizes were persisted must be regenerated.
+  int osd_op_size = dwarfparser.get_type_size(target.osd_path, "OSDOp");
+  if (osd_op_size <= 0) {
+    cerr << "No OSDOp size in the DWARF data for " << target.osd_path << endl;
+    cerr << "The DWARF JSON predates type-size support; regenerate it with -j"
+         << endl;
+    return 1;
+  }
+  skel->rodata->CEPH_OSD_OP_SIZE = osd_op_size;
+  clog << "Using target OSDOp size " << osd_op_size << endl;
+
+  int load_ret = osdtrace_bpf__load(skel.get());
+  if (load_ret) {
+    cerr << "Failed to load BPF skeleton: " << load_ret << endl;
     return 1;
   }
 
@@ -1536,6 +1601,7 @@ int main(int argc, char **argv) {
   if (resolve_trace_targets(target) != 0) return 1;
 
   DwarfParser dwarfparser(osd_probes, probe_units);
+  dwarfparser.request_type_size("OSDOp");
   if (load_dwarf_data(dwarfparser, target) != 0) return 1;
 
   if (export_json) return do_export_json(dwarfparser, target);

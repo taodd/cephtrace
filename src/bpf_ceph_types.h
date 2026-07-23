@@ -107,6 +107,7 @@ struct bluestore_lat_v {
 // subops; covers RBD (rbd_data.<image>.<objno>) and most CephFS/RGW data
 // objects. Longer names are cut at 63 chars.
 #define OBJECT_NAME_LEN 64
+#define MAX_DETAIL_OPS 8
 
 struct op_v {
   __u32 pid;
@@ -137,6 +138,9 @@ struct op_v {
   __u64 m_pool;
   __u32 m_seed;
   char object_name[OBJECT_NAME_LEN];
+  __u32 detail_ops[MAX_DETAIL_OPS];
+  __u32 detail_ops_captured;
+  __u32 detail_ops_total;
 };
 
 typedef struct VarLocation {

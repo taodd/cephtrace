@@ -224,6 +224,7 @@ Each operation is labeled by type:
 | **kv_commit** | KV store commit | μs | Write ops |
 | **op_lat / subop_lat** | Total end-to-end latency | μs | All ops |
 | **object** | Target object name (`-` when unavailable; truncated to 63 bytes, unsafe bytes percent-encoded) | - | All ops |
+| **osd_ops** | Decoded client `CEPH_OSD_OP_*` names (up to 8, with truncation count) | - | op_r, op_w |
 
 Note:
 1. All latencies are measured in **microseconds (μs)**.

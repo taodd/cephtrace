@@ -78,6 +78,31 @@ static __always_inline int read_hprobe_utime(struct pt_regs *ctx, int varid, __u
   return -1;
 }
 
+// Set by userspace before BPF load. OSDOp changed size in Squid when
+// buffer::list became smaller; ceph_osd_op remains the first member.
+const volatile __u32 CEPH_OSD_OP_SIZE = 0;
+
+static __always_inline void capture_decoded_osd_ops(
+    struct op_v *vp, __u64 ops_start, __u64 ops_finish)
+{
+  if (vp == NULL || CEPH_OSD_OP_SIZE == 0 || ops_start == 0 ||
+      ops_finish < ops_start)
+    return;
+
+  __u64 ops_bytes = ops_finish - ops_start;
+  vp->detail_ops_total = ops_bytes / CEPH_OSD_OP_SIZE;
+#pragma unroll
+  for (__u32 i = 0; i < MAX_DETAIL_OPS; ++i) {
+    if (i >= vp->detail_ops_total)
+      break;
+    __u16 opcode = 0;
+    bpf_probe_read_user(&opcode, sizeof(opcode),
+                        (void *)(ops_start + i * CEPH_OSD_OP_SIZE));
+    vp->detail_ops[i] = opcode;
+    vp->detail_ops_captured++;
+  }
+}
+
 SEC("uprobe")
 int uprobe_enqueue_op(struct pt_regs *ctx) {
   int varid = 0;
@@ -231,6 +256,21 @@ int uprobe_execute_ctx(struct pt_regs *ctx) {
         "uprobe_execute_ctx, no previous op info, owner %lld, tid %lld\n",
         key.owner, key.tid);
     return 0;
+  }
+
+  // ctx->ops points at the fully decoded std::vector<OSDOp>. Read its start
+  // and finish pointers, then sample the bounded opcode prefix.
+  int ops_varid = 24;
+  if (CEPH_OSD_OP_SIZE != 0) {
+    __u64 ops_start = 0;
+    if (read_hprobe_varfield(ctx, ops_varid++, &ops_start,
+                             sizeof(ops_start)) == 0 &&
+        ops_start != 0) {
+      __u64 ops_finish = 0;
+      if (read_hprobe_varfield(ctx, ops_varid, &ops_finish,
+                               sizeof(ops_finish)) == 0)
+        capture_decoded_osd_ops(vp, ops_start, ops_finish);
+    }
   }
 
   __u64 name_len = 0;
@@ -810,6 +850,7 @@ int uprobe_log_latency_fn(struct pt_regs *ctx)
   if (NULL == e) {
     return 0;
   }
+
   *e = bsl;
   bpf_ringbuf_submit(e, 0);
 

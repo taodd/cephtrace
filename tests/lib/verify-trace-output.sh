@@ -42,7 +42,7 @@ TRACE_EXPECTED_IO_SIZE=2097152
 #
 #   op_r    | osd | pool | pg | size | client | tid
 #           | throttle_lat | recv_lat | dispatch_lat | queue_lat | osd_lat
-#           | bluestore_lat | op_lat | object
+#           | bluestore_lat | op_lat | object | osd_ops
 #
 #   subop_w | osd | pool | pg | size | client | tid
 #           | throttle_lat | recv_lat | dispatch_lat | queue_lat | osd_lat
@@ -53,7 +53,7 @@ TRACE_EXPECTED_IO_SIZE=2097152
 #           | throttle_lat | recv_lat | dispatch_lat | queue_lat | osd_lat
 #           | peer0_id | peer0_lat | peer1_id | peer1_lat
 #           | bluestore_lat | prepare_lat | aio_wait_lat | seq_wait_lat
-#           | kv_commit_lat | op_lat | object
+#           | kv_commit_lat | op_lat | object | osd_ops
 #
 # The trailing object field is "-" when the trace could not capture the
 # object name (the relevant capture point was not reached, or the DWARF data
@@ -88,13 +88,14 @@ _osdtrace_rows() {
             split($4, pg, ".")
             op = $5
             candidate = ""
-            if (op == "op_r" && NF == 27 && \
-                $6 == "size" && $24 == "op_lat" && $26 == "object") {
-                candidate = sprintf("op_r|%d|%s|%s|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%s", \
+            if (op == "op_r" && NF == 29 && \
+                $6 == "size" && $24 == "op_lat" && $26 == "object" && \
+                $28 == "osd_ops") {
+                candidate = sprintf("op_r|%d|%s|%s|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%s|%s", \
                     $2, pg[1], pg[2], \
                     $7, $9, $11, \
                     $13, $15, $17, $19, $21, \
-                    $23, $25, $27)
+                    $23, $25, $27, $29)
             } else if (op == "subop_w" && NF == 37 && \
                        $22 == "bluestore_lat" && $24 == "(prepare" && \
                        $34 == "subop_lat" && $36 == "object") {
@@ -103,16 +104,16 @@ _osdtrace_rows() {
                     $7, $9, $11, \
                     $13, $15, $17, $19, $21, \
                     $23, $25, $27, $31, num($33), $35, $37)
-            } else if (op == "op_w" && NF == 42 && \
+            } else if (op == "op_w" && NF == 44 && \
                        $22 == "peers" && $27 == "bluestore_lat" && \
                        $29 == "(prepare" && $39 == "op_lat" && \
-                       $41 == "object") {
-                candidate = sprintf("op_w|%d|%s|%s|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%s", \
+                       $41 == "object" && $43 == "osd_ops") {
+                candidate = sprintf("op_w|%d|%s|%s|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%s|%s", \
                     $2, pg[1], pg[2], \
                     $7, $9, $11, \
                     $13, $15, $17, $19, $21, \
                     num($23), num($24), num($25), num($26), \
-                    $28, $30, $32, $36, num($38), $40, $42)
+                    $28, $30, $32, $36, num($38), $40, $42, $44)
             }
             # else: row was truncated, has [delayed...] suffix, or printed
             #       an op type we do not parse.  Dropped silently.
@@ -259,7 +260,8 @@ _verify_osdtrace_output_impl() {
                     row[size] row[client] row[tid] \
                     row[throttle_lat] row[recv_lat] row[dispatch_lat] \
                     row[queue_lat] row[osd_lat] \
-                    row[bluestore_lat] row[op_lat] row[object] <<< "$line"
+                    row[bluestore_lat] row[op_lat] row[object] \
+                    row[detail_ops] <<< "$line"
                 op_r_total=$((op_r_total + 1))
                 _osdtrace_check_common || return 1
                 _osdtrace_check_sublatencies "${OP_R_SUBLATS[@]}" || return 1
@@ -284,7 +286,7 @@ _verify_osdtrace_output_impl() {
                     row[peer0_id] row[peer0_lat] row[peer1_id] row[peer1_lat] \
                     row[bluestore_lat] row[prepare_lat] row[aio_wait_lat] \
                     row[seq_wait_lat] row[kv_commit_lat] row[op_lat] \
-                    row[object] <<< "$line"
+                    row[object] row[detail_ops] <<< "$line"
                 op_w_total=$((op_w_total + 1))
                 _osdtrace_check_common || return 1
                 _osdtrace_check_sublatencies "${OP_W_SUBLATS[@]}" || return 1
@@ -301,6 +303,12 @@ _verify_osdtrace_output_impl() {
         # summary line instead of failing on "-".
         if [[ "${row[object]:-"-"}" != "-" ]]; then
             named_objects=$((named_objects + 1))
+        fi
+
+        if [[ "$op_type" != "subop_w" && \
+              ! "${row[detail_ops]}" =~ ^\[[[:alnum:]_,.+-]*\]$ ]]; then
+            err "Malformed detailed-op list '${row[detail_ops]}' (op=${row[op]} osd=${row[osd_id]} tid=${row[tid]})"
+            return 1
         fi
 
         # Per-pool checks (PG range; per-pool row count): only count rows
