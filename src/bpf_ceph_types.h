@@ -109,6 +109,59 @@ struct bluestore_lat_v {
 #define OBJECT_NAME_LEN 64
 #define MAX_DETAIL_OPS 8
 
+// ceph::os::Transaction::Op is packed and has remained 72 bytes from Quincy
+// through Tentacle. Its first member is the 32-bit ObjectStore opcode.
+#define OBJECTSTORE_TXN_OP_SIZE 72
+#define OSDTRACE_BUFFER_PTR_RAW_OFFSET 8
+#define OSDTRACE_BUFFER_PTR_OFF_OFFSET 16
+#define OSDTRACE_BUFFER_RAW_DATA_OFFSET 32
+
+#define __CEPH_FORALL_OBJECTSTORE_TXN_OPS(f) \
+  f(NOP, 0, "nop") \
+  f(CREATE, 7, "create") \
+  f(COLL_MOVE, 8, "coll_move") \
+  f(TOUCH, 9, "touch") \
+  f(WRITE, 10, "write") \
+  f(ZERO, 11, "zero") \
+  f(TRUNCATE, 12, "truncate") \
+  f(REMOVE, 13, "remove") \
+  f(SETATTR, 14, "setattr") \
+  f(SETATTRS, 15, "setattrs") \
+  f(RMATTR, 16, "rmattr") \
+  f(CLONE, 17, "clone") \
+  f(CLONERANGE, 18, "clonerange") \
+  f(TRIMCACHE, 19, "trimcache") \
+  f(MKCOLL, 20, "mkcoll") \
+  f(RMCOLL, 21, "rmcoll") \
+  f(COLL_ADD, 22, "coll_add") \
+  f(COLL_REMOVE, 23, "coll_remove") \
+  f(COLL_SETATTR, 24, "coll_setattr") \
+  f(COLL_RMATTR, 25, "coll_rmattr") \
+  f(COLL_SETATTRS, 26, "coll_setattrs") \
+  f(RMATTRS, 28, "rmattrs") \
+  f(COLL_RENAME, 29, "coll_rename") \
+  f(CLONERANGE2, 30, "clonerange2") \
+  f(OMAP_CLEAR, 31, "omap_clear") \
+  f(OMAP_SETKEYS, 32, "omap_setkeys") \
+  f(OMAP_RMKEYS, 33, "omap_rmkeys") \
+  f(OMAP_SETHEADER, 34, "omap_setheader") \
+  f(SPLIT_COLLECTION, 35, "split_collection") \
+  f(SPLIT_COLLECTION2, 36, "split_collection2") \
+  f(OMAP_RMKEYRANGE, 37, "omap_rmkeyrange") \
+  f(COLL_MOVE_RENAME, 38, "coll_move_rename") \
+  f(SETALLOCHINT, 39, "setallochint") \
+  f(COLL_HINT, 40, "coll_hint") \
+  f(TRY_RENAME, 41, "try_rename") \
+  f(COLL_SET_BITS, 42, "coll_set_bits") \
+  f(MERGE_COLLECTION, 43, "merge_collection") \
+  f(TOUCH_TEMP, 44, "touch_temp")
+
+enum objectstore_txn_opcode {
+#define GENERATE_TXN_ENUM(op, value, name) OBJECTSTORE_TXN_OP_##op = value,
+  __CEPH_FORALL_OBJECTSTORE_TXN_OPS(GENERATE_TXN_ENUM)
+#undef GENERATE_TXN_ENUM
+};
+
 struct op_v {
   __u32 pid;
   unsigned long long owner;
@@ -141,6 +194,7 @@ struct op_v {
   __u32 detail_ops[MAX_DETAIL_OPS];
   __u32 detail_ops_captured;
   __u32 detail_ops_total;
+  __u32 detail_ops_unavailable;
 };
 
 typedef struct VarLocation {

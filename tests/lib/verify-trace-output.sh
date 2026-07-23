@@ -47,7 +47,7 @@ TRACE_EXPECTED_IO_SIZE=2097152
 #   subop_w | osd | pool | pg | size | client | tid
 #           | throttle_lat | recv_lat | dispatch_lat | queue_lat | osd_lat
 #           | bluestore_lat | prepare_lat | aio_wait_lat | seq_wait_lat
-#           | kv_commit_lat | subop_lat | object
+#           | kv_commit_lat | subop_lat | object | txn_ops
 #
 #   op_w    | osd | pool | pg | size | client | tid
 #           | throttle_lat | recv_lat | dispatch_lat | queue_lat | osd_lat
@@ -96,14 +96,15 @@ _osdtrace_rows() {
                     $7, $9, $11, \
                     $13, $15, $17, $19, $21, \
                     $23, $25, $27, $29)
-            } else if (op == "subop_w" && NF == 37 && \
+            } else if (op == "subop_w" && NF == 39 && \
                        $22 == "bluestore_lat" && $24 == "(prepare" && \
-                       $34 == "subop_lat" && $36 == "object") {
-                candidate = sprintf("subop_w|%d|%s|%s|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%s", \
+                       $34 == "subop_lat" && $36 == "object" && \
+                       $38 == "txn_ops") {
+                candidate = sprintf("subop_w|%d|%s|%s|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%s|%s", \
                     $2, pg[1], pg[2], \
                     $7, $9, $11, \
                     $13, $15, $17, $19, $21, \
-                    $23, $25, $27, $31, num($33), $35, $37)
+                    $23, $25, $27, $31, num($33), $35, $37, $39)
             } else if (op == "op_w" && NF == 44 && \
                        $22 == "peers" && $27 == "bluestore_lat" && \
                        $29 == "(prepare" && $39 == "op_lat" && \
@@ -273,7 +274,7 @@ _verify_osdtrace_output_impl() {
                     row[queue_lat] row[osd_lat] \
                     row[bluestore_lat] row[prepare_lat] row[aio_wait_lat] \
                     row[seq_wait_lat] row[kv_commit_lat] row[op_lat] \
-                    row[object] <<< "$line"
+                    row[object] row[detail_ops] <<< "$line"
                 subop_w_total=$((subop_w_total + 1))
                 _osdtrace_check_common || return 1
                 _osdtrace_check_sublatencies "${SUBOP_W_SUBLATS[@]}" || return 1
@@ -305,8 +306,7 @@ _verify_osdtrace_output_impl() {
             named_objects=$((named_objects + 1))
         fi
 
-        if [[ "$op_type" != "subop_w" && \
-              ! "${row[detail_ops]}" =~ ^\[[[:alnum:]_,.+-]*\]$ ]]; then
+        if [[ ! "${row[detail_ops]}" =~ ^\[[[:alnum:]_,.+-]*\]$ ]]; then
             err "Malformed detailed-op list '${row[detail_ops]}' (op=${row[op]} osd=${row[osd_id]} tid=${row[tid]})"
             return 1
         fi

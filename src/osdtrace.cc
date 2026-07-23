@@ -60,7 +60,8 @@ func_id_t func_id = {
     {"BlueStore::_txc_calc_cost", 160},
     {"ReplicatedBackend::repop_commit", 170},
     {"OpRequest::mark_flag_point", 180},
-    {"BlueStore::log_latency_fn", 190}
+    {"BlueStore::log_latency_fn", 190},
+    {"BlueStore::_txc_add_transaction", 200}
 };
 
 std::map<std::string, int> func_progid = {
@@ -83,7 +84,8 @@ std::map<std::string, int> func_progid = {
     {"BlueStore::_txc_calc_cost", 16},
     {"ReplicatedBackend::repop_commit", 17},
     {"OpRequest::mark_flag_point", 18},
-    {"BlueStore::log_latency_fn", 19}
+    {"BlueStore::log_latency_fn", 19},
+    {"BlueStore::_txc_add_transaction", 20}
 };
 
 DwarfParser::probes_t osd_probes = {
@@ -199,7 +201,12 @@ DwarfParser::probes_t osd_probes = {
     {"OpRequest::mark_flag_point",
      {{"flag"},
       {"this", "reqid", "name", "_num"},
-      {"this", "reqid", "tid"}}}
+      {"this", "reqid", "tid"}}},
+
+    {"BlueStore::_txc_add_transaction",
+     {{"t", "data", "ops"},
+      {"t", "op_bl", "_carriage"},
+      {"t", "op_bl", "_num"}}}
 };
 
 enum mode_e { MODE_AVG = 1, MODE_MAX, MODE_ALL };
@@ -282,6 +289,7 @@ typedef struct osd_op {
   std::string object_name;
   std::vector<__u32> detail_ops;
   __u32 detail_ops_total;
+  bool detail_ops_unavailable;
 } osd_op_t;
 
 int num_osd = 0;
@@ -512,14 +520,31 @@ const char *ceph_osd_op_str(int opcode) {
   }
 }
 
-std::string format_detail_ops(const osd_op_t& op) {
+const char *objectstore_txn_op_str(__u32 opcode) {
+  switch (opcode) {
+#define GENERATE_TXN_CASE(op, value, name) \
+    case OBJECTSTORE_TXN_OP_##op: return name;
+    __CEPH_FORALL_OBJECTSTORE_TXN_OPS(GENERATE_TXN_CASE)
+#undef GENERATE_TXN_CASE
+    default:
+      return nullptr;
+  }
+}
+
+std::string format_detail_ops(const osd_op_t& op, bool transaction_ops) {
   std::stringstream out;
+  if (op.detail_ops_unavailable) {
+    out << "[unavailable+" << op.detail_ops_total << "]";
+    return out.str();
+  }
   out << "[";
   for (std::size_t i = 0; i < op.detail_ops.size(); ++i) {
     if (i != 0)
       out << ",";
     __u32 opcode = op.detail_ops[i];
-    const char *name = ceph_osd_op_str(opcode);
+    const char *name = transaction_ops
+                           ? objectstore_txn_op_str(opcode)
+                           : ceph_osd_op_str(opcode);
     if (name != nullptr)
       out << name;
     else
@@ -539,7 +564,7 @@ void print_op_r(osd_op_t &op, int osd_id) {
   ss << std::hex << op.pg.m_seed;
   std::string pgid(ss.str());
   std::string object_name = format_object_name(op.object_name);
-  std::string detail_ops = format_detail_ops(op);
+  std::string detail_ops = format_detail_ops(op, false);
 
   printf("osd %d pg %lld.%s op_r " 
          "size %d client %lld tid %lld "
@@ -563,20 +588,22 @@ void print_subop_w(osd_op_t &op, int osd_id) {
   ss << std::hex << op.pg.m_seed;
   std::string pgid(ss.str());
   std::string object_name = format_object_name(op.object_name);
+  std::string detail_ops = format_detail_ops(op, true);
 
   printf("osd %d pg %lld.%s subop_w " 
          "size %d client %lld tid %lld "
 	 "throttle_lat %lld recv_lat %lld dispatch_lat %lld "
 	 "queue_lat %lld osd_lat %lld "
 	 "bluestore_lat %lld (prepare %lld aio_wait %lld (aio_size %d) seq_wait %lld kv_commit %lld) "
-	 "subop_lat %lld object %s\n",
+	 "subop_lat %lld object %s txn_ops %s\n",
          osd_id, op.pg.m_pool, pgid.c_str(),
 	  op.wb, op.client_id, op.req_id,
 	  op.throttle_lat, op.recv_lat, op.dispatch_lat, 
 	  op.queue_lat, op.osd_lat,
 	  op.bs_lat, op.bs_prepare_lat, op.bs_aio_wait_lat, op.aio_size, op.bs_pg_seq_lat, op.bs_kv_commit_lat, 
 	  op.op_lat,
-	  object_name.c_str());
+	  object_name.c_str(),
+	  detail_ops.c_str());
   print_delayed_info(op);
 }
 
@@ -586,7 +613,7 @@ void print_op_w(osd_op_t &op, int osd_id) {
   ss << std::hex << op.pg.m_seed;
   std::string pgid(ss.str());
   std::string object_name = format_object_name(op.object_name);
-  std::string detail_ops = format_detail_ops(op);
+  std::string detail_ops = format_detail_ops(op, false);
 
   printf("osd %d pg %lld.%s op_w " 
          "size %d client %lld tid %lld "
@@ -636,6 +663,7 @@ osd_op_t generate_op(op_v *val) {
   op.object_name.assign(val->object_name,
                         strnlen(val->object_name, OBJECT_NAME_LEN));
   op.detail_ops_total = val->detail_ops_total;
+  op.detail_ops_unavailable = val->detail_ops_unavailable != 0;
   for (__u32 i = 0;
        i < val->detail_ops_captured && i < MAX_DETAIL_OPS;
        ++i) {
@@ -1490,6 +1518,7 @@ static const AttachEntry ATTACH_LIST[] = {
     {"BlueStore::queue_transactions", OP_FULL_PROBE, false, 0},
     {"BlueStore::_txc_calc_cost", OP_FULL_PROBE, false, 0},
     {"BlueStore::_txc_state_proc", OP_FULL_PROBE, false, 0},
+    {"BlueStore::_txc_add_transaction", OP_FULL_PROBE, false, 0},
     {"PrimaryLogPG::log_op_stats", OP_FULL_PROBE, false, 0},
     {"ReplicatedBackend::repop_commit", OP_FULL_PROBE, false, 0},
     {"OSD::enqueue_op", OP_FULL_PROBE, false, 0},

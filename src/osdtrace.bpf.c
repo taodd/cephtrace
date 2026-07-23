@@ -856,3 +856,84 @@ int uprobe_log_latency_fn(struct pt_regs *ctx)
 
   return 0;
 }
+
+// BlueStore::_txc_add_transaction
+//
+// A replica MOSDRepOp no longer contains the original ceph_osd_op vector.
+// Its native lower-level operations are ObjectStore::Transaction::Op entries.
+// queue_transactions invokes this function once per Transaction while the
+// dequeue thread correlation is still present in ptid_opk.
+SEC("uprobe")
+int uprobe_txc_add_transaction(struct pt_regs *ctx)
+{
+  __u64 ptid = bpf_get_current_pid_tgid();
+  struct op_k *key = bpf_map_lookup_elem(&ptid_opk, &ptid);
+  if (key == NULL)
+    return 0;
+
+  struct op_v *vp = bpf_map_lookup_elem(&ops, key);
+  if (vp == NULL || vp->op_type != MSG_OSD_REPOP)
+    return 0;
+
+  int varid = 200;
+  __u64 txn_ops = 0;
+  if (read_hprobe_varfield(ctx, varid++, &txn_ops, sizeof(txn_ops)) != 0)
+    return 0;
+  if (txn_ops == 0)
+    return 0;
+  vp->detail_ops_total += txn_ops;
+
+  // op_bl reserves 32 packed Op entries per buffer. Capture only a
+  // single-buffer list; otherwise report the total but do not mislabel data
+  // from the append buffer as the beginning of the transaction.
+  __u32 num_buffers = 0;
+  if (read_hprobe_varfield(ctx, varid + 1, &num_buffers,
+                           sizeof(num_buffers)) != 0)
+    return 0;
+  if (num_buffers != 1) {
+    vp->detail_ops_captured = 0;
+    vp->detail_ops_unavailable = 1;
+    return 0;
+  }
+  if (vp->detail_ops_unavailable)
+    return 0;
+
+  __u64 carriage = 0;
+  if (read_hprobe_varfield(ctx, varid, &carriage, sizeof(carriage)) != 0)
+    return 0;
+  if (carriage == 0)
+    return 0;
+
+  __u64 raw = 0;
+  bpf_probe_read_user(&raw, sizeof(raw),
+                      (void *)(carriage + OSDTRACE_BUFFER_PTR_RAW_OFFSET));
+  if (raw == 0)
+    return 0;
+
+  __u32 buffer_offset = 0;
+  bpf_probe_read_user(&buffer_offset, sizeof(buffer_offset),
+                      (void *)(carriage + OSDTRACE_BUFFER_PTR_OFF_OFFSET));
+
+  __u64 raw_data = 0;
+  bpf_probe_read_user(&raw_data, sizeof(raw_data),
+                      (void *)(raw + OSDTRACE_BUFFER_RAW_DATA_OFFSET));
+  if (raw_data == 0)
+    return 0;
+  __u64 op_buffer = raw_data + buffer_offset;
+
+#pragma unroll
+  for (__u32 i = 0; i < MAX_DETAIL_OPS; ++i) {
+    if (i >= txn_ops)
+      break;
+    __u32 captured = vp->detail_ops_captured;
+    if (captured >= MAX_DETAIL_OPS)
+      break;
+    __u32 opcode = 0;
+    bpf_probe_read_user(&opcode, sizeof(opcode),
+                        (void *)(op_buffer + i * OBJECTSTORE_TXN_OP_SIZE));
+    vp->detail_ops[captured & (MAX_DETAIL_OPS - 1)] = opcode;
+    vp->detail_ops_captured = captured + 1;
+  }
+
+  return 0;
+}
