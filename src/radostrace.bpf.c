@@ -45,35 +45,33 @@ void initialize_value(struct client_op_k key) {
   bpf_map_update_elem(&ops, &key, &zero_val, 0);
 }
 
+static __always_inline int read_hprobe_varfield(struct pt_regs *ctx, int varid, void *dst, size_t size) {
+  struct VarField *vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL != vf) {
+    __u64 v = fetch_register(ctx, vf->varloc.reg);
+    __u64 addr = fetch_var_member_addr(v, vf);
+    bpf_probe_read_user(dst, size, (void *)addr);
+    return 0;
+  }
+  bpf_printk("got NULL vf at varid %d\n", varid);
+  return -1;
+}
+
 SEC("uprobe")
 int uprobe_send_op(struct pt_regs *ctx) {
   bpf_printk("Entered uprobe_send_op\n");
   int varid = 0;
   struct client_op_k key;
   memset(&key, 0, sizeof(key));
+
   // read tid
-  struct VarField *vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 tid_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&key.tid, sizeof(key.tid), (void *)tid_addr);
+  if (read_hprobe_varfield(ctx, varid++, &key.tid, sizeof(key.tid)) == 0) {
     bpf_printk("uprobe_send_op got tid %lld\n", key.tid);
-  } else {
-    bpf_printk("uprobe_send_op got NULL vf at varid %d\n", varid);
   }
 
   // read client id
-  ++varid;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 cid_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&key.cid, sizeof(key.cid), (void *)cid_addr);
+  if (read_hprobe_varfield(ctx, varid++, &key.cid, sizeof(key.cid)) == 0) {
     bpf_printk("uprobe_send_op got client id %lld\n", key.cid);
-  } else {
-    bpf_printk("uprobe_send_op got NULL vf at varid %d\n", varid);
   }
 
   initialize_value(key);
@@ -86,115 +84,55 @@ int uprobe_send_op(struct pt_regs *ctx) {
   val->tid = key.tid;
   val->cid = key.cid;
   val->rw = 0;
+
   // read osd id
-  ++varid;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 osd_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&val->target_osd, sizeof(val->target_osd), (void *)osd_addr);
+  if (read_hprobe_varfield(ctx, varid++, &val->target_osd, sizeof(val->target_osd)) == 0) {
     bpf_printk("uprobe_send_op got osd id %lld\n", val->target_osd);
-  } else {
-    bpf_printk("uprobe_send_op got NULL vf at varid %d\n", varid);
   }
 
   // read name length
-  ++varid;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
   int name_len = 0;
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 len_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&name_len, sizeof(name_len), (void *)len_addr);
+  if (read_hprobe_varfield(ctx, varid++, &name_len, sizeof(name_len)) == 0) {
     bpf_printk("uprobe_send_op got name length %d\n", name_len);
-  } else {
-    bpf_printk("uprobe_send_op got NULL vf at varid %d\n", varid);
   }
 
   // read name
-  ++varid;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
   __u64 name_base = 0;
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 name_base_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&name_base, sizeof(name_base), (void *)name_base_addr);
+  if (read_hprobe_varfield(ctx, varid++, &name_base, sizeof(name_base)) == 0) {
     bpf_printk("uprobe_send_op got name base addr %lld\n", name_base);
-  } else {
-    bpf_printk("uprobe_send_op got NULL vf at varid %d\n", varid);
   }
 
   name_len &= 127;
   bpf_probe_read_user(val->object_name, name_len, (void *)name_base);
+
   // read op flags
-  ++varid;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 flags_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&val->rw, sizeof(val->rw), (void *)flags_addr);
+  if (read_hprobe_varfield(ctx, varid++, &val->rw, sizeof(val->rw)) == 0) {
     bpf_printk("uprobe_send_op got flags %d\n", val->rw);
-  } else {
-    bpf_printk("uprobe_send_op got NULL vf at varid %d\n", varid);
   }
 
   // read m_pool
-  ++varid;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 m_pool_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&val->m_pool, sizeof(val->m_pool), (void *)m_pool_addr);
+  if (read_hprobe_varfield(ctx, varid++, &val->m_pool, sizeof(val->m_pool)) == 0) {
     bpf_printk("uprobe_send_op got m_pool %d\n", val->m_pool);
-  } else {
-    bpf_printk("uprobe_send_op got NULL vf at varid %d\n", varid);
   }
   
   // read m_seed
-  ++varid;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 m_seed_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&val->m_seed, sizeof(val->m_seed), (void *)m_seed_addr);
+  if (read_hprobe_varfield(ctx, varid++, &val->m_seed, sizeof(val->m_seed)) == 0) {
     bpf_printk("uprobe_send_op got m_seed %d\n", val->m_seed);
-  } else {
-    bpf_printk("uprobe_send_op got NULL vf at varid %d\n", varid);
   }
   
   // read acting _M_start
-  ++varid;
-  __u64 M_start;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 M_start_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&M_start, sizeof(M_start), (void *)M_start_addr);
-    bpf_printk("uprobe_send_op got M_start %d\n", M_start);
+  __u64 M_start = 0;
+  if (read_hprobe_varfield(ctx, varid++, &M_start, sizeof(M_start)) == 0) {
+    bpf_printk("uprobe_send_op got M_start %lld\n", M_start);
   } else {
-    bpf_printk("uprobe_send_op got NULL vf at varid %d\n", varid);
     return 0;
   }
 
   // read acting _M_finish
-  ++varid;
-  __u64 m_finish;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 m_finish_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&m_finish, sizeof(m_finish), (void *)m_finish_addr);
-    bpf_printk("uprobe_send_op got m_finish %d\n", m_finish);
+  __u64 m_finish = 0;
+  if (read_hprobe_varfield(ctx, varid++, &m_finish, sizeof(m_finish)) == 0) {
+    bpf_printk("uprobe_send_op got m_finish %lld\n", m_finish);
   } else {
-    bpf_printk("uprobe_send_op got NULL vf at varid %d\n", varid);
     return 0;
   }
 
@@ -209,31 +147,17 @@ int uprobe_send_op(struct pt_regs *ctx) {
   }
 
   //read op->ops->m_holder->m_start
-  ++varid;
-  __u64 m_start;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 m_start_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&m_start, sizeof(m_start), (void *)m_start_addr);
+  __u64 m_start = 0;
+  if (read_hprobe_varfield(ctx, varid++, &m_start, sizeof(m_start)) == 0) {
     bpf_printk("uprobe_send_op got m_start %lld\n", m_start);
   } else {
-    bpf_printk("uprobe_send_op got NULL vf at varid %d\n", varid);
     return 0;
   }
 
   //read op->ops->m_holder->m_size
-  ++varid;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 m_size_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&val->ops_size, sizeof(val->ops_size), (void *)m_size_addr);
-    bpf_printk("uprobe_send_op got m_start %d\n", val->ops_size);
+  if (read_hprobe_varfield(ctx, varid++, &val->ops_size, sizeof(val->ops_size)) == 0) {
+    bpf_printk("uprobe_send_op got ops_size %d\n", val->ops_size);
   } else {
-    bpf_printk("uprobe_send_op got NULL vf at varid %d\n", varid);
     return 0;
   }
 
@@ -276,7 +200,6 @@ int uprobe_send_op(struct pt_regs *ctx) {
     }
   }
 
-  //bpf_map_update_elem(&ops, &key, val, 0);// no need to update again here
   return 0;
 }
 
@@ -286,29 +209,15 @@ int uprobe_finish_op(struct pt_regs *ctx) {
   int varid = 20;
   struct client_op_k key;
   memset(&key, 0, sizeof(key));
+
   // read tid
-  struct VarField *vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 tid_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&key.tid, sizeof(key.tid), (void *)tid_addr);
+  if (read_hprobe_varfield(ctx, varid++, &key.tid, sizeof(key.tid)) == 0) {
     bpf_printk("uprobe_finish_op got tid %lld\n", key.tid);
-  } else {
-    bpf_printk("uprobe_finish_op got NULL vf at varid %d\n", varid);
   }
 
   // read client id
-  ++varid;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 cid_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&key.cid, sizeof(key.cid), (void *)cid_addr);
+  if (read_hprobe_varfield(ctx, varid++, &key.cid, sizeof(key.cid)) == 0) {
     bpf_printk("uprobe_finish_op got client id %lld\n", key.cid);
-  } else {
-    bpf_printk("uprobe_finish_op got NULL vf at varid %d\n", varid);
   }
 
   struct client_op_v *opv = bpf_map_lookup_elem(&ops, &key);
