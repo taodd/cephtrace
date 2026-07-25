@@ -503,105 +503,146 @@ std::vector<CephClientInfo> discover_ceph_clients() {
 }
 
 
+int timeout = -1;
+bool export_json = false;
+bool import_json = false;
+bool skip_version_check = false;
+bool list_clients_mode = false;
+bool list_embedded_mode = false;
+std::string json_output_file = "radostrace_dwarf.json";
+std::string json_input_file;
+int process_id = -1;  // Default to -1 (all processes)
+
+int parse_args(int argc, char **argv) {
+  static struct option long_options[] = {
+    {"timeout",            required_argument, 0, 't'},
+    {"export-json",        optional_argument, 0, 'j'},
+    {"import-json",        required_argument, 0, 'i'},
+    {"output",             optional_argument, 0, 'o'},
+    {"pid",                required_argument, 0, 'p'},
+    {"skip-version-check", no_argument,       0, 0},
+    {"list",               no_argument,       0, 0},
+    {"list-embedded",      no_argument,       0, 0},
+    {"version",            no_argument,       0, 'V'},
+    {"help",               no_argument,       0, 'h'},
+    {0, 0, 0, 0}
+  };
+
+  int option_index = 0;
+  int opt;
+  while ((opt = getopt_long(argc, argv, ":t:j::i:o::p:Vh", long_options, &option_index)) != -1) {
+    switch (opt) {
+      case 0:
+        if (strcmp(long_options[option_index].name, "skip-version-check") == 0) {
+          skip_version_check = true;
+        } else if (strcmp(long_options[option_index].name, "list") == 0) {
+          list_clients_mode = true;
+        } else if (strcmp(long_options[option_index].name, "list-embedded") == 0) {
+          list_embedded_mode = true;
+        }
+        break;
+      case 't':
+        try {
+          timeout = std::stoi(optarg);
+          if (timeout <= 0) throw std::invalid_argument("Negative timeout");
+        } catch (...) {
+          std::cerr << "Invalid timeout value. Must be a positive integer.\n";
+          return -1;
+        }
+        break;
+      case 'j':
+        export_json = true;
+        if (optarg) {
+          json_output_file = optarg;
+        } else if (optind < argc && argv[optind][0] != '-') {
+          json_output_file = argv[optind++];
+        }
+        break;
+      case 'i':
+        import_json = true;
+        json_input_file = optarg;
+        break;
+      case 'o':
+        export_csv = true;
+        if (optarg) {
+          csv_output_file = optarg;
+        } else if (optind < argc && argv[optind][0] != '-') {
+          csv_output_file = argv[optind++];
+        }
+        break;
+      case 'p':
+        try {
+          process_id = std::stoi(optarg);
+          if (process_id <= 0) throw std::invalid_argument("Invalid PID");
+        } catch (...) {
+          std::cerr << "Invalid process ID. Must be a positive integer.\n";
+          return -1;
+        }
+        break;
+      case 'V':
+        print_tool_version("radostrace");
+        exit(0);
+      case 'h':
+        std::cout << "Usage: " << argv[0] << " [-t <timeout seconds>] [-j [filename]] [-i <filename>] [-o [filename]] [-p <pid>] [--skip-version-check] [--list] [--list-embedded]\n";
+        std::cout << "  -t, --timeout <seconds>    Set execution timeout in seconds\n";
+        std::cout << "  -j, --export-json <file>   Export DWARF info to JSON (default: radostrace_dwarf.json)\n";
+        std::cout << "  -i, --import-json <file>   Import DWARF info from JSON file\n";
+        std::cout << "  -o, --output <file>        Export events data info to CSV (default: radostrace_events.csv)\n";
+        std::cout << "  -p, --pid <pid>            Attach uprobes only to the specified process ID (Mandatory for container based process tracing)\n";
+        std::cout << "  --skip-version-check       Skip version check when importing DWARF JSON (currently needed for containers)\n";
+        std::cout << "  --list                     List client processes using libceph-common (PID, container, traceability, version), and exit\n";
+        std::cout << "  --list-embedded            List the Ceph versions with DWARF data compiled into this binary, and exit\n";
+        std::cout << "  -V, --version              Print version information and exit\n";
+        std::cout << "  -h, --help                 Show this help message\n";
+        exit(0);
+      case ':':
+        std::cerr << "Option -" << (char)optopt << " requires an argument\n";
+        return -1;
+      case '?':
+      default:
+        std::cerr << "Unknown option. Use -h or --help for usage.\n";
+        return -1;
+    }
+  }
+  return 0;
+}
+
+
 int main(int argc, char **argv) {
   signal(SIGINT, signal_handler); 
 
-  /* Default to unlimited execution time */
-  int timeout = -1;
-  bool export_json = false;
-  bool import_json = false;
-  bool skip_version_check = false;
-  std::string json_output_file = "radostrace_dwarf.json";
-  std::string json_input_file;
-  int process_id = -1;  // Default to -1 (all processes)
+  if (parse_args(argc, argv) != 0) {
+    return 1;
+  }
 
-  /* Parse arguments */
-  for (int i = 1; i < argc; ++i) {
-      std::string arg = argv[i];
-      if ((arg == "-t" || arg == "--timeout") && i + 1 < argc) {
-          try {
-              timeout = std::stoi(argv[++i]);
-              if (timeout <= 0) throw std::invalid_argument("Negative timeout");
-          } catch (...) {
-              std::cerr << "Invalid timeout value. Must be a positive integer.\n";
-              return 1;
-          }
-      } else if (arg == "-j" || arg == "--json") {
-          export_json = true;
-          if (i + 1 < argc && argv[i + 1][0] != '-') {
-              json_output_file = argv[++i];
-          }
-      } else if (arg == "-i" || arg == "--import-json") {
-          import_json = true;
-          if (i + 1 < argc) {
-              json_input_file = argv[++i];
-          } else {
-              std::cerr << "Error: -i/--import-json requires a filename argument\n";
-              return 1;
-          }
-      } else if (arg == "-o" || arg == "--output") {
-          export_csv = true;
-          if (i + 1 < argc && argv[i + 1][0] != '-') {
-              csv_output_file = argv[++i];
-          }
-      } else if (arg == "-p" || arg == "--pid") {
-          if (i + 1 < argc) {
-              try {
-                  process_id = std::stoi(argv[++i]);
-                  if (process_id <= 0) throw std::invalid_argument("Invalid PID");
-              } catch (...) {
-                  std::cerr << "Invalid process ID. Must be a positive integer.\n";
-                  return 1;
-              }
-          } else {
-              std::cerr << "Error: -p/--pid requires a process ID argument\n";
-              return 1;
-          }
-      } else if (arg == "--skip-version-check") {
-          skip_version_check = true;
-      } else if (arg == "--list") {
-          if (geteuid() != 0) {
-              std::cout << "Warning: not running as root; processes owned by other users may be missed,"
-                        << " and Traceable/Ceph Version may show as unknown." << std::endl << std::endl;
-          }
-          auto clients = discover_ceph_clients();
-          if (clients.empty()) {
-              std::cout << "No client processes using libceph-common detected on the host." << std::endl;
-          } else {
-              std::cout << "Detected " << clients.size() << " client process(es) using libceph-common:" << std::endl;
-              printf("  %-10s %-11s %-11s %-24s %s\n", "PID", "Container", "Traceable", "Ceph Version", "Executable Path");
-              printf("  --------------------------------------------------------------------------------\n");
-              for (const auto &c : clients) {
-                  printf("  %-10d %-11s %-11s %-24s %s\n", c.pid,
-                         c.is_container ? "yes" : "no", c.traceable.c_str(),
-                         c.version.c_str(), c.exe_path.empty() ? "unknown" : c.exe_path.c_str());
-              }
-              std::cout << std::endl
-                        << "Traceable: 'yes' means this radostrace has matching embedded DWARF data;"
-                        << " 'no' means it doesn't (export a DWARF JSON with -j on a matching host and"
-                        << " use -i); 'unknown' means a build-id couldn't be read (re-run as root)." << std::endl;
-          }
-          return 0;
-      } else if (arg == "--list-embedded") {
-          DwarfParser::list_embedded_versions("radostrace");
-          return 0;
-      } else if (arg == "-V" || arg == "--version") {
-          print_tool_version("radostrace");
-          return 0;
-      } else if (arg == "-h" || arg == "--help") {
-          std::cout << "Usage: " << argv[0] << " [-t <timeout seconds>] [-j [filename]] [-i <filename>] [-o [filename]] [-p <pid>] [--skip-version-check] [--list] [--list-embedded]\n";
-          std::cout << "  -t, --timeout <seconds>    Set execution timeout in seconds\n";
-          std::cout << "  -j, --export-json <file>   Export DWARF info to JSON (default: radostrace_dwarf.json)\n";
-          std::cout << "  -i, --import-json <file>   Import DWARF info from JSON file\n";
-          std::cout << "  -o, --output <file>        Export events data info to CSV (default: radostrace_events.csv)\n";
-          std::cout << "  -p, --pid <pid>            Attach uprobes only to the specified process ID (Mandatory for container based process tracing)\n";
-          std::cout << "  --skip-version-check       Skip version check when importing DWARF JSON (currently needed for containers)\n";
-          std::cout << "  --list                     List client processes using libceph-common (PID, container, traceability, version), and exit\n";
-          std::cout << "  --list-embedded            List the Ceph versions with DWARF data compiled into this binary, and exit\n";
-          std::cout << "  -V, --version              Print version information and exit\n";
-          std::cout << "  -h, --help                 Show this help message\n";
-          return 0;
+  if (list_embedded_mode) {
+    DwarfParser::list_embedded_versions("radostrace");
+    return 0;
+  }
+
+  if (list_clients_mode) {
+    if (geteuid() != 0) {
+      std::cout << "Warning: not running as root; processes owned by other users may be missed,"
+                << " and Traceable/Ceph Version may show as unknown." << std::endl << std::endl;
+    }
+    auto clients = discover_ceph_clients();
+    if (clients.empty()) {
+      std::cout << "No client processes using libceph-common detected on the host." << std::endl;
+    } else {
+      std::cout << "Detected " << clients.size() << " client process(es) using libceph-common:" << std::endl;
+      printf("  %-10s %-11s %-11s %-24s %s\n", "PID", "Container", "Traceable", "Ceph Version", "Executable Path");
+      printf("  --------------------------------------------------------------------------------\n");
+      for (const auto &c : clients) {
+        printf("  %-10d %-11s %-11s %-24s %s\n", c.pid,
+               c.is_container ? "yes" : "no", c.traceable.c_str(),
+               c.version.c_str(), c.exe_path.empty() ? "unknown" : c.exe_path.c_str());
       }
+      std::cout << std::endl
+                << "Traceable: 'yes' means this radostrace has matching embedded DWARF data;"
+                << " 'no' means it doesn't (export a DWARF JSON with -j on a matching host and"
+                << " use -i); 'unknown' means a build-id couldn't be read (re-run as root)." << std::endl;
+    }
+    return 0;
   }
 
   // Validate process_id if specified
@@ -685,7 +726,7 @@ int main(int argc, char **argv) {
       // those paths don't exist on the host.  Read the build-id through
       // /proc/<pid>/root/ when a target PID is specified so the read sees
       // the same file the uprobe will attach to.
-      auto bid_path = [process_id](const std::string& p) -> std::string {
+      auto bid_path = [](const std::string& p) -> std::string {
           if (process_id == -1) return p;
           return "/proc/" + std::to_string(process_id) + "/root" + p;
       };
