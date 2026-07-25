@@ -96,6 +96,31 @@ int uprobe_enqueue_op(struct pt_regs *ctx) {
 
   key.pid = get_pid();
 
+  /* Retry detection.
+   *
+   * If an entry for (pid, owner, tid) is already in the map, an earlier
+   * op with the same key is still in flight (its completion uprobe has
+   * not fired yet) -- this is a client-side retry of an op the OSD is
+   * still processing.  Without this guard, the bpf_map_update_elem call
+   * below would overwrite the original's tracking with a freshly-memset
+   * record; when the original later completes, log_op_stats picks up
+   * the retry's record (deq == 0, every per-stage latency == 0, peer
+   * slots reset to -1) and emits nonsense -- queue_lat in particular
+   * underflows to ~UINT64_MAX because deq is zero while enq is the
+   * retry's bpf_ktime_get_boot_ns().
+   *
+   * Ceph handles retries via PrimaryLogPG::already_complete() inside
+   * do_op, so skipping the BPF update has no effect on what Ceph
+   * reports to the client -- it only preserves our tracking of the
+   * original op so its log_op_stats emission is well-formed.
+   *
+   * An age threshold separates a true retry (in-flight original) from
+   * an orphan (entry left behind because some completion uprobe was
+   * missed for an earlier op).  5 s is much longer than any healthy op
+   * takes but well below the time it would take a tid to be legitimately
+   * reused via a client session reset.  Orphans older than that are
+   * cleaned up by falling through to the overwrite.
+   */
   struct op_v *existing = bpf_map_lookup_elem(&ops, &key);
   if (existing != NULL) {
     __u64 age_ns = bpf_ktime_get_boot_ns() - existing->enqueue_stamp;
