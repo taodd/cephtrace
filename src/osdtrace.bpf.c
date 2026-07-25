@@ -48,81 +48,54 @@ struct {
   __uint(max_entries, 8192);
 } hprobes SEC(".maps");
 
+static __always_inline int read_hprobe_varfield(struct pt_regs *ctx, int varid, void *dst, size_t size) {
+  struct VarField *vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL != vf) {
+    __u64 v = fetch_register(ctx, vf->varloc.reg);
+    __u64 addr = fetch_var_member_addr(v, vf);
+    bpf_probe_read_user(dst, size, (void *)addr);
+    return 0;
+  }
+  bpf_printk("got NULL vf at varid %d\n", varid);
+  return -1;
+}
+
+static __always_inline int read_hprobe_utime(struct pt_regs *ctx, int varid, __u64 *nsec_dst) {
+  struct VarField *vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL != vf) {
+    __u64 v = fetch_register(ctx, vf->varloc.reg);
+    __u64 addr = fetch_var_member_addr(v, vf);
+    struct utime_t stamp;
+    bpf_probe_read_user(&stamp.sec, sizeof(stamp.sec), (void *)addr);
+    bpf_probe_read_user(&stamp.nsec, sizeof(stamp.nsec), (void *)(addr + 4));
+    *nsec_dst = to_nsec(&stamp);
+    return 0;
+  }
+  bpf_printk("got NULL vf at varid %d\n", varid);
+  return -1;
+}
+
 SEC("uprobe")
 int uprobe_enqueue_op(struct pt_regs *ctx) {
   int varid = 0;
   struct op_k key;
   memset(&key, 0, sizeof(key));
-  // read op type, skip if it's not osd_op type
+
   __u16 op_type = 0;
-  struct VarField *vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 op_type_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&op_type, sizeof(op_type), (void *)op_type_addr);
-  } else {
-    bpf_printk("uprobe_enqueue_op got NULL vf at varid %d\n", varid);
-  }
+  read_hprobe_varfield(ctx, varid++, &op_type, sizeof(op_type));
   if (op_type != MSG_OSD_OP && op_type != MSG_OSD_REPOP) {
     bpf_printk("uprobe_enqueue_op got a non osdop/osdrepop %d, ignore\n", op_type);
     return 0;
   }
 
-  // read _num
-  varid++;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    // print_vf(vf);
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 num_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&key.owner, sizeof(key.owner), (void *)num_addr);
-  } else {
-    bpf_printk("uprobe_enqueue_op got NULL vf at varid %d\n", varid);
+  if (read_hprobe_varfield(ctx, varid++, &key.owner, sizeof(key.owner)) != 0)
     return 0;
-  }
 
-  // read tid
-  ++varid;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 tid_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&key.tid, sizeof(key.tid), (void *)tid_addr);
-  } else {
-    bpf_printk("uprobe_enqueue_op got NULL vf at varid %d\n", varid);
+  if (read_hprobe_varfield(ctx, varid++, &key.tid, sizeof(key.tid)) != 0)
     return 0;
-  }
 
   key.pid = get_pid();
 
-  /* Retry detection.
-   *
-   * If an entry for (pid, owner, tid) is already in the map, an earlier
-   * op with the same key is still in flight (its completion uprobe has
-   * not fired yet) -- this is a client-side retry of an op the OSD is
-   * still processing.  Without this guard, the bpf_map_update_elem call
-   * below would overwrite the original's tracking with a freshly-memset
-   * record; when the original later completes, log_op_stats picks up
-   * the retry's record (deq == 0, every per-stage latency == 0, peer
-   * slots reset to -1) and emits nonsense -- queue_lat in particular
-   * underflows to ~UINT64_MAX because deq is zero while enq is the
-   * retry's bpf_ktime_get_boot_ns().
-   *
-   * Ceph handles retries via PrimaryLogPG::already_complete() inside
-   * do_op, so skipping the BPF update has no effect on what Ceph
-   * reports to the client -- it only preserves our tracking of the
-   * original op so its log_op_stats emission is well-formed.
-   *
-   * An age threshold separates a true retry (in-flight original) from
-   * an orphan (entry left behind because some completion uprobe was
-   * missed for an earlier op).  5 s is much longer than any healthy op
-   * takes but well below the time it would take a tid to be legitimately
-   * reused via a client session reset.  Orphans older than that are
-   * cleaned up by falling through to the overwrite.
-   */
   struct op_v *existing = bpf_map_lookup_elem(&ops, &key);
   if (existing != NULL) {
     __u64 age_ns = bpf_ktime_get_boot_ns() - existing->enqueue_stamp;
@@ -137,87 +110,23 @@ int uprobe_enqueue_op(struct pt_regs *ctx) {
 
   struct op_v value;
   memset(&value, 0, sizeof(value));
-  // ktime_get_real_ts64 can't be called
-  /*struct timespec64 *ts;
-  ktime_get_real_ts64(ts);
-  __u64 now_sec = ts->tv_sec;
-  __u64 now_nsec = ts->tv_nsec;*/
 
   value.enqueue_stamp = bpf_ktime_get_boot_ns();
   value.pid = key.pid;
   value.tid = key.tid;
   value.owner = key.owner;
   value.op_type = op_type;
-  //initialize peer id to -1
   value.pi.peer1 = -1;
   value.pi.peer2 = -1;
-  struct utime_t stamp;
 
-  // Set recv_stamp
-  ++varid;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 recv_stamp_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&stamp.sec, sizeof(stamp.sec), (void *)recv_stamp_addr);
-    bpf_probe_read_user(&stamp.nsec, sizeof(stamp.nsec),
-                        (void *)(recv_stamp_addr + 4));
-    value.recv_stamp = to_nsec(&stamp);
-  } else {
-    bpf_printk("uprobe_enqueue_op got NULL vf at varid %d\n", varid);
+  if (read_hprobe_utime(ctx, varid++, &value.recv_stamp) != 0)
     return 0;
-  }
-
-  // Set throttle_stamp
-  ++varid;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 throttle_stamp_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&stamp.sec, sizeof(stamp.sec), (void *)throttle_stamp_addr);
-    bpf_probe_read_user(&stamp.nsec, sizeof(stamp.nsec),
-                        (void *)(throttle_stamp_addr + 4));
-    value.throttle_stamp = to_nsec(&stamp);
-  } else {
-    bpf_printk("uprobe_enqueue_op got NULL vf at varid %d\n", varid);
+  if (read_hprobe_utime(ctx, varid++, &value.throttle_stamp) != 0)
     return 0;
-  }
-
-  // Set recv_complete_stamp
-  ++varid;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 recv_complete_stamp_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&stamp.sec, sizeof(stamp.sec),
-                        (void *)recv_complete_stamp_addr);
-    bpf_probe_read_user(&stamp.nsec, sizeof(stamp.nsec),
-                        (void *)(recv_complete_stamp_addr + 4));
-    value.recv_complete_stamp = to_nsec(&stamp);
-  } else {
-    bpf_printk("uprobe_enqueue_op got NULL vf at varid %d\n", varid);
+  if (read_hprobe_utime(ctx, varid++, &value.recv_complete_stamp) != 0)
     return 0;
-  }
-
-  // Set dispatch_stamp
-  ++varid;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 dispatch_stamp_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&stamp.sec, sizeof(stamp.sec),
-                        (void *)dispatch_stamp_addr);
-    bpf_probe_read_user(&stamp.nsec, sizeof(stamp.nsec),
-                        (void *)(dispatch_stamp_addr + 4));
-    value.dispatch_stamp = to_nsec(&stamp);
-  } else {
-    bpf_printk("uprobe_enqueue_op got NULL vf at varid %d\n", varid);
+  if (read_hprobe_utime(ctx, varid++, &value.dispatch_stamp) != 0)
     return 0;
-  }
 
   bpf_map_update_elem(&ops, &key, &value, 0);
   return 0;
@@ -230,46 +139,18 @@ int uprobe_dequeue_op(struct pt_regs *ctx) {
   struct op_k key;
   memset(&key, 0, sizeof(key));
   int varid = 10;
-  // read op type, skip if it's not osd_op type
-  __u16 op_type = 0;
-  struct VarField *vf = bpf_map_lookup_elem(&hprobes, &varid);
 
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 op_type_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&op_type, sizeof(op_type), (void *)op_type_addr);
-  } else {
-    bpf_printk("uprobe_dequeue_op got NULL vf at varid %d\n", varid);
-  }
+  __u16 op_type = 0;
+  read_hprobe_varfield(ctx, varid++, &op_type, sizeof(op_type));
   if (op_type != MSG_OSD_OP && op_type != MSG_OSD_REPOP) {
     bpf_printk("uprobe_dequeue_op got non osdop or repop type %d, ignore\n", op_type);
     return 0;
   }
 
-  // read num
-  ++varid;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 num_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&key.owner, sizeof(key.owner), (void *)num_addr);
-  } else {
-    bpf_printk("uprobe_dequeue_op got NULL vf at varid %d\n", varid);
-  }
-  // read tid
-  ++varid;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 tid_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&key.tid, sizeof(key.tid), (void *)tid_addr);
-  } else {
-    bpf_printk("uprobe_dequeue_op got NULL vf at varid %d\n", varid);
+  read_hprobe_varfield(ctx, varid++, &key.owner, sizeof(key.owner));
+  if (read_hprobe_varfield(ctx, varid++, &key.tid, sizeof(key.tid)) != 0)
     return 0;
-  }
+
   key.pid = get_pid();
 
   bpf_printk("Entered into uprobe_dequeue_op key owner %lld, tid %lld\n",
@@ -284,35 +165,15 @@ int uprobe_dequeue_op(struct pt_regs *ctx) {
   if (vp->dequeue_stamp == 0)
     vp->dequeue_stamp = bpf_ktime_get_boot_ns();
 
-  // Set m_pool
-  ++varid;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 m_pool_addr = fetch_var_member_addr(v, vf);
-    __u64 m_pool;
-    bpf_probe_read_user(&m_pool, sizeof(m_pool),(void *)m_pool_addr);
-    vp->m_pool = m_pool;
-  } else {
-    bpf_printk("uprobe_dequeue_op got NULL vf at varid %d\n", varid);
+  __u64 m_pool = 0;
+  if (read_hprobe_varfield(ctx, varid++, &m_pool, sizeof(m_pool)) != 0)
     return 0;
-  }
+  vp->m_pool = m_pool;
 
-  // Set m_seed
-  ++varid;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 m_seed_addr = fetch_var_member_addr(v, vf);
-    __u32 m_seed;
-    bpf_probe_read_user(&m_seed, sizeof(m_seed),(void *)m_seed_addr);
-    vp->m_seed = m_seed;
-  } else {
-    bpf_printk("uprobe_dequeue_op got NULL vf at varid %d\n", varid);
+  __u32 m_seed = 0;
+  if (read_hprobe_varfield(ctx, varid++, &m_seed, sizeof(m_seed)) != 0)
     return 0;
-  }
+  vp->m_seed = m_seed;
 
   __u64 ptid = bpf_get_current_pid_tgid();
   bpf_map_update_elem(&ptid_opk, &ptid, &key, 0);
@@ -327,28 +188,10 @@ int uprobe_execute_ctx(struct pt_regs *ctx) {
   int varid = 20;
   struct op_k key;
   memset(&key, 0, sizeof(key));
-  // read num
-  struct VarField *vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 num_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&key.owner, sizeof(key.owner), (void *)num_addr);
-  } else {
-    bpf_printk("uprobe_execute_ctx got NULL vf at varid %d\n", varid);
-  }
-  // read tid
-  ++varid;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 tid_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&key.tid, sizeof(key.tid), (void *)tid_addr);
-  } else {
-    bpf_printk("uprobe_execute_ctx got NULL vf at varid %d\n", varid);
+  read_hprobe_varfield(ctx, varid++, &key.owner, sizeof(key.owner));
+  if (read_hprobe_varfield(ctx, varid++, &key.tid, sizeof(key.tid)) != 0)
     return 0;
-  }
+
   key.pid = get_pid();
 
   bpf_printk("Entered into uprobe_execute_ctx key owner %lld, tid %lld \n",
@@ -367,7 +210,6 @@ int uprobe_execute_ctx(struct pt_regs *ctx) {
   return 0;
 }
 
-//Not Attached
 SEC("uprobe")
 int uprobe_submit_transaction(struct pt_regs *ctx) {
   bpf_printk("Entered into uprobe_submit_transaction\n");
@@ -375,32 +217,11 @@ int uprobe_submit_transaction(struct pt_regs *ctx) {
   int varid = 30;
   struct op_k key;
   memset(&key, 0, sizeof(key));
-  // read num
-  struct VarField *vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 num_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&key.owner, sizeof(key.owner), (void *)num_addr);
-  } else {
-    bpf_printk("uprobe_submit_transaction got NULL vf at varid %d\n", varid);
-  }
-  // read tid
-  ++varid;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 tid_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&key.tid, sizeof(key.tid), (void *)tid_addr);
-  } else {
-    bpf_printk("uprobe_submit_transaction got NULL vf at varid %d\n", varid);
+  read_hprobe_varfield(ctx, varid++, &key.owner, sizeof(key.owner));
+  if (read_hprobe_varfield(ctx, varid++, &key.tid, sizeof(key.tid)) != 0)
     return 0;
-  }
 
   key.pid = get_pid();
-
-  // TODO ReplicatedBackend::submit_transaction can get the objectid
 
   struct op_v *vp = bpf_map_lookup_elem(&ops, &key);
 
@@ -421,7 +242,6 @@ int uprobe_submit_transaction(struct pt_regs *ctx) {
   return 0;
 }
 
-// BlueStore::queue_transactions
 SEC("uprobe")
 int uprobe_queue_transactions(struct pt_regs *ctx) {
   (void)ctx;
@@ -445,8 +265,6 @@ int uprobe_queue_transactions(struct pt_regs *ctx) {
   return 0;
 }
 
-//Not attached
-// BlueStore::_do_write
 SEC("uprobe")
 int uprobe_do_write(struct pt_regs *ctx) {
   (void)ctx;
@@ -457,7 +275,6 @@ int uprobe_do_write(struct pt_regs *ctx) {
     struct op_v *vp = bpf_map_lookup_elem(&ops, key);
     if (NULL != vp) {
       vp->do_write_stamp = bpf_ktime_get_boot_ns();
-      // TODO offset and length
     } else {
       bpf_printk(
           "uprobe_do_write, no previous key matched owner %lld, tid %lld\n",
@@ -469,8 +286,6 @@ int uprobe_do_write(struct pt_regs *ctx) {
   return 0;
 }
 
-// Not attach
-// BlueStore::_wctx_finish
 SEC("uprobe")
 int uprobe_wctx_finish(struct pt_regs *ctx) {
   bpf_printk("Entered into uprobe_wctx_finish\n");
@@ -480,26 +295,12 @@ int uprobe_wctx_finish(struct pt_regs *ctx) {
     struct op_v *vp = bpf_map_lookup_elem(&ops, key);
     if (NULL != vp) {
       vp->wctx_finish_stamp = bpf_ktime_get_boot_ns();
-      // delete the item in ptid_opk and create a new item to ctx_opk
-      bpf_map_delete_elem(&ptid_opk, &ptid); // this will need to be delayed to submit_batch
-      // read ctx->osr->px->sequencer_id
+      bpf_map_delete_elem(&ptid_opk, &ptid);
       int varid = 60;
-      struct VarField *vf = bpf_map_lookup_elem(&hprobes, &varid);
-      if (vf == NULL) return 0;
-      __u64 v = 0;
-      v = fetch_register(ctx, vf->varloc.reg);
-      __u64 seqid_addr = fetch_var_member_addr(v, vf);
       __u32 seqid = 0;
-      bpf_probe_read_user(&seqid, sizeof(seqid), (void *)seqid_addr);
-
-      //read ctx->start
-      ++varid;
-      vf = bpf_map_lookup_elem(&hprobes, &varid);
-      if (vf == NULL) return 0;
-      v = fetch_register(ctx, vf->varloc.reg);
-      __u64 start_addr = fetch_var_member_addr(v, vf);
+      if (read_hprobe_varfield(ctx, varid++, &seqid, sizeof(seqid)) != 0) return 0;
       __u64 start = 0;
-      bpf_probe_read_user(&start, sizeof(start), (void *)start_addr);
+      if (read_hprobe_varfield(ctx, varid++, &start, sizeof(start)) != 0) return 0;
 
       struct ctx_k ck;
       ck.seqid = seqid;
@@ -507,7 +308,6 @@ int uprobe_wctx_finish(struct pt_regs *ctx) {
       ck.pid = get_pid(); 
 
       bpf_map_update_elem(&ctx_opk, &ck, key, 0);
-      // TODO offset and length
     } else {
       bpf_printk(
           "uprobe_wctx_finish, no previous key matched owner %lld, tid %lld\n",
@@ -519,28 +319,15 @@ int uprobe_wctx_finish(struct pt_regs *ctx) {
   return 0;
 }
 
-// BlueStore::_txc_state_proc
 SEC("uprobe")
 int uprobe_txc_state_proc(struct pt_regs *ctx) {
   bpf_printk("Entered into uprobe_txc_state_proc\n");
-  // read ctx->osr->px->sequencer_id
   int varid = 70;
-  struct VarField *vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (vf == NULL) return 0;
-  __u64 v = 0;
-  v = fetch_register(ctx, vf->varloc.reg);
-  __u64 seqid_addr = fetch_var_member_addr(v, vf);
   __u32 seqid = 0;
-  bpf_probe_read_user(&seqid, sizeof(seqid), (void *)seqid_addr);
+  if (read_hprobe_varfield(ctx, varid++, &seqid, sizeof(seqid)) != 0) return 0;
 
-  //read ctx->start
-  ++varid;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (vf == NULL) return 0;
-  v = fetch_register(ctx, vf->varloc.reg);
-  __u64 start_addr = fetch_var_member_addr(v, vf);
   __u64 start = 0;
-  bpf_probe_read_user(&start, sizeof(start), (void *)start_addr);
+  if (read_hprobe_varfield(ctx, varid++, &start, sizeof(start)) != 0) return 0;
 
   struct ctx_k ck;
   ck.seqid = seqid;
@@ -551,21 +338,16 @@ int uprobe_txc_state_proc(struct pt_regs *ctx) {
     bpf_printk("uprobe_txc_state_proc got NULL key at ck %lld %lld %lld\n", ck.seqid, ck.start_stamp, ck.pid);
     return 0;
   }
-  // read ctx->state
-  ++varid;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL == vf) return 0;
-  v = fetch_register(ctx, vf->varloc.reg);
-  __u64 state_addr = fetch_var_member_addr(v, vf);
   __u32 state = 0;
-  bpf_probe_read_user(&state, sizeof(state), (void *)state_addr);
+  if (read_hprobe_varfield(ctx, varid++, &state, sizeof(state)) != 0) return 0;
+
   struct op_v *vp = bpf_map_lookup_elem(&ops, key);
   if (NULL == vp) return 0;
-  //read ctx->ioc->num_pending
-  ++varid;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
+
+  struct VarField *vf = bpf_map_lookup_elem(&hprobes, &varid);
   if (NULL == vf) return 0;
-  v = fetch_register(ctx, vf->varloc.reg);
+  __u64 v = fetch_register(ctx, vf->varloc.reg);
+
   if (state == 0) {  // STATE_PREPARE
     vp->aio_submit_stamp = bpf_ktime_get_boot_ns();
     __u64 pending_addr = fetch_var_member_addr(v, vf);
@@ -576,7 +358,6 @@ int uprobe_txc_state_proc(struct pt_regs *ctx) {
       vp->aio_done_stamp = vp->aio_submit_stamp;
     bpf_printk("uprobe_txc_state_proc owner %lld tid %lld aio_submit_stamp = %lld", key->owner, key->tid, vp->aio_submit_stamp);
   } else if (state == 1) {  // STATE_AIO_WAIT
-    // until flushed can it be considered committed, not here.
     vp->aio_done_stamp = bpf_ktime_get_boot_ns();
     bpf_printk("uprobe_txc_state_proc owner %lld tid %lld aio_done_stamp = %lld", key->owner, key->tid, vp->aio_done_stamp);
   } else if (state == 2) {  // STATE_IO_DONE sending to kv queue
@@ -585,18 +366,11 @@ int uprobe_txc_state_proc(struct pt_regs *ctx) {
   } else if (state == 4) {  // STATE_KV_SUBMITTED
     vp->kv_committed_stamp = bpf_ktime_get_boot_ns();
     bpf_printk("uprobe_txc_state_proc owner %lld tid %lld kv_committed_stamp = %lld", key->owner, key->tid, vp->kv_committed_stamp);
-    // last stage of the ctx, delete it from the map
     bpf_map_delete_elem(&ctx_opk, &ck);
   }
 
   return 0;
 }
-
-//Not Attached
-//BlueStore::_txc_apply_kv
-/*SEC("uprobe")
-int uprobe_txc_apply_kv(struct pt_regs *ctx) {
-}*/
 
 SEC("uprobe")
 int uprobe_log_op_stats(struct pt_regs *ctx) {
@@ -604,28 +378,10 @@ int uprobe_log_op_stats(struct pt_regs *ctx) {
   int varid = 90;
   struct op_k key;
   memset(&key, 0, sizeof(key));
-  // read num
-  struct VarField *vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 num_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&key.owner, sizeof(key.owner), (void *)num_addr);
-  } else {
-    bpf_printk("uprobe_log_op_stats got NULL vf at varid %d\n", varid);
-  }
-  // read tid
-  ++varid;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 tid_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&key.tid, sizeof(key.tid), (void *)tid_addr);
-  } else {
-    bpf_printk("uprobe_log_op_stats got NULL vf at varid %d\n", varid);
+  read_hprobe_varfield(ctx, varid++, &key.owner, sizeof(key.owner));
+  if (read_hprobe_varfield(ctx, varid++, &key.tid, sizeof(key.tid)) != 0)
     return 0;
-  }
+
   key.pid = get_pid();
 
   struct op_v *vp = bpf_map_lookup_elem(&ops, &key);
@@ -655,70 +411,26 @@ int uprobe_log_op_stats_v2(struct pt_regs *ctx) {
   int varid = 90;
   struct op_v op;
   memset(&op, 0, sizeof(op));
-  // read num
-  struct VarField *vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 num_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&op.owner, sizeof(op.owner), (void *)num_addr);
-  } else {
-    bpf_printk("uprobe_log_op_stats_v2 got NULL vf at varid %d\n", varid);
-  }
-  // read tid
-  ++varid;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 tid_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&op.tid, sizeof(op.tid), (void *)tid_addr);
-  } else {
-    bpf_printk("uprobe_log_op_stats_v2 got NULL vf at varid %d\n", varid);
+  read_hprobe_varfield(ctx, varid++, &op.owner, sizeof(op.owner));
+  if (read_hprobe_varfield(ctx, varid++, &op.tid, sizeof(op.tid)) != 0)
     return 0;
-  }
+
   op.pid = get_pid();
   op.reply_stamp = bpf_ktime_get_boot_ns();
   ++varid;
   op.wb = PT_REGS_PARM3(ctx);
   ++varid;
   op.rb = PT_REGS_PARM4(ctx);
-  //read recv_stamp
-  ++varid;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    struct utime_t stamp;
-    __u64 recv_stamp_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&stamp.sec, sizeof(stamp.sec), (void *)recv_stamp_addr);
-    bpf_probe_read_user(&stamp.nsec, sizeof(stamp.nsec),
-                        (void *)(recv_stamp_addr + 4));
-    op.recv_stamp = to_nsec(&stamp);
-    /*if (op.recv_stamp == 0) { 
-     * TODO around 0.01 percentile of the ops have recv_stamp==0
-      bpf_printk("stamp.sec %lld, stamp.nsec %lld\n", stamp.sec, stamp.nsec);  
-      bpf_printk("recv_stamp_addr %lld\n", recv_stamp_addr);
-    }*/
-  } else {
-    bpf_printk("uprobe_log_op_stats_v2 got NULL vf at varid %d\n", varid);
+
+  if (read_hprobe_utime(ctx, varid++, &op.recv_stamp) != 0)
     return 0;
-  }
-  //read op type 
-  ++varid;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 op_type_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&op.op_type, sizeof(op.op_type), (void *)op_type_addr);
-  } else {
-    bpf_printk("uprobe_log_op_stats_v2 got NULL vf at varid %d\n", varid);
+
+  if (read_hprobe_varfield(ctx, varid++, &op.op_type, sizeof(op.op_type)) != 0)
     return 0;
-  }
+
   bpf_printk(" log_op_stats_v2 client %lld tid %lld recv_stamp %lld ", op.owner, op.tid, op.recv_stamp);
   bpf_printk(" inb %lld outb %lld op type %lld\n",op.wb, op.rb, op.op_type);
-  //submit the op
+
   struct op_v *e = bpf_ringbuf_reserve(&rb, sizeof(struct op_v), 0);
   if (NULL == e) {
     return 0;
@@ -735,28 +447,10 @@ int uprobe_generate_subop(struct pt_regs *ctx)
   int varid = 100;
   struct op_k key;
   memset(&key, 0, sizeof(key));
-  // read num
-  struct VarField *vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 num_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&key.owner, sizeof(key.owner), (void *)num_addr);
-  } else {
-    bpf_printk("uprobe_generate_subop got NULL vf at varid %d\n", varid);
-  }
-  // read tid
-  ++varid;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 tid_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&key.tid, sizeof(key.tid), (void *)tid_addr);
-  } else {
-    bpf_printk("uprobe_generate_subop got NULL vf at varid %d\n", varid);
+  read_hprobe_varfield(ctx, varid++, &key.owner, sizeof(key.owner));
+  if (read_hprobe_varfield(ctx, varid++, &key.tid, sizeof(key.tid)) != 0)
     return 0;
-  }
+
   key.pid = get_pid();
 
   struct op_v *vp = bpf_map_lookup_elem(&ops, &key);
@@ -765,23 +459,16 @@ int uprobe_generate_subop(struct pt_regs *ctx)
     return 0;
   }
 
-  //read peer osd id
-  ++varid;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 peer_addr = fetch_var_member_addr(v, vf);
+  int peer_id = 0;
+  if (read_hprobe_varfield(ctx, varid++, &peer_id, sizeof(peer_id)) == 0) {
     if (vp->pi.peer1 == -1) {
-      bpf_probe_read_user(&vp->pi.peer1, sizeof(int), (void *)peer_addr);
+      vp->pi.peer1 = peer_id;
     } else {
-      bpf_probe_read_user(&vp->pi.peer2, sizeof(int), (void *)peer_addr);
+      vp->pi.peer2 = peer_id;
     }
   } else {
-    bpf_printk("uprobe_generate_subop got NULL vf at varid %d\n", varid);
     return 0;
   }
-  //set sent stamp, just use the latter one
   vp->pi.sent_stamp = bpf_ktime_get_boot_ns();
 
   return 0;
@@ -794,43 +481,15 @@ int uprobe_do_repop_reply(struct pt_regs *ctx)
   int varid = 110;
   struct op_k key;
   memset(&key, 0, sizeof(key));
-  // read num
-  struct VarField *vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 num_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&key.owner, sizeof(key.owner), (void *)num_addr);
-  } else {
-    bpf_printk("uprobe_do_repop_reply got NULL vf at varid %d\n", varid);
-  }
-  // read tid
-  ++varid;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 tid_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&key.tid, sizeof(key.tid), (void *)tid_addr);
-  } else {
-    bpf_printk("uprobe_do_repop_reply got NULL vf at varid %d\n", varid);
+  read_hprobe_varfield(ctx, varid++, &key.owner, sizeof(key.owner));
+  if (read_hprobe_varfield(ctx, varid++, &key.tid, sizeof(key.tid)) != 0)
     return 0;
-  }
+
   key.pid = get_pid();
 
-  // read source osdid
   int osdid = -1;
-  ++varid;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 osdid_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&osdid, sizeof(osdid), (void *)osdid_addr);
-  } else {
-    bpf_printk("uprobe_do_repop_reply got NULL vf at varid %d\n", varid);
+  if (read_hprobe_varfield(ctx, varid++, &osdid, sizeof(osdid)) != 0)
     return 0;
-  }
 
   struct op_v *vp = bpf_map_lookup_elem(&ops, &key);
   if (NULL != vp) {
@@ -849,64 +508,32 @@ int uprobe_mark_flag_point_string(struct pt_regs *ctx)
 {
   bpf_printk("Entered into mark_flag_point_string\n");
   int varid = 120;
-  // read flag
   __u8 flag = PT_REGS_PARM2(ctx);
   bpf_printk("flag is %d\n", flag);
   if(!(flag & flag_delayed))
     return 0;
   struct op_k key;
   memset(&key, 0, sizeof(key));
-  // read num
   ++varid;
-  struct VarField *vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 num_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&key.owner, sizeof(key.owner), (void *)num_addr);
-  } else {
-    bpf_printk("uprobe_mark_flag_point_string got NULL vf at varid %d\n", varid);
-  }
-  // read tid
-  ++varid;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 tid_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&key.tid, sizeof(key.tid), (void *)tid_addr);
-  } else {
-    bpf_printk("uprobe_mark_flag_point_string got NULL vf at varid %d\n", varid);
+  read_hprobe_varfield(ctx, varid++, &key.owner, sizeof(key.owner));
+  if (read_hprobe_varfield(ctx, varid++, &key.tid, sizeof(key.tid)) != 0)
     return 0;
-  }
+
   key.pid = get_pid();
 
   struct op_v *vp = bpf_map_lookup_elem(&ops, &key);
   if (vp == NULL) 
     return 0;
 
-  // read string length
-  ++varid;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL == vf)
-    return 0;
-  __u64 v = 0;
-  v = fetch_register(ctx, vf->varloc.reg);
-  __u64 strlen_addr = fetch_var_member_addr(v, vf);
   __u32 len = 0;
-  bpf_probe_read_user(&len, sizeof(len), (void *)strlen_addr);
+  if (read_hprobe_varfield(ctx, varid++, &len, sizeof(len)) != 0)
+    return 0;
   
   __u32 idx = vp->di.cnt;
 
-  // read string buf
-  ++varid;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL == vf)
+  __u64 str_addr = 0;
+  if (read_hprobe_varfield(ctx, varid++, &str_addr, sizeof(str_addr)) != 0)
     return 0;
-  v = fetch_register(ctx, vf->varloc.reg);
-  __u64 m_local_buf_addr = fetch_var_member_addr(v, vf);
-  __u64 str_addr;
-  bpf_probe_read_user(&str_addr, sizeof(str_addr), (void *)m_local_buf_addr);
 
   if (idx >= 5 || len >= 32)
     return 0;
@@ -923,24 +550,14 @@ int uprobe_log_latency(struct pt_regs *ctx)
   struct bluestore_lat_v bsl;
   memset(&bsl, 0, sizeof(bsl));
 
-  // read name (const char* first arg): the version-stable operation label.
-  // The CU carries location lists so the probe sits at the true function
-  // entry where rsi still holds name.
   bpf_probe_read_user_str(bsl.name, sizeof(bsl.name), (void *)PT_REGS_PARM2(ctx));
 
-  //read l.__r
   ++varid;
-  struct VarField *vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL == vf)
+  if (read_hprobe_varfield(ctx, varid, &bsl.lat, sizeof(bsl.lat)) != 0)
     return 0;
-  __u64 v = fetch_register(ctx, vf->varloc.reg);
-  __u64 r_addr = fetch_var_member_addr(v, vf);
-  bpf_probe_read_user(&bsl.lat, sizeof(__u64), (void *)r_addr);
 
-  //set pid
   bsl.pid = get_pid();
 
-  //submit the bs latency
   struct bluestore_lat_v *e = bpf_ringbuf_reserve(&rb, sizeof(struct bluestore_lat_v), 0);
   if (NULL == e) {
     return 0;
@@ -951,7 +568,6 @@ int uprobe_log_latency(struct pt_regs *ctx)
   return 0;
 }
 
-//Not attach: it get inlined with production ceph-osd by gcc 
 SEC("uprobe")
 int uprobe_log_subop_stats(struct pt_regs *ctx)
 {
@@ -959,46 +575,18 @@ int uprobe_log_subop_stats(struct pt_regs *ctx)
   int varid = 140;
   struct op_k key;
   memset(&key, 0, sizeof(key));
-  // read num
-  struct VarField *vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 num_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&key.owner, sizeof(key.owner), (void *)num_addr);
-  } else {
-    bpf_printk("uprobe_log_subop_stats got NULL vf at varid %d\n", varid);
-  }
-  // read tid
-  ++varid;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 tid_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&key.tid, sizeof(key.tid), (void *)tid_addr);
-  } else {
-    bpf_printk("uprobe_log_subop_stat got NULL vf at varid %d\n", varid);
+  read_hprobe_varfield(ctx, varid++, &key.owner, sizeof(key.owner));
+  if (read_hprobe_varfield(ctx, varid++, &key.tid, sizeof(key.tid)) != 0)
     return 0;
-  }
+
   key.pid = get_pid();
 
   struct op_v *vp = bpf_map_lookup_elem(&ops, &key);
   if (NULL == vp) return 0; 
 
-  //read data len
-  ++varid;
-  __u64 len;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 len_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&len, sizeof(len), (void *)len_addr);
-  } else {
-    bpf_printk("uprobe_log_subop_stat got NULL vf at varid %d\n", varid);
+  __u64 len = 0;
+  if (read_hprobe_varfield(ctx, varid++, &len, sizeof(len)) != 0)
     return 0;
-  }
 
   vp->wb = len;
   vp->reply_stamp = bpf_ktime_get_boot_ns();
@@ -1021,40 +609,17 @@ int uprobe_ec_submit_transaction(struct pt_regs *ctx) {
   int varid = 150;
   struct op_k key;
   memset(&key, 0, sizeof(key));
-  // read num
-  struct VarField *vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 num_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&key.owner, sizeof(key.owner), (void *)num_addr);
-  } else {
-    bpf_printk("uprobe_submit_transaction got NULL vf at varid %d\n", varid);
-  }
-  // read tid
-  ++varid;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 tid_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&key.tid, sizeof(key.tid), (void *)tid_addr);
-  } else {
-    bpf_printk("uprobe_submit_transaction got NULL vf at varid %d\n", varid);
+  read_hprobe_varfield(ctx, varid++, &key.owner, sizeof(key.owner));
+  if (read_hprobe_varfield(ctx, varid++, &key.tid, sizeof(key.tid)) != 0)
     return 0;
-  }
 
   key.pid = get_pid();
 
-  // TODO submit_transaction can get the objectid
-
   struct op_v *vp = bpf_map_lookup_elem(&ops, &key);
   if (NULL != vp) {
-    //Ignore the EC ops currently
     bpf_map_delete_elem(&ops, &key);
   }
   return 0;
-
 }
 
 SEC("uprobe")
@@ -1066,26 +631,12 @@ int uprobe_txc_calc_cost(struct pt_regs *ctx)
   if (NULL != key) {
     struct op_v *vp = bpf_map_lookup_elem(&ops, key);
     if (NULL != vp) {
-      // delete the item in ptid_opk and create a new item to ctx_opk
-      bpf_map_delete_elem(&ptid_opk, &ptid); // this will need to be delayed to submit_batch
-      // read ctx->osr->px->sequencer_id
+      bpf_map_delete_elem(&ptid_opk, &ptid);
       int varid = 160;
-      struct VarField *vf = bpf_map_lookup_elem(&hprobes, &varid);
-      if (vf == NULL) return 0;
-      __u64 v = 0;
-      v = fetch_register(ctx, vf->varloc.reg);
-      __u64 seqid_addr = fetch_var_member_addr(v, vf);
       __u32 seqid = 0;
-      bpf_probe_read_user(&seqid, sizeof(seqid), (void *)seqid_addr);
-
-      //read ctx->start
-      ++varid;
-      vf = bpf_map_lookup_elem(&hprobes, &varid);
-      if (vf == NULL) return 0;
-      v = fetch_register(ctx, vf->varloc.reg);
-      __u64 start_addr = fetch_var_member_addr(v, vf);
+      if (read_hprobe_varfield(ctx, varid++, &seqid, sizeof(seqid)) != 0) return 0;
       __u64 start = 0;
-      bpf_probe_read_user(&start, sizeof(start), (void *)start_addr);
+      if (read_hprobe_varfield(ctx, varid++, &start, sizeof(start)) != 0) return 0;
 
       struct ctx_k ck;
       ck.seqid = seqid;
@@ -1093,7 +644,6 @@ int uprobe_txc_calc_cost(struct pt_regs *ctx)
       ck.pid = get_pid(); 
 
       bpf_map_update_elem(&ctx_opk, &ck, key, 0);
-      // TODO offset and length
     } else {
       bpf_printk(
           "txc_calc_cost, no previous key matched owner %lld, tid %lld\n",
@@ -1106,7 +656,6 @@ int uprobe_txc_calc_cost(struct pt_regs *ctx)
   return 0;
 }
 
-
 SEC("uprobe")
 int uprobe_repop_commit(struct pt_regs *ctx)
 {
@@ -1114,49 +663,21 @@ int uprobe_repop_commit(struct pt_regs *ctx)
   int varid = 170;
   struct op_k key;
   memset(&key, 0, sizeof(key));
-  // read num
-  struct VarField *vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 num_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&key.owner, sizeof(key.owner), (void *)num_addr);
-  } else {
-    bpf_printk("repop_commit got NULL vf at varid %d\n", varid);
-  }
-  // read tid
-  ++varid;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 tid_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&key.tid, sizeof(key.tid), (void *)tid_addr);
-  } else {
-    bpf_printk("repop_commit got NULL vf at varid %d\n", varid);
+  read_hprobe_varfield(ctx, varid++, &key.owner, sizeof(key.owner));
+  if (read_hprobe_varfield(ctx, varid++, &key.tid, sizeof(key.tid)) != 0)
     return 0;
-  }
+
   key.pid = get_pid();
 
   struct op_v *vp = bpf_map_lookup_elem(&ops, &key);
-  
   if (NULL == vp) { 
     bpf_printk("repop_commit got NULL val at key client %lld tid %lld\n", key.owner, key.tid);
     return 0; 
   }
-  //read data len
-  ++varid;
-  __u64 len;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 len_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&len, sizeof(len), (void *)len_addr);
-  } else {
-    bpf_printk("repop_commit got NULL vf at varid %d\n", varid);
+
+  __u64 len = 0;
+  if (read_hprobe_varfield(ctx, varid++, &len, sizeof(len)) != 0)
     return 0;
-  }
 
   vp->wb = len;
   vp->reply_stamp = bpf_ktime_get_boot_ns();
@@ -1172,13 +693,11 @@ int uprobe_repop_commit(struct pt_regs *ctx)
   return 0;
 }
 
-
 SEC("uprobe")
 int uprobe_mark_flag_point(struct pt_regs *ctx)
 {
   bpf_printk("Entered into mark_flag_point\n");
   int varid = 180;
-  // read flag from second parameter (uint8_t flag)
   __u8 flag = PT_REGS_PARM2(ctx);
   bpf_printk("flag is %d\n", flag);
   if(!(flag & flag_delayed))
@@ -1186,43 +705,23 @@ int uprobe_mark_flag_point(struct pt_regs *ctx)
 
   struct op_k key;
   memset(&key, 0, sizeof(key));
-  // read num
   ++varid;
-  struct VarField *vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 num_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&key.owner, sizeof(key.owner), (void *)num_addr);
-  } else {
-    bpf_printk("uprobe_mark_flag_point got NULL vf at varid %d\n", varid);
-  }
-  // read tid
-  ++varid;
-  vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = 0;
-    v = fetch_register(ctx, vf->varloc.reg);
-    __u64 tid_addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(&key.tid, sizeof(key.tid), (void *)tid_addr);
-  } else {
-    bpf_printk("uprobe_mark_flag_point got NULL vf at varid %d\n", varid);
+  read_hprobe_varfield(ctx, varid++, &key.owner, sizeof(key.owner));
+  if (read_hprobe_varfield(ctx, varid++, &key.tid, sizeof(key.tid)) != 0)
     return 0;
-  }
+
   key.pid = get_pid();
 
   struct op_v *vp = bpf_map_lookup_elem(&ops, &key);
   if (vp == NULL)
     return 0;
 
-  // read string pointer (const char *s) from third parameter
   __u64 str_addr = PT_REGS_PARM3(ctx);
 
   __u32 idx = vp->di.cnt;
   if (idx >= 5)
     return 0;
 
-  // read string until null terminator or max 32 bytes
   bpf_probe_read_user_str(vp->di.delays[idx], 32, (void *)str_addr);
   vp->di.cnt++;
   return 0;
@@ -1236,23 +735,14 @@ int uprobe_log_latency_fn(struct pt_regs *ctx)
   struct bluestore_lat_v bsl;
   memset(&bsl, 0, sizeof(bsl));
 
-  // read name (first parameter, const char*): same as log_latency, PARM2
-  // holds it at entry regardless of the differing trailing arguments.
   bpf_probe_read_user_str(bsl.name, sizeof(bsl.name), (void *)PT_REGS_PARM2(ctx));
 
-  //read l.__r (fourth parameter, it's a ceph::timespan which is std::chrono::duration)
   ++varid;
-  struct VarField *vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL == vf)
+  if (read_hprobe_varfield(ctx, varid, &bsl.lat, sizeof(bsl.lat)) != 0)
     return 0;
-  __u64 v = fetch_register(ctx, vf->varloc.reg);
-  __u64 r_addr = fetch_var_member_addr(v, vf);
-  bpf_probe_read_user(&bsl.lat, sizeof(__u64), (void *)r_addr);
 
-  //set pid
   bsl.pid = get_pid();
 
-  //submit the bs latency
   struct bluestore_lat_v *e = bpf_ringbuf_reserve(&rb, sizeof(struct bluestore_lat_v), 0);
   if (NULL == e) {
     return 0;
