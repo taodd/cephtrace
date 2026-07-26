@@ -50,6 +50,9 @@ jobs:
       - name: Run Makefile build
         run: make -j all
 
+      - name: Run C++ unit tests
+        run: make test
+
       - name: Unit test - verify dwarf output is consistent
         run: ./tests/dwarf-compare.sh
 
@@ -149,6 +152,9 @@ jobs:
       - name: Run Makefile build
         run: make -j all
 
+      - name: Run C++ unit tests
+        run: make test
+
   build-centos:
     runs-on: ubuntu-latest
     strategy:
@@ -173,6 +179,9 @@ jobs:
       - name: Run Makefile build
         run: make -j radostrace osdtrace
 
+      - name: Run C++ unit tests
+        run: make test
+
       - name: Unit test - verify dwarf output is consistent
         run: ./tests/dwarf-compare-centos.sh
 
@@ -196,6 +205,9 @@ jobs:
 
       - name: Run Makefile build
         run: make -j radostrace osdtrace
+
+      - name: Run C++ unit tests
+        run: make test
 
   clang-tidy:
     runs-on: ubuntu-24.04
