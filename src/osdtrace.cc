@@ -1035,65 +1035,48 @@ inline int attach_uprobes(struct osdtrace_bpf *skel,
   return attach_probes(skel, dp, path, process_ids, funcname, false, v);
 }
 
-int main(int argc, char **argv) {
-  signal(SIGINT, signal_handler);
-
-  if (parse_args(argc, argv) < 0) return 0;
-
-  if (list_embedded) {
-    DwarfParser::list_embedded_versions("osdtrace");
-    return 0;
+int handle_list_cmd() {
+  if (geteuid() != 0) {
+    std::cout << "Warning: Running without root privileges. Containerized status of OSDs owned by other users may not be accurately detected." << std::endl << std::endl;
   }
+  auto processes = discover_ceph_osd_processes();
+  if (processes.empty()) {
+    std::cout << "No active ceph-osd processes detected on the host." << std::endl;
+  } else {
+    annotate_traceability(processes);
+    std::cout << "Detected " << processes.size() << " active ceph-osd process(es) on the host:" << std::endl;
+    print_discovered_osds(processes, /*show_traceable=*/true);
 
-  if (list_only) {
-    if (geteuid() != 0) {
-      std::cout << "Warning: Running without root privileges. Containerized status of OSDs owned by other users may not be accurately detected." << std::endl << std::endl;
+    // If any OSD isn't directly traceable, tell the user how to proceed.
+    bool any_no = false, any_unknown = false;
+    for (const auto& proc : processes) {
+      if (proc.traceable == "no") any_no = true;
+      else if (proc.traceable == "unknown") any_unknown = true;
     }
-    auto processes = discover_ceph_osd_processes();
-    if (processes.empty()) {
-      std::cout << "No active ceph-osd processes detected on the host." << std::endl;
-    } else {
-      annotate_traceability(processes);
-      std::cout << "Detected " << processes.size() << " active ceph-osd process(es) on the host:" << std::endl;
-      print_discovered_osds(processes, /*show_traceable=*/true);
-
-      // If any OSD isn't directly traceable, tell the user how to proceed.
-      bool any_no = false, any_unknown = false;
-      for (const auto& proc : processes) {
-        if (proc.traceable == "no") any_no = true;
-        else if (proc.traceable == "unknown") any_unknown = true;
+    if (any_no || any_unknown) {
+      std::cout << std::endl
+                << "Traceable: 'yes' means this osdtrace already has matching DWARF data built in." << std::endl;
+      if (any_no) {
+        std::cout << "  'no':      no embedded DWARF matches this binary's build-id. Export a DWARF JSON" << std::endl;
+        std::cout << "             on a host that has the matching ceph-osd (osdtrace -j <file>), then trace" << std::endl;
+        std::cout << "             with: osdtrace -p <pid> -i <file> --skip-version-check" << std::endl;
       }
-      if (any_no || any_unknown) {
-        std::cout << std::endl
-                  << "Traceable: 'yes' means this osdtrace already has matching DWARF data built in." << std::endl;
-        if (any_no) {
-          std::cout << "  'no':      no embedded DWARF matches this binary's build-id. Export a DWARF JSON" << std::endl;
-          std::cout << "             on a host that has the matching ceph-osd (osdtrace -j <file>), then trace" << std::endl;
-          std::cout << "             with: osdtrace -p <pid> -i <file> --skip-version-check" << std::endl;
-        }
-        if (any_unknown) {
-          std::cout << "  'unknown': could not read the OSD binary's build-id; re-run as root" << std::endl;
-          std::cout << "             (required for containerized OSDs)." << std::endl;
-        }
-        std::cout << std::endl
-                  << "Ceph Version: authoritative when Traceable='yes' (the matched embedded entry)." << std::endl;
-        std::cout << "             For Traceable='no' it is a best-effort host package lookup, shown only" << std::endl;
-        std::cout << "             for native OSDs whose on-disk binary still matches the running process;" << std::endl;
-        std::cout << "             'unknown' for containerized OSDs or binaries upgraded since launch." << std::endl;
+      if (any_unknown) {
+        std::cout << "  'unknown': could not read the OSD binary's build-id; re-run as root" << std::endl;
+        std::cout << "             (required for containerized OSDs)." << std::endl;
       }
+      std::cout << std::endl
+                << "Ceph Version: authoritative when Traceable='yes' (the matched embedded entry)." << std::endl;
+      std::cout << "             For Traceable='no' it is a best-effort host package lookup, shown only" << std::endl;
+      std::cout << "             for native OSDs whose on-disk binary still matches the running process;" << std::endl;
+      std::cout << "             'unknown' for containerized OSDs or binaries upgraded since launch." << std::endl;
     }
-    return 0;
   }
+  return 0;
+}
 
-  // -a / --all: trace every traceable ceph-osd process on the host (native and
-  // containerized).  Discover all OSDs, keep the ones this binary has matching
-  // embedded DWARF for, and feed their PIDs into the normal multi-PID flow.
-  //
-  // The BPF probe offsets are version-specific (one hprobes map, one set of
-  // function addresses per run), so -a assumes every traceable OSD shares a
-  // single build.  If the traceable OSDs span more than one build-id we can't
-  // trace them correctly in one run, so give up and ask the user to select a
-  // single-build subset with -p/--id.
+int resolve_target_processes(std::string &osd_path) {
+  // -a / --all: trace every traceable ceph-osd process on the host (native and containerized)
   if (trace_all) {
     if (!process_ids.empty() || !requested_osd_ids.empty()) {
       std::cerr << "Error: -a/--all cannot be combined with -p or --id" << std::endl;
@@ -1135,7 +1118,6 @@ int main(int argc, char **argv) {
       return 1;
     }
 
-    // -a assumes a single build across all traceable OSDs; bail out otherwise.
     const std::string& build_id = traceable.front().build_id;
     for (const auto& p : traceable) {
       if (p.build_id != build_id) {
@@ -1201,15 +1183,7 @@ int main(int argc, char **argv) {
     }
   }
 
-  struct osdtrace_bpf *skel;
-  int ret = 0;
-  struct ring_buffer *rb;
-
-  std::string osd_path;
-
   if (!process_ids.empty()) {
-    // PIDs specified - read executable path from /proc/<first_pid>/exe
-    // All PIDs should be running the same ceph-osd binary
     int first_pid = *process_ids.begin();
     osd_path = get_exe_path_for_pid(first_pid);
     if (osd_path.empty()) {
@@ -1218,14 +1192,12 @@ int main(int argc, char **argv) {
     }
     clog << "Reading executable from process " << first_pid << ": " << osd_path << endl;
 
-    // Validate that the process is actually running ceph-osd
     if (osd_path.find("ceph-osd") == std::string::npos) {
       std::cerr << "Error: Process ID " << first_pid << " is not running ceph-osd" << std::endl;
       std::cerr << "Process is running: " << osd_path << std::endl;
       return 1;
     }
 
-    // Validate that all PIDs are running the same executable
     for (auto it = std::next(process_ids.begin()); it != process_ids.end(); ++it) {
       int pid = *it;
       std::string pid_exe = get_exe_path_for_pid(pid);
@@ -1241,18 +1213,10 @@ int main(int argc, char **argv) {
       }
     }
   } else {
-    // No PID specified - look for a host-side ceph-osd binary, and separately
-    // discover running ceph-osd processes.  Discovery scans /proc, so it sees
-    // containerized OSDs too, even though their binary is not on the host FS.
     osd_path = find_executable_path("ceph-osd");
     auto processes = discover_ceph_osd_processes();
 
     if (osd_path.empty()) {
-      // No ceph-osd on the host filesystem.  This is the normal case when OSDs
-      // run inside containers: the binary lives in the container image, so
-      // there is nothing for us to read on the host without attaching to a
-      // specific PID.  Instead of failing cryptically, show what we can see
-      // and how to attach to it.
       if (!processes.empty()) {
         if (geteuid() != 0) {
           std::cerr << "Warning: Running without root privileges. Containerized status of OSDs owned by other users may not be accurately detected." << std::endl << std::endl;
@@ -1270,9 +1234,6 @@ int main(int argc, char **argv) {
       return 1;
     }
 
-    // Host binary found - this default mode traces the on-host ceph-osd binary,
-    // so only host (non-containerized) OSD processes are relevant.  Containerized
-    // OSDs can't be traced this way (use -p/--id), so exclude them from the list.
     std::vector<OsdProcessInfo> host_processes;
     for (const auto& p : processes) {
       if (!p.is_container) host_processes.push_back(p);
@@ -1292,11 +1253,6 @@ int main(int argc, char **argv) {
 
   std::cout << "Tracing ceph-osd at: " << osd_path << std::endl;
 
-  // Check if any ceph-osd processes are running with old/deleted executables.
-  // Only enforced for live tracing; for JSON export we deliberately want to
-  // read the *on-disk* (possibly newly-upgraded) binary so the exported
-  // DWARF metadata matches the binary version recorded in the JSON, not
-  // whatever stale image happens to still be mapped in the process.
   if (!export_json && check_executable_deleted(-1, "ceph-osd")) {
     std::cerr << "Warning: Found ceph-osd processes running with deleted/old executables." << std::endl;
     std::cerr << "This may indicate that ceph-osd was updated but processes haven't been restarted." << std::endl;
@@ -1304,16 +1260,16 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  DwarfParser dwarfparser(osd_probes, probe_units);
-  
+  return 0;
+}
+
+int load_dwarf_data(DwarfParser &dwarfparser, const std::string &osd_path) {
   if (import_json) {
-    // Import dwarf data from JSON file
     std::string version = "";
 
     if (skip_version_check) {
       clog << "Skipping version check as requested" << endl;
     } else {
-      // Get version information for comparison
       version = get_package_version(osd_path);
       if (version != "unknown") {
         clog << "Current package version: " << version << endl;
@@ -1329,15 +1285,6 @@ int main(int argc, char **argv) {
     }
     clog << "Successfully imported dwarf data from " << json_input_file << endl;
   } else {
-    // When -j is used to export JSON, force live parsing so the output reflects
-    // the installed binary (not a re-dump of the embedded data the header came
-    // from). Otherwise try embedded DWARF data first, keyed by the on-disk
-    // ELF build-id (arch-safe, snap-safe, custom-rebuild-safe).
-    //
-    // osd_path is the in-process view ("/usr/bin/ceph-osd"), which for a
-    // containerized OSD doesn't exist on the host.  Reach into the target's
-    // mount namespace via /proc/<pid>/root/ so the build-id read sees the
-    // same binary the kernel uprobe will attach to.
     std::string osd_buildid_path = osd_path;
     if (!process_ids.empty()) {
       osd_buildid_path = "/proc/" + std::to_string(*process_ids.begin())
@@ -1355,9 +1302,7 @@ int main(int argc, char **argv) {
     }
   }
 
-  // Export dwarf parsing results to JSON if requested
   if (export_json) {
-    // Get version information from the ceph-osd binary
     std::string version = get_package_version(osd_path);
     if (version != "unknown") {
       clog << "Detected package version: " << version << endl;
@@ -1367,106 +1312,117 @@ int main(int argc, char **argv) {
     
     dwarfparser.export_to_json(json_output_file, version);
     clog << "Dwarf parsing data exported to " << json_output_file << endl;
-    return 0;
   }
 
-  libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
+  return 0;
+}
 
-  /* Set up libbpf errors and debug info callback */
-  libbpf_set_print(libbpf_print_fn);
-
-  /* Load and verify BPF application */
-  clog << "Start to load uprobe" << endl;
-
-  skel = osdtrace_bpf__open_and_load();
-  if (!skel) {
-    cerr << "Failed to open and load BPF skeleton" << endl;
-    return 1;
-  }
-
-  // map_fd = bpf_object__find_map_fd_by_name(skel->obj, "hprobes");
-
-  fill_map_hprobes(osd_path, dwarfparser, skel->maps.hprobes);
-
-  clog << "BPF prog loaded" << endl;
-
-  //Start to load the probes
+void attach_all_probes(struct osdtrace_bpf *skel,
+                       DwarfParser &dwarfparser,
+                       const std::string &osd_path,
+                       const std::set<int> &pids) {
   if (probe_mode == OP_SINGLE_PROBE) {
-    attach_uprobes(skel, dwarfparser, osd_path, process_ids, "PrimaryLogPG::log_op_stats", 2);
+    attach_uprobes(skel, dwarfparser, osd_path, pids, "PrimaryLogPG::log_op_stats", 2);
   }
 
   if (probe_mode & OP_FULL_PROBE) {
-    attach_uprobes(skel, dwarfparser, osd_path, process_ids, "OSD::dequeue_op");
-
-    attach_uprobes(skel, dwarfparser, osd_path, process_ids, "PrimaryLogPG::execute_ctx");
-
-    attach_uprobes(skel, dwarfparser, osd_path, process_ids, "ECBackend::submit_transaction");
-
-    attach_uprobes(skel, dwarfparser, osd_path, process_ids, "OpRequest::mark_flag_point_string");
-
-    attach_uprobes(skel, dwarfparser, osd_path, process_ids, "OpRequest::mark_flag_point");
-
-    attach_uprobes(skel, dwarfparser, osd_path, process_ids, "ReplicatedBackend::generate_subop");
-
-    attach_uprobes(skel, dwarfparser, osd_path, process_ids, "ReplicatedBackend::do_repop_reply");
-
-    attach_uprobes(skel, dwarfparser, osd_path, process_ids, "BlueStore::queue_transactions");
-
-    attach_uprobes(skel, dwarfparser, osd_path, process_ids, "BlueStore::_txc_calc_cost");
-
-    attach_uprobes(skel, dwarfparser, osd_path, process_ids, "BlueStore::_txc_state_proc");
-
-    attach_uprobes(skel, dwarfparser, osd_path, process_ids, "PrimaryLogPG::log_op_stats");
-
-    attach_uprobes(skel, dwarfparser, osd_path, process_ids, "ReplicatedBackend::repop_commit");
-
-    attach_uprobes(skel, dwarfparser, osd_path, process_ids, "OSD::enqueue_op");
+    attach_uprobes(skel, dwarfparser, osd_path, pids, "OSD::dequeue_op");
+    attach_uprobes(skel, dwarfparser, osd_path, pids, "PrimaryLogPG::execute_ctx");
+    attach_uprobes(skel, dwarfparser, osd_path, pids, "ECBackend::submit_transaction");
+    attach_uprobes(skel, dwarfparser, osd_path, pids, "OpRequest::mark_flag_point_string");
+    attach_uprobes(skel, dwarfparser, osd_path, pids, "OpRequest::mark_flag_point");
+    attach_uprobes(skel, dwarfparser, osd_path, pids, "ReplicatedBackend::generate_subop");
+    attach_uprobes(skel, dwarfparser, osd_path, pids, "ReplicatedBackend::do_repop_reply");
+    attach_uprobes(skel, dwarfparser, osd_path, pids, "BlueStore::queue_transactions");
+    attach_uprobes(skel, dwarfparser, osd_path, pids, "BlueStore::_txc_calc_cost");
+    attach_uprobes(skel, dwarfparser, osd_path, pids, "BlueStore::_txc_state_proc");
+    attach_uprobes(skel, dwarfparser, osd_path, pids, "PrimaryLogPG::log_op_stats");
+    attach_uprobes(skel, dwarfparser, osd_path, pids, "ReplicatedBackend::repop_commit");
+    attach_uprobes(skel, dwarfparser, osd_path, pids, "OSD::enqueue_op");
   }
 
   if (probe_mode & BLUESTORE_PROBE) {
-    attach_uprobes(skel, dwarfparser, osd_path, process_ids, "BlueStore::log_latency");
-    attach_uprobes(skel, dwarfparser, osd_path, process_ids, "BlueStore::log_latency_fn");
+    attach_uprobes(skel, dwarfparser, osd_path, pids, "BlueStore::log_latency");
+    attach_uprobes(skel, dwarfparser, osd_path, pids, "BlueStore::log_latency_fn");
   }
+}
 
+int run_ring_buffer_loop(struct osdtrace_bpf *skel) {
+  int ret = 0;
   bootstamp = get_bootstamp();
   clog << "New a ring buffer" << endl;
 
-  rb = ring_buffer__new(bpf_map__fd(skel->maps.rb), handle_event, NULL, NULL);
+  struct ring_buffer *rb = ring_buffer__new(bpf_map__fd(skel->maps.rb), handle_event, NULL, NULL);
   if (!rb) {
     cerr << "failed to setup ring_buffer" << endl;
-    goto cleanup;
+    clog << "Clean up the eBPF program" << endl;
+    osdtrace_bpf__destroy(skel);
+    return -errno;
   }
 
-  /* Set up timeout if provided - start counting after initialization is complete */
   if (timeout > 0) {
-      signal(SIGALRM, timeout_handler);
-      alarm(timeout);
-      std::cout << "Execution timeout set to " << timeout << " seconds.\n";
+    signal(SIGALRM, timeout_handler);
+    alarm(timeout);
+    std::cout << "Execution timeout set to " << timeout << " seconds.\n";
   } else {
-      std::cout << "No execution timeout set (unlimited).\n";
+    std::cout << "No execution timeout set (unlimited).\n";
   }
 
   clog << "Started to poll from ring buffer" << endl;
 
   while ((!timeout_occurred || timeout == -1) && (ret = ring_buffer__poll(rb, 1000)) >= 0) {
-      // Continue polling while timeout hasn't occurred or if unlimited execution time
   }
 
   if (timeout_occurred) {
-      cerr << "Timeout occurred. Exiting." << endl;
+    cerr << "Timeout occurred. Exiting." << endl;
   }
 
-  /* we can also attach uprobe/uretprobe to any existing or future
-   * processes that use the same binary executable; to do that we need
-   * to specify -1 as PID, as we do here
-   */
-  /* Let libbpf perform auto-attach for uprobe_sub/uretprobe_sub
-   * NOTICE: we provide path and symbol info in SEC for BPF programs
-   */
-  clog << "Unexpected line hit" << endl;
-cleanup:
   clog << "Clean up the eBPF program" << endl;
   ring_buffer__free(rb);
   osdtrace_bpf__destroy(skel);
   return timeout_occurred ? -1 : -errno;
+}
+
+int main(int argc, char **argv) {
+  signal(SIGINT, signal_handler);
+
+  if (parse_args(argc, argv) < 0) return 0;
+
+  if (list_embedded) {
+    DwarfParser::list_embedded_versions("osdtrace");
+    return 0;
+  }
+
+  if (list_only) {
+    return handle_list_cmd();
+  }
+
+  std::string osd_path;
+  if (resolve_target_processes(osd_path) != 0) {
+    return 1;
+  }
+
+  DwarfParser dwarfparser(osd_probes, probe_units);
+  if (load_dwarf_data(dwarfparser, osd_path) != 0) {
+    return 1;
+  }
+
+  if (export_json) return 0;
+
+  libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
+  libbpf_set_print(libbpf_print_fn);
+
+  clog << "Start to load uprobe" << endl;
+  struct osdtrace_bpf *skel = osdtrace_bpf__open_and_load();
+  if (!skel) {
+    cerr << "Failed to open and load BPF skeleton" << endl;
+    return 1;
+  }
+
+  fill_map_hprobes(osd_path, dwarfparser, skel->maps.hprobes);
+  clog << "BPF prog loaded" << endl;
+
+  attach_all_probes(skel, dwarfparser, osd_path, process_ids);
+
+  return run_ring_buffer_loop(skel);
 }
