@@ -31,12 +31,7 @@ extern "C" {
 #include "version_utils.h"
 #include "utils.h"
 
-#define MAX_CNT 100000ll
 #define MAX_OSD 4000
-#define PATH_MAX 4096
-
-#define MAX(x, y) (((x) > (y)) ? (x) : (y))
-#define MIN(x, y) (((x) < (y)) ? (x) : (y))
 using namespace std;
 
 typedef std::map<std::string, int> func_id_t;
@@ -313,78 +308,22 @@ int osd_pid_to_id(__u32 pid) {
       return osds[i];
     }
   }
-  // First time, read from /proc/<pid>/cmdline
-  char path_cmdline[50];
-  char pname[200];
-  int id = -1;
-  memset(path_cmdline, 0, sizeof(path_cmdline));
-  memset(pname, 0, sizeof(pname));
-  snprintf(path_cmdline, sizeof(path_cmdline), "/proc/%d/cmdline", pid);
-  int fd = open(path_cmdline, O_RDONLY);
-  if (fd >= 0 && read(fd, pname, 199) > 0) {
-    // Find "--id" or "-i" or "-n osd.<id>" followed by OSD ID in the cmdline
-    // cmdline has null-separated arguments
-    for (int i = 0; i < 195; ++i) {
-      // Check for "--id\0"
-      if (pname[i] == '-' && pname[i+1] == '-' && pname[i+2] == 'i' && pname[i+3] == 'd' && pname[i+4] == '\0') {
-        // Found "--id\0", OSD ID starts after the null byte
-        int start = i + 5;
-        id = 0;
-        while (start < 200 && pname[start] >= '0' && pname[start] <= '9') {
-          id *= 10;
-          id += pname[start] - '0';
-          ++start;
-        }
-        break;
-      }
-      // Check for "-i\0"
-      else if (pname[i] == '-' && pname[i+1] == 'i' && pname[i+2] == '\0') {
-        // Found "-i\0", OSD ID starts after the null byte
-        int start = i + 3;
-        id = 0;
-        while (start < 200 && pname[start] >= '0' && pname[start] <= '9') {
-          id *= 10;
-          id += pname[start] - '0';
-          ++start;
-        }
-        break;
-      }
-      // Check for "-n\0" followed by "osd.<id>\0"
-      else if (pname[i] == '-' && pname[i+1] == 'n' && pname[i+2] == '\0') {
-        // Found "-n\0", check if next argument starts with "osd."
-        int start = i + 3;
-        if (start + 4 < 200 && pname[start] == 'o' && pname[start+1] == 's' && pname[start+2] == 'd' && pname[start+3] == '.') {
-          // Found "osd.", extract ID between "osd." and '\0'
-          start += 4; // Move past "osd."
-          id = 0;
-          while (start < 200 && pname[start] >= '0' && pname[start] <= '9') {
-            id *= 10;
-            id += pname[start] - '0';
-            ++start;
-          }
-          break;
-        }
-      }
-    }
-    close(fd);
+  // Read full /proc/<pid>/cmdline null-separated tokens
+  std::string cmdline_path = "/proc/" + std::to_string(pid) + "/cmdline";
+  std::ifstream ifs(cmdline_path, std::ios::binary);
+  if (!ifs) return -1;
+
+  std::vector<std::string> args;
+  std::string token;
+  while (std::getline(ifs, token, '\0')) {
+    args.push_back(token);
   }
-  return id;
+
+  return parse_osd_id_from_tokens(args);
 }
 
-__u64 to_ns(struct timespec *ts) {
-  return ts->tv_nsec + (ts->tv_sec * 1000000000ull);
-}
-
-__u64 to_us(struct timespec *ts) {
-  return (ts->tv_nsec / 1000) + (ts->tv_sec * 1000000ull);
-}
-
-__u64 to_ms(struct timespec *ts) {
-  return (ts->tv_nsec / 1000000) + (ts->tv_sec * 1000);
-}
-
-void timespec_diff(struct timespec *start, struct timespec *stop,
-                   struct timespec *result) {
+static void timespec_diff(struct timespec *start, struct timespec *stop,
+                          struct timespec *result) {
   if ((stop->tv_nsec - start->tv_nsec) < 0) {
     result->tv_sec = stop->tv_sec - start->tv_sec - 1;
     result->tv_nsec = stop->tv_nsec - start->tv_nsec + 1000000000;
@@ -392,14 +331,6 @@ void timespec_diff(struct timespec *start, struct timespec *stop,
     result->tv_sec = stop->tv_sec - start->tv_sec;
     result->tv_nsec = stop->tv_nsec - start->tv_nsec;
   }
-
-  return;
-}
-
-__u64 timespec_sub_ms(struct timespec *a, struct timespec *b) {
-  struct timespec c;
-  timespec_diff(b, a, &c);
-  return to_ms(&c);
 }
 
 __u64 get_bootstamp() {
@@ -526,6 +457,14 @@ void print_all_srl() {
   }
 }
 
+void print_delayed_info(const osd_op_t &op) {
+  for (__u32 i = 0; i < op.delayed_cnt; ++i) {
+    printf("[delayed%d %s ]", i + 1, op.delayed_strs[i].c_str());
+  }
+  if (op.delayed_cnt > 0)
+    printf("\n");
+}
+
 void print_op_r(osd_op_t &op, int osd_id) {
   std::stringstream ss;
   ss << std::hex << op.pg.m_seed;
@@ -543,11 +482,7 @@ void print_op_r(osd_op_t &op, int osd_id) {
 	  op.queue_lat, op.osd_lat,
 	  op.bs_lat, 
 	  op.op_lat);
-  for (__u32 i = 0; i < op.delayed_cnt; ++i) {
-    printf("[delayed%d %s ]", i+1, op.delayed_strs[i].c_str());
-  }
-  if (op.delayed_cnt > 0)
-    printf("\n");
+  print_delayed_info(op);
 }
 
 void print_subop_w(osd_op_t &op, int osd_id) {
@@ -567,11 +502,7 @@ void print_subop_w(osd_op_t &op, int osd_id) {
 	  op.queue_lat, op.osd_lat,
 	  op.bs_lat, op.bs_prepare_lat, op.bs_aio_wait_lat, op.aio_size, op.bs_pg_seq_lat, op.bs_kv_commit_lat, 
 	  op.op_lat);
-  for (__u32 i = 0; i < op.delayed_cnt; ++i) {
-    printf("[delayed%d %s ]", i+1, op.delayed_strs[i].c_str());
-  }
-  if (op.delayed_cnt > 0)
-    printf("\n");
+  print_delayed_info(op);
 }
 
 void print_op_w(osd_op_t &op, int osd_id) {
@@ -592,11 +523,7 @@ void print_op_w(osd_op_t &op, int osd_id) {
 	  op.queue_lat, op.osd_lat,  op.peers[0].peer, op.peers[0].latency, op.peers[1].peer, op.peers[1].latency, 
 	  op.bs_lat, op.bs_prepare_lat, op.bs_aio_wait_lat, op.aio_size, op.bs_pg_seq_lat, op.bs_kv_commit_lat, 
 	  op.op_lat);
-  for (__u32 i = 0; i < op.delayed_cnt; ++i) {
-    printf("[delayed%d %s ]", i+1, op.delayed_strs[i].c_str());
-  }
-  if (op.delayed_cnt > 0)
-    printf("\n");
+  print_delayed_info(op);
 }
 
 void signal_handler(int signum){
@@ -1043,18 +970,19 @@ void fill_map_hprobes(std::string mod_path, DwarfParser &dwarfparser, struct bpf
   }
 }
 
-int attach_uprobe(struct osdtrace_bpf *skel,
+int attach_probe(struct osdtrace_bpf *skel,
                  DwarfParser &dp,
                  std::string path,
                  int process_id,
                  std::string funcname,
+                 bool is_retprobe = false,
                  int v = 0) {
-
   std::string path_basename = get_basename(path);
   auto &func2pc = dp.mod_func2pc[path_basename];
   size_t func_addr = func2pc[funcname];
+  const char *pname = is_retprobe ? "uretprobe" : "uprobe";
   if (func_addr == 0) {
-    cerr << "Warning: func_addr is zero for " << funcname << " in " << path << ", skipping uprobe" << endl;
+    cerr << "Warning: func_addr is zero for " << funcname << " in " << path << ", skipping " << pname << endl;
     return -1;
   }
   if (v > 0)
@@ -1064,88 +992,47 @@ int attach_uprobe(struct osdtrace_bpf *skel,
   std::string attach_path = (process_id == -1) ? path : "/proc/" + std::to_string(process_id) + "/root/" + path;
   struct bpf_link *ulink = bpf_program__attach_uprobe(
       *skel->skeleton->progs[pid].prog,
-      false /* not uretprobe */,
+      is_retprobe,
       process_id,
       attach_path.c_str(), func_addr);
   if (!ulink) {
     if (process_id == -1)
-      cerr << "Failed to attach uprobe to " << funcname << endl;
+      cerr << "Failed to attach " << pname << " to " << funcname << endl;
     else
-      cerr << "Failed to attach uprobe to " << funcname << " for PID " << process_id << endl;
+      cerr << "Failed to attach " << pname << " to " << funcname << " for PID " << process_id << endl;
     return -errno;
   }
   if (process_id == -1)
-    clog << "uprobe " << funcname << " attached to all processes" << endl;
+    clog << pname << " " << funcname << " attached to all processes" << endl;
   else
-    clog << "uprobe " << funcname << " attached to PID " << process_id << endl;
+    clog << pname << " " << funcname << " attached to PID " << process_id << endl;
   return 0;
 }
 
-int attach_uprobes(struct osdtrace_bpf *skel,
+int attach_probes(struct osdtrace_bpf *skel,
                   DwarfParser &dp,
                   std::string path,
                   const std::set<int> &process_ids,
                   std::string funcname,
+                  bool is_retprobe = false,
                   int v = 0) {
   if (process_ids.empty())
-    return attach_uprobe(skel, dp, path, -1, funcname, v);
+    return attach_probe(skel, dp, path, -1, funcname, is_retprobe, v);
   for (auto pid : process_ids) {
-    int ret = attach_uprobe(skel, dp, path, pid, funcname, v);
+    int ret = attach_probe(skel, dp, path, pid, funcname, is_retprobe, v);
     if (ret < 0) return ret;
   }
   return 0;
 }
 
-int attach_retuprobe(struct osdtrace_bpf *skel,
-	           DwarfParser &dp,
-	           std::string path,
-                   int process_id,
-		   std::string funcname,
-		   int v = 0) {
-  std::string path_basename = get_basename(path);
-  auto &func2pc = dp.mod_func2pc[path_basename];
-  size_t func_addr = func2pc[funcname];
-  if (func_addr == 0) {
-    cerr << "Warning: func_addr is zero for " << funcname << " in " << path << ", skipping uretprobe" << endl;
-    return -1;
-  }
-  if (v > 0)
-      funcname = funcname + "_v" + std::to_string(v);
-  int pid = func_progid[funcname];
-
-  std::string attach_path = (process_id == -1) ? path : "/proc/" + std::to_string(process_id) + "/root/" + path;
-  struct bpf_link *ulink = bpf_program__attach_uprobe(
-      *skel->skeleton->progs[pid].prog,
-      true /* uretprobe */,
-      process_id,
-      attach_path.c_str(), func_addr);
-  if (!ulink) {
-    if (process_id == -1)
-      cerr << "Failed to attach uretprobe to " << funcname << endl;
-    else
-      cerr << "Failed to attach uretprobe to " << funcname << " for PID " << process_id << endl;
-    return -errno;
-  }
-  if (process_id == -1)
-    clog << "uretprobe " << funcname << " attached to all processes" << endl;
-  else
-    clog << "uretprobe " << funcname << " attached to PID " << process_id << endl;
-  return 0;
-}
-
-int attach_retuprobes(struct osdtrace_bpf *skel,
-                     DwarfParser &dp,
-                     std::string path,
-                     const std::set<int> &process_ids,
-                     std::string funcname,
-                     int v = 0) {
-  if (process_ids.empty())
-    return attach_retuprobe(skel, dp, path, -1, funcname, v);
-  for (auto pid : process_ids) {
-    int ret = attach_retuprobe(skel, dp, path, pid, funcname, v);
-    if (ret < 0) return ret;
-  }
-  return 0;
+// Convenient alias for non-return uprobes
+inline int attach_uprobes(struct osdtrace_bpf *skel,
+                          DwarfParser &dp,
+                          std::string path,
+                          const std::set<int> &process_ids,
+                          std::string funcname,
+                          int v = 0) {
+  return attach_probes(skel, dp, path, process_ids, funcname, false, v);
 }
 
 int main(int argc, char **argv) {
