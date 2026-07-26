@@ -78,8 +78,18 @@ else
 endif
 
 # Main targets
-.PHONY: all clean clang-tidy
+.PHONY: all clean clang-tidy test
 all: $(OSDTRACE_SRC)/ceph_btf_local.h $(EMBEDDED_DWARF_HDR) $(PROG_OBJS)
+
+TEST_BIN := $(OUTPUT)/test_osd_cmdline_parser
+
+$(TEST_BIN): tests/test_osd_cmdline_parser.cc $(OSDTRACE_SRC)/utils.h | $(OUTPUT)
+	$(call msg,CXX,$@)
+	$(Q)$(CXX) $(CXXFLAGS) -I$(OSDTRACE_SRC) -o $@ $<
+
+test: $(TEST_BIN)
+	$(call msg,TEST,$<)
+	$(Q)$(TEST_BIN)
 
 install:
 	$(call msg,INSTALL)
