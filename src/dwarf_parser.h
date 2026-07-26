@@ -6,6 +6,7 @@
 #include <elfutils/libdw.h>
 #include <elfutils/libdwfl.h>
 #include <elfutils/known-dwarf.h>
+#include <set>
 #include <vector>
 #include "nlohmann/json.hpp"  // nlohmann/json library
 
@@ -34,11 +35,14 @@ class DwarfParser {
   typedef std::map<std::string, Dwarf_Addr> func2pc_t;
   typedef std::map<std::string, func2vf_t> mod_func2vf_t;
   typedef std::map<std::string, func2pc_t> mod_func2pc_t;
+  typedef std::map<std::string, uint32_t> type_sizes_t;
+  typedef std::map<std::string, type_sizes_t> mod_type_sizes_t;
 
  public:
   typedef std::map<std::string, std::vector<std::vector<std::string>>> probes_t;
   mod_func2vf_t mod_func2vf;
   mod_func2pc_t mod_func2pc;
+  mod_type_sizes_t mod_type_sizes;
   // basename → full path on disk for every add_module() call.  Lets
   // export_to_json() read each module's ELF build-id without the caller
   // needing to re-derive the path.
@@ -68,6 +72,8 @@ class DwarfParser {
   bool has_loclist();
   Dwarf_Die *resolve_typedecl(Dwarf_Die *);
   Dwarf_Die *resolve_type_name(const std::string&);
+  void request_type_size(const std::string&);
+  int get_type_size(const std::string&, const std::string&) const;
   const char *cache_type_prefix(Dwarf_Die *);
   int iterate_types_in_cu(mod_cu_type_cache_t &, Dwarf_Die *);
   void traverse_module(Dwfl_Module *, Dwarf *, bool);
@@ -171,6 +177,10 @@ class DwarfParser {
 
   static const char* dwarf_attr_string(unsigned int attrnum);
   static const char* dwarf_form_string(unsigned int form);
+
+ private:
+  std::set<std::string> requested_type_sizes;
+  int resolve_type_size(Dwfl_Module *, const std::string&);
 };
 
 #endif

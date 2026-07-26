@@ -9,6 +9,7 @@
 #include <cstring>
 #include <ctime>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <set>
 #include <string>
@@ -117,6 +118,61 @@ Dwarf_Die *DwarfParser::resolve_type_name(const std::string& name) {
 
   cerr << "Couldn't resolve type " << name << endl;
   return NULL;
+}
+
+void DwarfParser::request_type_size(const std::string& name) {
+  requested_type_sizes.insert(name);
+}
+
+int DwarfParser::get_type_size(const std::string& module,
+                               const std::string& name) const {
+  auto module_it = mod_type_sizes.find(get_basename(module));
+  if (module_it == mod_type_sizes.end())
+    return -1;
+  auto type_it = module_it->second.find(name);
+  return type_it == module_it->second.end()
+             ? -1
+             : static_cast<int>(type_it->second);
+}
+
+int DwarfParser::resolve_type_size(Dwfl_Module *module,
+                                   const std::string& name) {
+  auto module_it = global_type_cache.find(module);
+  if (module_it == global_type_cache.end())
+    return -1;
+
+  const std::string candidates[] = {
+      name, "struct " + name, "union " + name, "enum " + name};
+  Dwarf_Die *type = nullptr;
+  for (auto& cu : module_it->second) {
+    for (const auto& candidate : candidates) {
+      auto found = cu.second.find(candidate);
+      if (found != cu.second.end()) {
+        type = &found->second;
+        break;
+      }
+    }
+    if (type != nullptr)
+      break;
+  }
+  if (type == nullptr)
+    return -1;
+
+  Dwarf_Die current = *type;
+  while (dwarf_tag(&current) == DW_TAG_typedef ||
+         dwarf_tag(&current) == DW_TAG_const_type ||
+         dwarf_tag(&current) == DW_TAG_volatile_type ||
+         dwarf_tag(&current) == DW_TAG_restrict_type) {
+    Dwarf_Die referent;
+    dwarf_die_type(&current, &referent);
+    current = referent;
+  }
+
+  Dwarf_Word size = 0;
+  if (dwarf_aggregate_size(&current, &size) != 0 ||
+      size > std::numeric_limits<uint32_t>::max())
+    return -1;
+  return static_cast<int>(size);
 }
 
 const char *DwarfParser::cache_type_prefix(Dwarf_Die *type) {
@@ -963,6 +1019,11 @@ static int preprocess_module(Dwfl_Module *dwflmod, void **userdata,
 
 
   dp->traverse_module(dwflmod, dwarf, true); 
+  for (const auto& type_name : dp->requested_type_sizes) {
+    int size = dp->resolve_type_size(dwflmod, type_name);
+    if (size > 0)
+      dp->mod_type_sizes[dp->cur_mod_name][type_name] = size;
+  }
   return 0;
 }
 
@@ -1077,9 +1138,21 @@ void DwarfParser::export_to_json(const std::string& filename, const std::string&
         j["arch"] = arch;
     }
 
-    // Convert both maps to JSON structure
-    for (const auto& mod_pair : mod_func2vf) {
-        const std::string& module = mod_pair.first;
+    std::set<std::string> modules;
+    for (const auto& [module, unused] : mod_func2pc) {
+        (void)unused;
+        modules.insert(module);
+    }
+    for (const auto& [module, unused] : mod_func2vf) {
+        (void)unused;
+        modules.insert(module);
+    }
+    for (const auto& [module, unused] : mod_type_sizes) {
+        (void)unused;
+        modules.insert(module);
+    }
+
+    for (const auto& module : modules) {
         json module_obj;
 
         // Read the on-disk ELF build-id for this module.  mod_path is
@@ -1095,7 +1168,7 @@ void DwarfParser::export_to_json(const std::string& filename, const std::string&
         }
 
         // Add function addresses (mod_func2pc)
-        json pc_obj;
+        json pc_obj = json::object();
         if (mod_func2pc.count(module) > 0) {
             for (const auto& func_pc : mod_func2pc[module]) {
                 pc_obj[func_pc.first] = func_pc.second;
@@ -1103,9 +1176,18 @@ void DwarfParser::export_to_json(const std::string& filename, const std::string&
         }
         module_obj["func2pc"] = pc_obj;
 
+        json type_sizes_obj = json::object();
+        auto sizes_it = mod_type_sizes.find(module);
+        if (sizes_it != mod_type_sizes.end()) {
+            for (const auto& [type_name, size] : sizes_it->second) {
+                type_sizes_obj[type_name] = size;
+            }
+        }
+        module_obj["type_sizes"] = type_sizes_obj;
+
         // Add function variable fields (mod_func2vf)
-        json vf_obj;
-        for (const auto& func_pair : mod_pair.second) {
+        json vf_obj = json::object();
+        for (const auto& func_pair : mod_func2vf[module]) {
             const std::string& function = func_pair.first;
             json func_obj;
 
@@ -1186,6 +1268,7 @@ bool DwarfParser::import_from_json(const std::string& filename, const std::strin
         // Clear existing data
         mod_func2pc.clear();
         mod_func2vf.clear();
+        mod_type_sizes.clear();
 
         // Parse JSON structure
         for (const auto& [module, module_data] : j.items()) {
@@ -1210,6 +1293,13 @@ bool DwarfParser::import_from_json(const std::string& filename, const std::strin
                 const auto& pc_obj = module_data["func2pc"];
                 for (const auto& [func_name, addr] : pc_obj.items()) {
                     mod_func2pc[key][func_name] = addr.get<Dwarf_Addr>();
+                }
+            }
+
+            if (module_data.contains("type_sizes")) {
+                for (const auto& [type_name, size] :
+                     module_data["type_sizes"].items()) {
+                    mod_type_sizes[key][type_name] = size.get<uint32_t>();
                 }
             }
 
@@ -1347,11 +1437,17 @@ bool DwarfParser::import_from_embedded(
     // Clear existing data
     mod_func2pc.clear();
     mod_func2vf.clear();
+    mod_type_sizes.clear();
 
     // Populate from embedded data
     for (int m = 0; m < match->num_modules; ++m) {
         const auto& mod = match->modules[m];
         std::string mod_name(mod.module_name);
+
+        for (int t = 0; t < mod.num_type_sizes; ++t) {
+            mod_type_sizes[mod_name][mod.type_sizes[t].type_name] =
+                mod.type_sizes[t].size;
+        }
 
         // Import func2pc
         for (int f = 0; f < mod.num_func2pc; ++f) {
