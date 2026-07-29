@@ -135,11 +135,27 @@ int DwarfParser::get_type_size(const std::string& module,
              : static_cast<int>(type_it->second);
 }
 
-int DwarfParser::resolve_type_size(Dwfl_Module *module,
-                                   const std::string& name) {
+// Strip typedef/cv wrappers in place so callers see the real aggregate.
+// Uses dwarf_attr_die rather than dwarf_die_type: it reports failure instead
+// of leaving the output DIE uninitialized, and follows DW_AT_signature into
+// type units, where these types often live.
+static void strip_type_wrappers(DwarfParser *dp, Dwarf_Die *die) {
+  while (dwarf_tag(die) == DW_TAG_typedef ||
+         dwarf_tag(die) == DW_TAG_const_type ||
+         dwarf_tag(die) == DW_TAG_volatile_type ||
+         dwarf_tag(die) == DW_TAG_restrict_type) {
+    Dwarf_Die referent;
+    if (dp->dwarf_attr_die(die, DW_AT_type, &referent) == nullptr)
+      return;
+    *die = referent;
+  }
+}
+
+bool DwarfParser::find_cached_type(Dwfl_Module *module, const std::string& name,
+                                   Dwarf_Die &out) {
   auto module_it = global_type_cache.find(module);
   if (module_it == global_type_cache.end())
-    return -1;
+    return false;
 
   const std::string candidates[] = {
       name, "struct " + name, "union " + name, "enum " + name};
@@ -156,23 +172,173 @@ int DwarfParser::resolve_type_size(Dwfl_Module *module,
       break;
   }
   if (type == nullptr)
-    return -1;
+    return false;
 
-  Dwarf_Die current = *type;
-  while (dwarf_tag(&current) == DW_TAG_typedef ||
-         dwarf_tag(&current) == DW_TAG_const_type ||
-         dwarf_tag(&current) == DW_TAG_volatile_type ||
-         dwarf_tag(&current) == DW_TAG_restrict_type) {
-    Dwarf_Die referent;
-    dwarf_die_type(&current, &referent);
-    current = referent;
-  }
+  out = *type;
+  strip_type_wrappers(this, &out);
+  return true;
+}
+
+int DwarfParser::resolve_type_size(Dwfl_Module *module,
+                                   const std::string& name) {
+  Dwarf_Die current;
+  if (!find_cached_type(module, name, current))
+    return -1;
 
   Dwarf_Word size = 0;
   if (dwarf_aggregate_size(&current, &size) != 0 ||
       size > std::numeric_limits<uint32_t>::max())
     return -1;
   return static_cast<int>(size);
+}
+
+// Byte offset of a DW_TAG_member or DW_TAG_inheritance DIE within its
+// containing type.
+//
+// DWARF permits DW_AT_data_member_location to be omitted when the member
+// starts at the beginning of the containing entity, so a missing attribute
+// means offset 0 -- not an error.  That case is the rule, not the exception,
+// for union members (every member of ceph_osd_op's anonymous union) and for
+// the first member of a struct (OSDOp::op).  Bitfields, which carry
+// DW_AT_data_bit_offset instead, have no whole-byte offset and do fail.
+static bool member_byte_offset(Dwarf_Die *die, Dwarf_Word &off) {
+  off = 0;
+  if (dwarf_hasattr_integrate(die, DW_AT_data_bit_offset))
+    return false;
+  if (!dwarf_hasattr_integrate(die, DW_AT_data_member_location))
+    return true;
+  Dwarf_Attribute attr;
+  if (dwarf_attr_integrate(die, DW_AT_data_member_location, &attr) == nullptr)
+    return false;
+  // Constant form covers every case we care about; a location-expression form
+  // (older producers, virtual bases) fails here and surfaces as "not found"
+  // rather than a wrong offset.
+  return dwarf_formudata(&attr, &off) == 0;
+}
+
+// Find `member` directly in `parent`, in one of its base classes, or inside an
+// anonymous struct/union member, and report its offset relative to the start of
+// `parent`.
+//
+// Breadth-first, accumulating an offset along two kinds of transparent edge:
+//   - DW_TAG_inheritance: without adding the base's offset within its derived
+//     type, an inherited member would be reported at its offset within the
+//     base, which is only correct when the base sits at offset 0.
+//   - unnamed DW_TAG_member: C/C++ anonymous unions and structs, whose members
+//     are named directly on the enclosing type.  ceph_osd_op needs this --
+//     `extent` and `cls` are members of its anonymous union, not of the struct.
+static bool find_member_offset_in(DwarfParser *dp, Dwarf_Die parent,
+                                  const std::string& member,
+                                  Dwarf_Word &offset_out,
+                                  Dwarf_Die &member_type_out) {
+  // (type DIE, offset of that type within the original parent)
+  std::queue<std::pair<Dwarf_Die, Dwarf_Word>> q;
+  q.push({parent, 0});
+
+  while (!q.empty()) {
+    Dwarf_Die cur = q.front().first;
+    Dwarf_Word base_off = q.front().second;
+    q.pop();
+
+    Dwarf_Die child;
+    if (dwarf_child(&cur, &child) != 0)
+      continue;
+    do {
+      int tag = dwarf_tag(&child);
+      if (tag == DW_TAG_inheritance) {
+        Dwarf_Word inh_off = 0;
+        if (!member_byte_offset(&child, inh_off))
+          continue;
+        Dwarf_Die base;
+        if (dp->dwarf_attr_die(&child, DW_AT_type, &base) == nullptr)
+          continue;
+        strip_type_wrappers(dp, &base);
+        q.push({base, base_off + inh_off});
+        continue;
+      }
+      if (tag != DW_TAG_member)
+        continue;
+      const char *name = dwarf_diename(&child);
+      if (name == nullptr) {
+        // Anonymous struct/union: its members belong to the enclosing type.
+        Dwarf_Word anon_off = 0;
+        if (!member_byte_offset(&child, anon_off))
+          continue;
+        Dwarf_Die anon;
+        if (dp->dwarf_attr_die(&child, DW_AT_type, &anon) == nullptr)
+          continue;
+        strip_type_wrappers(dp, &anon);
+        int anon_tag = dwarf_tag(&anon);
+        if (anon_tag == DW_TAG_structure_type || anon_tag == DW_TAG_union_type ||
+            anon_tag == DW_TAG_class_type)
+          q.push({anon, base_off + anon_off});
+        continue;
+      }
+      if (member != name)
+        continue;
+      Dwarf_Word off = 0;
+      if (!member_byte_offset(&child, off))
+        return false;  // bitfield: no byte offset to report
+      offset_out = base_off + off;
+      if (dp->dwarf_attr_die(&child, DW_AT_type, &member_type_out) == nullptr)
+        return false;
+      strip_type_wrappers(dp, &member_type_out);
+      return true;
+    } while (dwarf_siblingof(&child, &child) == 0);
+  }
+  return false;
+}
+
+int DwarfParser::resolve_member_offset(Dwfl_Module *module,
+                                       const std::string& type_name,
+                                       const std::vector<std::string>& path) {
+  if (path.empty())
+    return -1;
+
+  Dwarf_Die current;
+  if (!find_cached_type(module, type_name, current))
+    return -1;
+
+  Dwarf_Word total = 0;
+  for (const auto& member : path) {
+    Dwarf_Word off = 0;
+    Dwarf_Die member_type;
+    if (!find_member_offset_in(this, current, member, off, member_type))
+      return -1;
+    total += off;
+    current = member_type;
+  }
+  if (total > std::numeric_limits<uint32_t>::max())
+    return -1;
+  return static_cast<int>(total);
+}
+
+std::string DwarfParser::member_offset_key(
+    const std::string& type, const std::vector<std::string>& path) {
+  std::string key = type + "::";
+  for (size_t i = 0; i < path.size(); ++i) {
+    if (i)
+      key += ".";
+    key += path[i];
+  }
+  return key;
+}
+
+void DwarfParser::request_member_offset(const std::string& type,
+                                        const std::vector<std::string>& path) {
+  requested_member_offsets.insert({type, path});
+}
+
+int DwarfParser::get_member_offset(const std::string& module,
+                                   const std::string& type,
+                                   const std::vector<std::string>& path) const {
+  auto module_it = mod_member_offsets.find(get_basename(module));
+  if (module_it == mod_member_offsets.end())
+    return -1;
+  auto off_it = module_it->second.find(member_offset_key(type, path));
+  return off_it == module_it->second.end()
+             ? -1
+             : static_cast<int>(off_it->second);
 }
 
 const char *DwarfParser::cache_type_prefix(Dwarf_Die *type) {
@@ -1024,6 +1190,16 @@ static int preprocess_module(Dwfl_Module *dwflmod, void **userdata,
     if (size > 0)
       dp->mod_type_sizes[dp->cur_mod_name][type_name] = size;
   }
+  for (const auto& [type_name, path] : dp->requested_member_offsets) {
+    int off = dp->resolve_member_offset(dwflmod, type_name, path);
+    // A zero offset is legitimate (first member), so accept >= 0 here --
+    // unlike type sizes, where 0 means "not found".
+    if (off >= 0) {
+      dp->mod_member_offsets[dp->cur_mod_name]
+                            [DwarfParser::member_offset_key(type_name, path)] =
+          static_cast<uint32_t>(off);
+    }
+  }
   return 0;
 }
 
@@ -1151,6 +1327,10 @@ void DwarfParser::export_to_json(const std::string& filename, const std::string&
         (void)unused;
         modules.insert(module);
     }
+    for (const auto& [module, unused] : mod_member_offsets) {
+        (void)unused;
+        modules.insert(module);
+    }
 
     for (const auto& module : modules) {
         json module_obj;
@@ -1184,6 +1364,15 @@ void DwarfParser::export_to_json(const std::string& filename, const std::string&
             }
         }
         module_obj["type_sizes"] = type_sizes_obj;
+
+        json member_offsets_obj = json::object();
+        auto offsets_it = mod_member_offsets.find(module);
+        if (offsets_it != mod_member_offsets.end()) {
+            for (const auto& [key, offset] : offsets_it->second) {
+                member_offsets_obj[key] = offset;
+            }
+        }
+        module_obj["member_offsets"] = member_offsets_obj;
 
         // Add function variable fields (mod_func2vf)
         json vf_obj = json::object();
@@ -1300,6 +1489,14 @@ bool DwarfParser::import_from_json(const std::string& filename, const std::strin
                 for (const auto& [type_name, size] :
                      module_data["type_sizes"].items()) {
                     mod_type_sizes[key][type_name] = size.get<uint32_t>();
+                }
+            }
+
+            if (module_data.contains("member_offsets")) {
+                for (const auto& [member_key, offset] :
+                     module_data["member_offsets"].items()) {
+                    mod_member_offsets[key][member_key] =
+                        offset.get<uint32_t>();
                 }
             }
 
@@ -1438,6 +1635,7 @@ bool DwarfParser::import_from_embedded(
     mod_func2pc.clear();
     mod_func2vf.clear();
     mod_type_sizes.clear();
+    mod_member_offsets.clear();
 
     // Populate from embedded data
     for (int m = 0; m < match->num_modules; ++m) {
@@ -1447,6 +1645,11 @@ bool DwarfParser::import_from_embedded(
         for (int t = 0; t < mod.num_type_sizes; ++t) {
             mod_type_sizes[mod_name][mod.type_sizes[t].type_name] =
                 mod.type_sizes[t].size;
+        }
+
+        for (int o = 0; o < mod.num_member_offsets; ++o) {
+            mod_member_offsets[mod_name][mod.member_offsets[o].member_key] =
+                mod.member_offsets[o].offset;
         }
 
         // Import func2pc
