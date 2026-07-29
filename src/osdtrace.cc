@@ -252,6 +252,7 @@ typedef struct osd_op {
   __u16 type;
   __u32 wb;
   __u32 rb;
+  bool is_write;
 
   __u64 client_id;
   __u64 req_id;
@@ -656,7 +657,17 @@ osd_op_t generate_op(op_v *val) {
 
   op.wb = val->wb;
   op.rb = val->rb;
-  
+
+  // wb is the request payload size reported by log_op_stats, not a write
+  // indicator: a class method that only touches omap (rgw.bucket_prepare_op,
+  // rgw.obj_remove, ...) carries no payload yet is very much a write. Trust
+  // instead that ReplicatedBackend::submit_transaction ran for this op, which
+  // happens exactly when the primary built a transaction. A replica subop is
+  // a write by definition, and wb > 0 is kept as a fallback in case the
+  // submit_transaction probe could not be attached.
+  op.is_write = val->op_type == MSG_OSD_REPOP ||
+                val->submit_transaction_stamp != 0 || val->wb > 0;
+
   op.client_id = val->owner;
   op.req_id = val->tid;
 
@@ -688,7 +699,7 @@ osd_op_t generate_op(op_v *val) {
 
   op.queue_lat += (val->dequeue_stamp - val->enqueue_stamp)/1000;
 
-  if (op.wb > 0)
+  if (op.is_write)
     op.osd_lat = (val->queue_transaction_stamp - val->dequeue_stamp)/1000;
   else if (op.rb > 0)
     op.osd_lat = (val->execute_ctx_stamp - val->dequeue_stamp) /1000;
@@ -707,7 +718,7 @@ osd_op_t generate_op(op_v *val) {
   op.bs_aio_wait_lat = (val->aio_done_stamp - val->aio_submit_stamp)/1000;
   op.bs_pg_seq_lat = (val->kv_submit_stamp - val->aio_done_stamp)/1000;
   op.bs_kv_commit_lat = (val->kv_committed_stamp - val->kv_submit_stamp)/1000;
-  if (op.wb > 0)
+  if (op.is_write)
     op.bs_lat = (val->kv_committed_stamp - val->queue_transaction_stamp)/1000;
   else if (op.rb > 0)
     op.bs_lat = (val->reply_stamp - val->execute_ctx_stamp)/1000;
@@ -723,12 +734,13 @@ void handle_full(struct op_v *val, int osd_id) {
     osd_op_t op = generate_op(val);
     if (op.op_lat/(1000) < threshold)
       return;
-    if (op.wb == 0) {
-      print_op_r(op, osd_id);
-    } else if (op.type == MSG_OSD_OP) {
-      print_op_w(op, osd_id);
-    } else if (op.type == MSG_OSD_REPOP) {
+    if (op.type == MSG_OSD_REPOP) {
       print_subop_w(op, osd_id);
+    } else if (op.type == MSG_OSD_OP) {
+      if (op.is_write)
+        print_op_w(op, osd_id);
+      else
+        print_op_r(op, osd_id);
     } else {
       printf("unsupported op type %d\n", op.type);
     }
@@ -1513,6 +1525,7 @@ static const AttachEntry ATTACH_LIST[] = {
     {"PrimaryLogPG::log_op_stats", OP_SINGLE_PROBE, /*exact=*/true, 2},
     {"OSD::dequeue_op", OP_FULL_PROBE, false, 0},
     {"PrimaryLogPG::execute_ctx", OP_FULL_PROBE, false, 0},
+    {"ReplicatedBackend::submit_transaction", OP_FULL_PROBE, false, 0},
     {"ECBackend::submit_transaction", OP_FULL_PROBE, false, 0},
     {"OpRequest::mark_flag_point_string", OP_FULL_PROBE, false, 0},
     {"OpRequest::mark_flag_point", OP_FULL_PROBE, false, 0},

@@ -200,6 +200,11 @@ Each operation is labeled by type:
 | **op_w** | Write operation | Client → Primary OSD |
 | **subop_w** | Sub-write operation | Primary OSD → Replica OSDs |
 
+An op counts as a write when the primary built an ObjectStore transaction for
+it, not when it carried a payload. Class methods that only touch omap — RGW's
+`rgw.bucket_prepare_op`, `rgw.obj_remove` and friends — therefore show up as
+`op_w size 0`, matching the `subop_w` rows they produce on the replicas.
+
 ### Field Descriptions
 
 | Field | Description | Unit | Present In |
