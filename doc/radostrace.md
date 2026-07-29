@@ -184,7 +184,7 @@ Each row represents one I/O operation sent from the client to the Ceph cluster:
 | **w/r** | Operation type | R or W | Read (R) or Write (W) |
 | **size** | Operation size in bytes | 4096 | Data size being read/written (0 for metadata ops) |
 | **latency** | Operation latency | 1240 | End-to-end latency in microseconds (μs) |
-| **object** | Object name and operations | rbd_data....[read][0, 4096] | Object name, operation type, offset, length |
+| **object** | Object name and operations | rbd_data....[read][0, 4096] | Object name, operation type, offset, length. Up to 3 ops are listed; a request carrying more ends with a truncation count, e.g. `[create setxattr setxattr ...+9]` |
 
 ### Understanding the Output
 

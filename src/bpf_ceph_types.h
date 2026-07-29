@@ -29,6 +29,11 @@ static const __u8 flag_started =     1 << 3;
 static const __u8 flag_sub_op_sent = 1 << 4;
 static const __u8 flag_commit_sent = 1 << 5;
 
+// Number of per-request ops radostrace captures. Requests carrying more than
+// this (an RGW object PUT is typically 12) report the first MAX_CLIENT_OPS and
+// the true total, so the userspace side can print "...+N".
+#define MAX_CLIENT_OPS 3
+
 typedef struct cls_op {
   char cls_name[8];
   char method_name[32];
@@ -59,9 +64,9 @@ struct client_op_v {
   int acting[MAX_ACTING];
   __u64 offset;
   __u64 length;
-  __u16 ops[3];
-  __u32 ops_size;
-  cls_op_t cls_ops[3];
+  __u16 ops[MAX_CLIENT_OPS];
+  __u32 ops_size;  // total ops in the request, may exceed MAX_CLIENT_OPS
+  cls_op_t cls_ops[MAX_CLIENT_OPS];
 
 };
 

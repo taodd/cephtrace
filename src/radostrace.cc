@@ -296,7 +296,9 @@ static int handle_event(void *ctx, void *data, size_t size) {
     std::stringstream ops_list;
     bool print_offset_length = false;
     ops_list << "[";
-    for (__u32 i = 0; i < op_v->ops_size; ++i) {
+    __u32 shown_ops = op_v->ops_size < MAX_CLIENT_OPS ? op_v->ops_size
+                                                      : MAX_CLIENT_OPS;
+    for (__u32 i = 0; i < shown_ops; ++i) {
         if (i) ops_list << " ";
         if (ceph_osd_op_extent(op_v->ops[i])) {
             ops_list << ceph_osd_op_str(op_v->ops[i]);
@@ -307,6 +309,10 @@ static int handle_event(void *ctx, void *data, size_t size) {
         } else {
             ops_list << ceph_osd_op_str(op_v->ops[i]);
         }
+    }
+    if (op_v->ops_size > shown_ops) {
+        if (shown_ops) ops_list << " ";
+        ops_list << "...+" << (op_v->ops_size - shown_ops);
     }
     ops_list << "]";
     std::string ops_str = ops_list.str();
