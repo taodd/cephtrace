@@ -38,7 +38,11 @@ TRACE_EXPECTED_IO_SIZE=2097152
 # field is the op-type discriminator (op_r / subop_w / op_w); the
 # remaining fields are the op-type's full schema, in printf order.
 #
-# Schemas (mirror the three print_op_* functions in src/osdtrace.cc):
+# Schemas — note these are the *emitted row* layouts, which deliberately keep
+# object/osd_ops last so the field-name mapping below stays stable.  The three
+# print_op_* functions in src/osdtrace.cc print object and osd_ops/txn_ops
+# immediately after `tid`, ahead of the latency block, so the awk field
+# indices do not run in row order:
 #
 #   op_r    | osd | pool | pg | size | client | tid
 #           | throttle_lat | recv_lat | dispatch_lat | queue_lat | osd_lat
@@ -55,17 +59,17 @@ TRACE_EXPECTED_IO_SIZE=2097152
 #           | bluestore_lat | prepare_lat | aio_wait_lat | seq_wait_lat
 #           | kv_commit_lat | op_lat | object | osd_ops
 #
-# The trailing object field is "-" when the trace could not capture the
-# object name (the relevant capture point was not reached, or the DWARF data
-# predates object-name support). Whitespace, control bytes, and percent signs
-# in captured names are percent-encoded so each object remains one field.
+# The object field is "-" when the trace could not capture the object name
+# (the relevant capture point was not reached, or the DWARF data predates
+# object-name support). Whitespace, control bytes, and percent signs in
+# captured names are percent-encoded so each object remains one field.
 #
 # Rejection of malformed/truncated rows is critical: a SIGKILL hitting
 # osdtrace mid-printf can leave a row whose tail is the underflowed
 # peer-latency token (`(-1, 18446743169577026)]`), and a naive `$NF + 0`
 # verifier mistakes that for the total op_lat.  This parser instead
 # matches each op type by exact NF AND by literal field-name landmarks
-# (e.g. `$24 == "op_lat"` for op_r, `$22 == "peers"` + `$39 == "op_lat"`
+# (e.g. `$28 == "op_lat"` for op_r, `$26 == "peers"` + `$43 == "op_lat"`
 # for op_w).  Truncated rows fail at least one landmark and are dropped.
 # Same logic drops rows with the `[delayed%d ... ]` continuation tokens
 # appended (their NF is inflated past the expected count).
@@ -89,32 +93,32 @@ _osdtrace_rows() {
             op = $5
             candidate = ""
             if (op == "op_r" && NF == 29 && \
-                $6 == "size" && $24 == "op_lat" && $26 == "object" && \
-                $28 == "osd_ops") {
+                $6 == "size" && $12 == "object" && $14 == "osd_ops" && \
+                $28 == "op_lat") {
                 candidate = sprintf("op_r|%d|%s|%s|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%s|%s", \
                     $2, pg[1], pg[2], \
                     $7, $9, $11, \
-                    $13, $15, $17, $19, $21, \
-                    $23, $25, $27, $29)
+                    $17, $19, $21, $23, $25, \
+                    $27, $29, $13, $15)
             } else if (op == "subop_w" && NF == 39 && \
-                       $22 == "bluestore_lat" && $24 == "(prepare" && \
-                       $34 == "subop_lat" && $36 == "object" && \
-                       $38 == "txn_ops") {
+                       $12 == "object" && $14 == "txn_ops" && \
+                       $26 == "bluestore_lat" && $28 == "(prepare" && \
+                       $38 == "subop_lat") {
                 candidate = sprintf("subop_w|%d|%s|%s|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%s|%s", \
                     $2, pg[1], pg[2], \
                     $7, $9, $11, \
-                    $13, $15, $17, $19, $21, \
-                    $23, $25, $27, $31, num($33), $35, $37, $39)
+                    $17, $19, $21, $23, $25, \
+                    $27, $29, $31, $35, num($37), $39, $13, $15)
             } else if (op == "op_w" && NF == 44 && \
-                       $22 == "peers" && $27 == "bluestore_lat" && \
-                       $29 == "(prepare" && $39 == "op_lat" && \
-                       $41 == "object" && $43 == "osd_ops") {
+                       $12 == "object" && $14 == "osd_ops" && \
+                       $26 == "peers" && $31 == "bluestore_lat" && \
+                       $33 == "(prepare" && $43 == "op_lat") {
                 candidate = sprintf("op_w|%d|%s|%s|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%s|%s", \
                     $2, pg[1], pg[2], \
                     $7, $9, $11, \
-                    $13, $15, $17, $19, $21, \
-                    num($23), num($24), num($25), num($26), \
-                    $28, $30, $32, $36, num($38), $40, $42, $44)
+                    $17, $19, $21, $23, $25, \
+                    num($27), num($28), num($29), num($30), \
+                    $32, $34, $36, $40, num($42), $44, $13, $15)
             }
             # else: row was truncated, has [delayed...] suffix, or printed
             #       an op type we do not parse.  Dropped silently.

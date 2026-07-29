@@ -566,20 +566,21 @@ void print_op_r(osd_op_t &op, int osd_id) {
   std::string object_name = format_object_name(op.object_name);
   std::string detail_ops = format_detail_ops(op, false);
 
-  printf("osd %d pg %lld.%s op_r " 
+  printf("osd %d pg %lld.%s op_r "
          "size %d client %lld tid %lld "
+	 "object %s osd_ops %s "
 	 "throttle_lat %lld recv_lat %lld dispatch_lat %lld "
 	 "queue_lat %lld osd_lat %lld "
 	 "bluestore_lat %lld "
-	 "op_lat %lld object %s osd_ops %s\n",
+	 "op_lat %lld\n",
          osd_id, op.pg.m_pool, pgid.c_str(),
 	  op.rb, op.client_id, op.req_id,
-	  op.throttle_lat, op.recv_lat, op.dispatch_lat, 
+	  object_name.c_str(),
+	  detail_ops.c_str(),
+	  op.throttle_lat, op.recv_lat, op.dispatch_lat,
 	  op.queue_lat, op.osd_lat,
 	  op.bs_lat,
-	  op.op_lat,
-	  object_name.c_str(),
-	  detail_ops.c_str());
+	  op.op_lat);
   print_delayed_info(op);
 }
 
@@ -590,20 +591,21 @@ void print_subop_w(osd_op_t &op, int osd_id) {
   std::string object_name = format_object_name(op.object_name);
   std::string detail_ops = format_detail_ops(op, true);
 
-  printf("osd %d pg %lld.%s subop_w " 
+  printf("osd %d pg %lld.%s subop_w "
          "size %d client %lld tid %lld "
+	 "object %s txn_ops %s "
 	 "throttle_lat %lld recv_lat %lld dispatch_lat %lld "
 	 "queue_lat %lld osd_lat %lld "
 	 "bluestore_lat %lld (prepare %lld aio_wait %lld (aio_size %d) seq_wait %lld kv_commit %lld) "
-	 "subop_lat %lld object %s txn_ops %s\n",
+	 "subop_lat %lld\n",
          osd_id, op.pg.m_pool, pgid.c_str(),
 	  op.wb, op.client_id, op.req_id,
-	  op.throttle_lat, op.recv_lat, op.dispatch_lat, 
-	  op.queue_lat, op.osd_lat,
-	  op.bs_lat, op.bs_prepare_lat, op.bs_aio_wait_lat, op.aio_size, op.bs_pg_seq_lat, op.bs_kv_commit_lat, 
-	  op.op_lat,
 	  object_name.c_str(),
-	  detail_ops.c_str());
+	  detail_ops.c_str(),
+	  op.throttle_lat, op.recv_lat, op.dispatch_lat,
+	  op.queue_lat, op.osd_lat,
+	  op.bs_lat, op.bs_prepare_lat, op.bs_aio_wait_lat, op.aio_size, op.bs_pg_seq_lat, op.bs_kv_commit_lat,
+	  op.op_lat);
   print_delayed_info(op);
 }
 
@@ -615,20 +617,21 @@ void print_op_w(osd_op_t &op, int osd_id) {
   std::string object_name = format_object_name(op.object_name);
   std::string detail_ops = format_detail_ops(op, false);
 
-  printf("osd %d pg %lld.%s op_w " 
+  printf("osd %d pg %lld.%s op_w "
          "size %d client %lld tid %lld "
+	 "object %s osd_ops %s "
 	 "throttle_lat %lld recv_lat %lld dispatch_lat %lld "
 	 "queue_lat %lld osd_lat %lld peers [(%d, %lld), (%d, %lld)] "
 	 "bluestore_lat %lld (prepare %lld aio_wait %lld (aio_size %d) seq_wait %lld kv_commit %lld) "
-	 "op_lat %lld object %s osd_ops %s\n",
+	 "op_lat %lld\n",
          osd_id, op.pg.m_pool, pgid.c_str(),
 	  op.wb, op.client_id, op.req_id,
-	  op.throttle_lat, op.recv_lat, op.dispatch_lat, 
-	  op.queue_lat, op.osd_lat,  op.peers[0].peer, op.peers[0].latency, op.peers[1].peer, op.peers[1].latency, 
-	  op.bs_lat, op.bs_prepare_lat, op.bs_aio_wait_lat, op.aio_size, op.bs_pg_seq_lat, op.bs_kv_commit_lat,
-	  op.op_lat,
 	  object_name.c_str(),
-	  detail_ops.c_str());
+	  detail_ops.c_str(),
+	  op.throttle_lat, op.recv_lat, op.dispatch_lat,
+	  op.queue_lat, op.osd_lat,  op.peers[0].peer, op.peers[0].latency, op.peers[1].peer, op.peers[1].latency,
+	  op.bs_lat, op.bs_prepare_lat, op.bs_aio_wait_lat, op.aio_size, op.bs_pg_seq_lat, op.bs_kv_commit_lat,
+	  op.op_lat);
   print_delayed_info(op);
 }
 
