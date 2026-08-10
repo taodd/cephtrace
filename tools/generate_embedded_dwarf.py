@@ -126,7 +126,8 @@ def _generate_var_field(vf, indent):
         f'{{{fields_str}}}}},')
 
 
-def _generate_module(mod_name, mod_data, indent):  # pylint: disable=too-many-locals
+# pylint: disable-next=too-many-locals
+def _generate_module(mod_name, mod_data, indent):
     """Generate C++ initializer for one module entry."""
     lines = []
     lines.append(f'{indent}    {{ // module: {mod_name}')
