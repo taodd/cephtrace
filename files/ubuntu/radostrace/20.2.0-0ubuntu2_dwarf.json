@@ -7,6 +7,16 @@
       "Objecter::_finish_op": 9783056,
       "Objecter::_send_op": 9720816
     },
+    "type_sizes": {
+      "OSDOp": 112
+    },
+    "member_offsets": {
+      "OSDOp::indata._carriage": 56,
+      "OSDOp::op.cls.class_len": 6,
+      "OSDOp::op.cls.method_len": 7,
+      "OSDOp::op.extent.length": 14,
+      "OSDOp::op.extent.offset": 6
+    },
     "func2vf": {
       "Objecter::_finish_op": {
         "var_fields": [
@@ -384,5 +394,35 @@
         ]
       }
     }
+  },
+  "librados.so.2": {
+    "build_id": "5c9c9ea1699a348a6450c1ff25d277753d4600c3",
+    "func2pc": {},
+    "type_sizes": {
+      "OSDOp": 112
+    },
+    "member_offsets": {
+      "OSDOp::indata._carriage": 56,
+      "OSDOp::op.cls.class_len": 6,
+      "OSDOp::op.cls.method_len": 7,
+      "OSDOp::op.extent.length": 14,
+      "OSDOp::op.extent.offset": 6
+    },
+    "func2vf": {}
+  },
+  "librbd.so.1": {
+    "build_id": "9bdb3187abfc1b91e1f881865672eb7d8174a687",
+    "func2pc": {},
+    "type_sizes": {
+      "OSDOp": 112
+    },
+    "member_offsets": {
+      "OSDOp::indata._carriage": 56,
+      "OSDOp::op.cls.class_len": 6,
+      "OSDOp::op.cls.method_len": 7,
+      "OSDOp::op.extent.length": 14,
+      "OSDOp::op.extent.offset": 6
+    },
+    "func2vf": {}
   }
 }
