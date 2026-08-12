@@ -604,12 +604,12 @@ void handle_full(struct op_v *val, int osd_id) {
     osd_op_t op = generate_op(val);
     if (op.op_lat/(1000) < threshold)
       return;
-    if (op.wb == 0) {
+    if (op.type == MSG_OSD_REPOP) {
+      print_subop_w(op, osd_id);
+    } else if (op.wb == 0) {
       print_op_r(op, osd_id);
     } else if (op.type == MSG_OSD_OP) {
       print_op_w(op, osd_id);
-    } else if (op.type == MSG_OSD_REPOP) {
-      print_subop_w(op, osd_id);
     } else {
       printf("unsupported op type %d\n", op.type);
     }
