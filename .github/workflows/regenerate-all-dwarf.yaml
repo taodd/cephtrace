@@ -164,8 +164,6 @@ jobs:
           distro = os.environ["REF_DISTRO"]
           version = os.environ["REF_VERSION"]
 
-          cache = pathlib.Path("/tmp/modules")
-          cache.mkdir(exist_ok=True)
           package_root = pathlib.Path("/tmp/package-root")
           package_root.mkdir(exist_ok=True)
 
@@ -307,77 +305,30 @@ jobs:
                   ], check=True)
                   subprocess.run(["dpkg-deb", "-x", str(destination), str(package_root)], check=True)
 
-          def elf_build_id(path):
-              output = subprocess.run(
-                  ["readelf", "-n", str(path)], text=True,
-                  stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
-              ).stdout
-              match = re.search(r"Build ID: ([0-9a-f]+)", output)
-              return match.group(1) if match else None
-
-          all_files = [path for path in package_root.rglob("*") if path.is_file()]
-
-          def prepare(module, build_id):
-              executable = next(
-                  (path for path in all_files
-                   if not str(path).endswith(".debug") and elf_build_id(path) == build_id),
-                  None
-              )
-              debug = package_root / f"usr/lib/debug/.build-id/{build_id[:2]}/{build_id[2:]}.debug"
-              if executable is None or not debug.is_file():
-                  raise RuntimeError(f"incomplete artifacts for {module} build-id {build_id}")
-
-              module_dir = cache / build_id
-              module_dir.mkdir(exist_ok=True)
-              module_path = module_dir / module
-              shutil.copy2(executable, module_path)
-              module_path.chmod(0o755)
-
-              debug_path = pathlib.Path(f"/usr/lib/debug/.build-id/{build_id[:2]}/{build_id[2:]}.debug")
-              subprocess.run(
-                  ["sudo", "install", "-D", "-m", "0644", str(debug), str(debug_path)],
-                  check=True
-              )
-              return str(module_path)
+          # Install extracted binaries, libraries, and debug info into system locations (/usr/)
+          subprocess.run(["sudo", "cp", "-rn", f"{package_root}/usr/.", "/usr/"], check=True)
+          subprocess.run(["sudo", "ldconfig"], check=True)
 
           for ref_path in files:
               reference = json.load(open(ref_path, encoding="utf-8"))
-              modules = {
-                  key: value for key, value in reference.items()
-                  if isinstance(value, dict) and ("func2pc" in value or "func2vf" in value)
-              }
-              paths = {
-                  module: prepare(module, data["build_id"])
-                  for module, data in modules.items()
-              }
-              if "/radostrace/" in ref_path and "librbd.so.1" not in paths:
-                  librbd = next(
-                      path for path in all_files
-                      if path.name == "librbd.so.1" and elf_build_id(path)
-                  )
-                  build_id = elf_build_id(librbd)
-                  paths["librbd.so.1"] = prepare("librbd.so.1", build_id)
-
               output = pathlib.Path("out") / ref_path
               output.parent.mkdir(parents=True, exist_ok=True)
-              env = os.environ.copy()
 
               if "/osdtrace/" in ref_path:
-                  env["CEPHTRACE_EXPORT_OSD_PATH"] = paths["ceph-osd"]
                   command = ["./osdtrace", "-j", str(output)]
               else:
-                  fallback = next(iter(paths.values()))
-                  env["CEPHTRACE_EXPORT_LIBRBD"] = paths.get("librbd.so.1", fallback)
-                  env["CEPHTRACE_EXPORT_LIBRADOS"] = paths.get("librados.so.2", fallback)
-                  env["CEPHTRACE_EXPORT_LIBCEPH_COMMON"] = paths.get("libceph-common.so.2", fallback)
                   command = ["./radostrace", "-j", str(output)]
 
-              subprocess.run(command, env=env, check=True, timeout=1800)
+              subprocess.run(command, check=True, timeout=1800)
               generated = json.load(open(output, encoding="utf-8"))
               generated["version"] = version
               generated["arch"] = reference.get("arch", "amd64")
               output.write_text(json.dumps(generated, indent=4) + "\n")
 
+              modules = {
+                  key: value for key, value in reference.items()
+                  if isinstance(value, dict) and ("func2pc" in value or "func2vf" in value)
+              }
               generated_modules = {
                   key: value for key, value in generated.items()
                   if isinstance(value, dict) and ("func2pc" in value or "func2vf" in value)
