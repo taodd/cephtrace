@@ -1292,6 +1292,14 @@ int main(int argc, char **argv) {
 
   std::cout << "Tracing ceph-osd at: " << osd_path << std::endl;
 
+  if (export_json) {
+    const char *explicit_path = getenv("CEPHTRACE_EXPORT_OSD_PATH");
+    if (explicit_path && *explicit_path) {
+      osd_path = explicit_path;
+      std::cout << "Overriding export ceph-osd path: " << osd_path << std::endl;
+    }
+  }
+
   // Check if any ceph-osd processes are running with old/deleted executables.
   // Only enforced for live tracing; for JSON export we deliberately want to
   // read the *on-disk* (possibly newly-upgraded) binary so the exported

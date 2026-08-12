@@ -661,10 +661,18 @@ int main(int argc, char **argv) {
 
   DwarfParser dwarfparser(rados_probes, probe_units);
 
-  // Use the new function to find library paths dynamically
-  std::string librbd_path = find_library_path("librbd.so.1", process_id);
-  std::string librados_path = find_library_path("librados.so.2", process_id);
-  std::string libceph_common_path = find_library_path("libceph-common.so.2", process_id);
+  auto export_path = [](const char *name, const char *library, int pid) {
+    const char *path = getenv(name);
+    return path && *path ? std::string(path)
+                         : find_library_path(library, pid);
+  };
+  std::string librbd_path =
+      export_path("CEPHTRACE_EXPORT_LIBRBD", "librbd.so.1", process_id);
+  std::string librados_path =
+      export_path("CEPHTRACE_EXPORT_LIBRADOS", "librados.so.2", process_id);
+  std::string libceph_common_path =
+      export_path("CEPHTRACE_EXPORT_LIBCEPH_COMMON",
+                  "libceph-common.so.2", process_id);
 
   if(librbd_path.empty() || librados_path.empty() || libceph_common_path.empty()) {
     cerr << "Error: Could not find one or more required Ceph libraries:" << endl;
