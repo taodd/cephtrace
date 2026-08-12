@@ -46,14 +46,12 @@ TRACE_EXPECTED_IO_SIZE=2097152
 #
 #   subop_w | osd | pool | pg | size | client | tid
 #           | throttle_lat | recv_lat | dispatch_lat | queue_lat | osd_lat
-#           | bluestore_lat | prepare_lat | aio_wait_lat | seq_wait_lat
-#           | kv_commit_lat | subop_lat
+#           | bluestore_lat | subop_lat
 #
 #   op_w    | osd | pool | pg | size | client | tid
 #           | throttle_lat | recv_lat | dispatch_lat | queue_lat | osd_lat
 #           | peer0_id | peer0_lat | peer1_id | peer1_lat
-#           | bluestore_lat | prepare_lat | aio_wait_lat | seq_wait_lat
-#           | kv_commit_lat | op_lat
+#           | bluestore_lat | op_lat
 #
 # Rejection of malformed/truncated rows is critical: a SIGKILL hitting
 # osdtrace mid-printf can leave a row whose tail is the underflowed
@@ -90,23 +88,22 @@ _osdtrace_rows() {
                     $7, $9, $11, \
                     $13, $15, $17, $19, $21, \
                     $23, $25)
-            } else if (op == "subop_w" && NF == 35 && \
-                       $22 == "bluestore_lat" && $24 == "(prepare" && \
-                       $34 == "subop_lat") {
-                candidate = sprintf("subop_w|%d|%s|%s|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d", \
+            } else if (op == "subop_w" && NF == 25 && \
+                       $22 == "bluestore_lat" && $24 == "subop_lat") {
+                candidate = sprintf("subop_w|%d|%s|%s|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d", \
                     $2, pg[1], pg[2], \
                     $7, $9, $11, \
                     $13, $15, $17, $19, $21, \
-                    $23, $25, $27, $31, num($33), $35)
-            } else if (op == "op_w" && NF == 40 && \
+                    $23, $25)
+            } else if (op == "op_w" && NF == 30 && \
                        $22 == "peers" && $27 == "bluestore_lat" && \
-                       $29 == "(prepare" && $39 == "op_lat") {
-                candidate = sprintf("op_w|%d|%s|%s|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d", \
+                       $29 == "op_lat") {
+                candidate = sprintf("op_w|%d|%s|%s|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d", \
                     $2, pg[1], pg[2], \
                     $7, $9, $11, \
                     $13, $15, $17, $19, $21, \
                     num($23), num($24), num($25), num($26), \
-                    $28, $30, $32, $36, num($38), $40)
+                    $28, $30)
             }
             # else: row was truncated, has [delayed...] suffix, or printed
             #       an op type we do not parse.  Dropped silently.
@@ -238,8 +235,8 @@ _verify_osdtrace_output_impl() {
     # Per-op-type field lists, used to populate $row from the parser
     # output and to enumerate sub-latency fields for the strict bound.
     local -a OP_R_SUBLATS=(throttle_lat recv_lat dispatch_lat queue_lat osd_lat bluestore_lat)
-    local -a SUBOP_W_SUBLATS=(throttle_lat recv_lat dispatch_lat queue_lat osd_lat bluestore_lat prepare_lat aio_wait_lat seq_wait_lat kv_commit_lat)
-    local -a OP_W_SUBLATS=(throttle_lat recv_lat dispatch_lat queue_lat osd_lat bluestore_lat prepare_lat aio_wait_lat seq_wait_lat kv_commit_lat)
+    local -a SUBOP_W_SUBLATS=(throttle_lat recv_lat dispatch_lat queue_lat osd_lat bluestore_lat)
+    local -a OP_W_SUBLATS=(throttle_lat recv_lat dispatch_lat queue_lat osd_lat bluestore_lat)
 
     while IFS= read -r line; do
         [ -z "$line" ] && continue
@@ -262,8 +259,7 @@ _verify_osdtrace_output_impl() {
                     row[size] row[client] row[tid] \
                     row[throttle_lat] row[recv_lat] row[dispatch_lat] \
                     row[queue_lat] row[osd_lat] \
-                    row[bluestore_lat] row[prepare_lat] row[aio_wait_lat] \
-                    row[seq_wait_lat] row[kv_commit_lat] row[op_lat] <<< "$line"
+                    row[bluestore_lat] row[op_lat] <<< "$line"
                 subop_w_total=$((subop_w_total + 1))
                 _osdtrace_check_common || return 1
                 _osdtrace_check_sublatencies "${SUBOP_W_SUBLATS[@]}" || return 1
@@ -274,8 +270,7 @@ _verify_osdtrace_output_impl() {
                     row[throttle_lat] row[recv_lat] row[dispatch_lat] \
                     row[queue_lat] row[osd_lat] \
                     row[peer0_id] row[peer0_lat] row[peer1_id] row[peer1_lat] \
-                    row[bluestore_lat] row[prepare_lat] row[aio_wait_lat] \
-                    row[seq_wait_lat] row[kv_commit_lat] row[op_lat] <<< "$line"
+                    row[bluestore_lat] row[op_lat] <<< "$line"
                 op_w_total=$((op_w_total + 1))
                 _osdtrace_check_common || return 1
                 _osdtrace_check_sublatencies "${OP_W_SUBLATS[@]}" || return 1
