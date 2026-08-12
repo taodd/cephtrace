@@ -34,6 +34,12 @@ TOOLS=$2
 VERSION=$3
 PKGVER=$4
 
+case "$PKGVER" in
+    *.el8) EL=8; BUILD_REPO=PowerTools ;;
+    *.el9) EL=9; BUILD_REPO=crb ;;
+    *) echo "ERROR: unsupported package release in $PKGVER" >&2; exit 2 ;;
+esac
+
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 case "$DISTRO" in
@@ -59,14 +65,31 @@ echo "==> generating DWARF for centos-stream ${VERSION} (tools: ${TOOLS})"
 podman run -d --rm --name="$CTR" \
     -v "$REPO_ROOT":/workspace:Z \
     --workdir /workspace \
-    quay.io/centos/centos:stream9 sleep infinity >/dev/null
+    "quay.io/centos/centos:stream${EL}" sleep infinity >/dev/null
+
+if [ "$EL" = 8 ]; then
+    # CentOS Stream 8 is retired, so its mirrorlist no longer resolves.  The
+    # final package set is retained in the official vault.
+    podman exec -u root "$CTR" bash -ec '
+        rm -f /etc/yum.repos.d/*.repo
+        for repo in BaseOS AppStream PowerTools extras; do
+            cat >> /etc/yum.repos.d/centos-stream-vault.repo <<EOF
+[$repo]
+name=CentOS Stream 8 $repo vault
+baseurl=https://vault.centos.org/8-stream/$repo/\$basearch/os/
+gpgcheck=0
+enabled=1
+EOF
+        done
+    '
+fi
 
 echo "==> installing build deps + ceph ${VERSION} + debuginfo"
 
 # crb enables glibc-devel.i686 + clang.  The build needs gdb only for the
 # starti trick below.  --allowerasing lets dnf swap the image's preinstalled
 # curl-minimal for the full curl we request (they conflict otherwise).
-podman exec -u root "$CTR" dnf install -y --enablerepo=crb --allowerasing \
+podman exec -u root "$CTR" dnf install -y --enablerepo="$BUILD_REPO" --allowerasing \
     gcc gcc-c++ clang make \
     elfutils-libelf-devel elfutils-devel \
     glibc-devel glibc-devel.i686 \
@@ -89,17 +112,17 @@ podman exec -i -u root "$CTR" \
     bash -c 'cat > /etc/yum.repos.d/ceph-pinned.repo' <<EOF
 [ceph-pinned]
 name=ceph-pinned-${VERSION}-x86_64
-baseurl=https://download.ceph.com/rpm-${VERSION}/el9/x86_64/
+baseurl=https://download.ceph.com/rpm-${VERSION}/el${EL}/x86_64/
 gpgcheck=0
 enabled=1
 [ceph-pinned-noarch]
 name=ceph-pinned-${VERSION}-noarch
-baseurl=https://download.ceph.com/rpm-${VERSION}/el9/noarch/
+baseurl=https://download.ceph.com/rpm-${VERSION}/el${EL}/noarch/
 gpgcheck=0
 enabled=1
 EOF
 
-podman exec -u root "$CTR" dnf install -y --enablerepo=crb \
+podman exec -u root "$CTR" dnf install -y --enablerepo="$BUILD_REPO" \
     ceph-osd ceph-common librbd1 librados2 \
     ceph-osd-debuginfo ceph-common-debuginfo \
     librbd1-debuginfo librados2-debuginfo \

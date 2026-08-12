@@ -60,7 +60,8 @@ func_id_t func_id = {
     {"BlueStore::_txc_calc_cost", 160},
     {"ReplicatedBackend::repop_commit", 170},
     {"OpRequest::mark_flag_point", 180},
-    {"BlueStore::log_latency_fn", 190}
+    {"BlueStore::log_latency_fn", 190},
+    {"BlueStore::_txc_add_transaction", 200}
 };
 
 std::map<std::string, int> func_progid = {
@@ -83,7 +84,8 @@ std::map<std::string, int> func_progid = {
     {"BlueStore::_txc_calc_cost", 16},
     {"ReplicatedBackend::repop_commit", 17},
     {"OpRequest::mark_flag_point", 18},
-    {"BlueStore::log_latency_fn", 19}
+    {"BlueStore::log_latency_fn", 19},
+    {"BlueStore::_txc_add_transaction", 20}
 };
 
 DwarfParser::probes_t osd_probes = {
@@ -105,7 +107,12 @@ DwarfParser::probes_t osd_probes = {
       {"pg", "px", "pg_id", "pgid", "m_seed"}}},
 
     {"PrimaryLogPG::execute_ctx",
-     {{"ctx", "reqid", "name", "_num"}, {"ctx", "reqid", "tid"}}},
+     {{"ctx", "reqid", "name", "_num"},
+      {"ctx", "reqid", "tid"},
+      {"ctx", "new_obs", "oi", "soid", "oid", "name", "_M_string_length"},
+      {"ctx", "new_obs", "oi", "soid", "oid", "name", "_M_dataplus", "_M_p"},
+      {"ctx", "ops", "_M_impl", "_M_start"},
+      {"ctx", "ops", "_M_impl", "_M_finish"}}},
 
     {"ReplicatedBackend::submit_transaction",
      {{"reqid", "name", "_num"}, {"reqid", "tid"}}},
@@ -185,12 +192,21 @@ DwarfParser::probes_t osd_probes = {
     {"ReplicatedBackend::repop_commit",
      {{"rm", "_M_ptr", "op", "px", "reqid", "name", "_num"},
       {"rm", "_M_ptr", "op", "px", "reqid", "tid"},
-      {"rm", "_M_ptr", "op", "px", "request", "data", "_len"}}},
+      {"rm", "_M_ptr", "op", "px", "request", "data", "_len"},
+      {"rm", "_M_ptr", "op", "px", "request", "cast:MOSDRepOp",
+       "poid", "oid", "name", "_M_string_length"},
+      {"rm", "_M_ptr", "op", "px", "request", "cast:MOSDRepOp",
+       "poid", "oid", "name", "_M_dataplus", "_M_p"}}},
 
     {"OpRequest::mark_flag_point",
      {{"flag"},
       {"this", "reqid", "name", "_num"},
-      {"this", "reqid", "tid"}}}
+      {"this", "reqid", "tid"}}},
+
+    {"BlueStore::_txc_add_transaction",
+     {{"t", "data", "ops"},
+      {"t", "op_bl", "_carriage"},
+      {"t", "op_bl", "_num"}}}
 };
 
 enum mode_e { MODE_AVG = 1, MODE_MAX, MODE_ALL };
@@ -236,6 +252,7 @@ typedef struct osd_op {
   __u16 type;
   __u32 wb;
   __u32 rb;
+  bool is_write;
 
   __u64 client_id;
   __u64 req_id;
@@ -267,6 +284,13 @@ typedef struct osd_op {
 
 // op lat
   __u64 op_lat;
+
+// object the op targets; empty when its capture point was not reached or the
+// loaded DWARF data predates object-name support
+  std::string object_name;
+  std::vector<__u32> detail_ops;
+  __u32 detail_ops_total;
+  bool detail_ops_unavailable;
 } osd_op_t;
 
 int num_osd = 0;
@@ -466,22 +490,97 @@ void print_delayed_info(const osd_op_t &op) {
     printf("\n");
 }
 
+std::string format_object_name(const std::string& name) {
+  if (name.empty()) {
+    return "-";
+  }
+
+  static constexpr char hex[] = "0123456789ABCDEF";
+  std::string result;
+  result.reserve(name.size());
+  for (unsigned char c : name) {
+    if (c > 0x20 && c != 0x7f && c != '%' &&
+        (c != '-' || name.size() != 1)) {
+      result.push_back(c);
+      continue;
+    }
+    result.push_back('%');
+    result.push_back(hex[c >> 4]);
+    result.push_back(hex[c & 0x0f]);
+  }
+  return result;
+}
+
+const char *ceph_osd_op_str(int opcode) {
+  switch (opcode) {
+#define GENERATE_CASE_ENTRY(op, value, str) case CEPH_OSD_OP_##op: return str;
+    __CEPH_FORALL_OSD_OPS(GENERATE_CASE_ENTRY)
+#undef GENERATE_CASE_ENTRY
+    default:
+      return nullptr;
+  }
+}
+
+const char *objectstore_txn_op_str(__u32 opcode) {
+  switch (opcode) {
+#define GENERATE_TXN_CASE(op, value, name) \
+    case OBJECTSTORE_TXN_OP_##op: return name;
+    __CEPH_FORALL_OBJECTSTORE_TXN_OPS(GENERATE_TXN_CASE)
+#undef GENERATE_TXN_CASE
+    default:
+      return nullptr;
+  }
+}
+
+std::string format_detail_ops(const osd_op_t& op, bool transaction_ops) {
+  std::stringstream out;
+  if (op.detail_ops_unavailable) {
+    out << "[unavailable+" << op.detail_ops_total << "]";
+    return out.str();
+  }
+  out << "[";
+  for (std::size_t i = 0; i < op.detail_ops.size(); ++i) {
+    if (i != 0)
+      out << ",";
+    __u32 opcode = op.detail_ops[i];
+    const char *name = transaction_ops
+                           ? objectstore_txn_op_str(opcode)
+                           : ceph_osd_op_str(opcode);
+    if (name != nullptr)
+      out << name;
+    else
+      out << "unknown-" << opcode;
+  }
+  if (op.detail_ops_total > op.detail_ops.size()) {
+    if (!op.detail_ops.empty())
+      out << ",";
+    out << "...+" << (op.detail_ops_total - op.detail_ops.size());
+  }
+  out << "]";
+  return out.str();
+}
+
 void print_op_r(osd_op_t &op, int osd_id) {
   std::stringstream ss;
   ss << std::hex << op.pg.m_seed;
   std::string pgid(ss.str());
+  std::string object_name = format_object_name(op.object_name);
+  std::string detail_ops = format_detail_ops(op, false);
 
-  printf("osd %d pg %lld.%s op_r " 
+  printf("osd %d pg %lld.%s op_r "
          "size %d client %lld tid %lld "
+	 "object %s osd_ops %s "
 	 "throttle_lat %lld recv_lat %lld dispatch_lat %lld "
 	 "queue_lat %lld osd_lat %lld "
 	 "bluestore_lat %lld "
-	 "op_lat %lld \n",
-   	  osd_id, op.pg.m_pool, pgid.c_str(), 
+	 "op_lat %lld\n",
+         osd_id, op.pg.m_pool, pgid.c_str(),
 	  op.rb, op.client_id, op.req_id,
-	  op.throttle_lat, op.recv_lat, op.dispatch_lat, 
+	  object_name.c_str(),
+	  detail_ops.c_str(),
+	  op.throttle_lat, op.recv_lat, op.dispatch_lat,
 	  op.queue_lat, op.osd_lat,
-	  op.bs_lat, 
+	  op.bs_lat,
 	  op.op_lat);
   print_delayed_info(op);
 }
@@ -490,18 +589,23 @@ void print_subop_w(osd_op_t &op, int osd_id) {
   std::stringstream ss;
   ss << std::hex << op.pg.m_seed;
   std::string pgid(ss.str());
+  std::string object_name = format_object_name(op.object_name);
+  std::string detail_ops = format_detail_ops(op, true);
 
-  printf("osd %d pg %lld.%s subop_w " 
+  printf("osd %d pg %lld.%s subop_w "
          "size %d client %lld tid %lld "
+	 "object %s txn_ops %s "
 	 "throttle_lat %lld recv_lat %lld dispatch_lat %lld "
 	 "queue_lat %lld osd_lat %lld "
 	 "bluestore_lat %lld (prepare %lld aio_wait %lld (aio_size %d) seq_wait %lld kv_commit %lld) "
-	 "subop_lat %lld \n",
-   	  osd_id, op.pg.m_pool, pgid.c_str(), 
+	 "subop_lat %lld\n",
+         osd_id, op.pg.m_pool, pgid.c_str(),
 	  op.wb, op.client_id, op.req_id,
-	  op.throttle_lat, op.recv_lat, op.dispatch_lat, 
+	  object_name.c_str(),
+	  detail_ops.c_str(),
+	  op.throttle_lat, op.recv_lat, op.dispatch_lat,
 	  op.queue_lat, op.osd_lat,
-	  op.bs_lat, op.bs_prepare_lat, op.bs_aio_wait_lat, op.aio_size, op.bs_pg_seq_lat, op.bs_kv_commit_lat, 
+	  op.bs_lat, op.bs_prepare_lat, op.bs_aio_wait_lat, op.aio_size, op.bs_pg_seq_lat, op.bs_kv_commit_lat,
 	  op.op_lat);
   print_delayed_info(op);
 }
@@ -511,18 +615,23 @@ void print_op_w(osd_op_t &op, int osd_id) {
   std::stringstream ss;
   ss << std::hex << op.pg.m_seed;
   std::string pgid(ss.str());
+  std::string object_name = format_object_name(op.object_name);
+  std::string detail_ops = format_detail_ops(op, false);
 
-  printf("osd %d pg %lld.%s op_w " 
+  printf("osd %d pg %lld.%s op_w "
          "size %d client %lld tid %lld "
+	 "object %s osd_ops %s "
 	 "throttle_lat %lld recv_lat %lld dispatch_lat %lld "
 	 "queue_lat %lld osd_lat %lld peers [(%d, %lld), (%d, %lld)] "
 	 "bluestore_lat %lld (prepare %lld aio_wait %lld (aio_size %d) seq_wait %lld kv_commit %lld) "
-	 "op_lat %lld \n",
-   	  osd_id, op.pg.m_pool, pgid.c_str(), 
+	 "op_lat %lld\n",
+         osd_id, op.pg.m_pool, pgid.c_str(),
 	  op.wb, op.client_id, op.req_id,
-	  op.throttle_lat, op.recv_lat, op.dispatch_lat, 
-	  op.queue_lat, op.osd_lat,  op.peers[0].peer, op.peers[0].latency, op.peers[1].peer, op.peers[1].latency, 
-	  op.bs_lat, op.bs_prepare_lat, op.bs_aio_wait_lat, op.aio_size, op.bs_pg_seq_lat, op.bs_kv_commit_lat, 
+	  object_name.c_str(),
+	  detail_ops.c_str(),
+	  op.throttle_lat, op.recv_lat, op.dispatch_lat,
+	  op.queue_lat, op.osd_lat,  op.peers[0].peer, op.peers[0].latency, op.peers[1].peer, op.peers[1].latency,
+	  op.bs_lat, op.bs_prepare_lat, op.bs_aio_wait_lat, op.aio_size, op.bs_pg_seq_lat, op.bs_kv_commit_lat,
 	  op.op_lat);
   print_delayed_info(op);
 }
@@ -548,12 +657,32 @@ osd_op_t generate_op(op_v *val) {
 
   op.wb = val->wb;
   op.rb = val->rb;
-  
+
+  // wb is the request payload size reported by log_op_stats, not a write
+  // indicator: a class method that only touches omap (rgw.bucket_prepare_op,
+  // rgw.obj_remove, ...) carries no payload yet is very much a write. Trust
+  // instead that ReplicatedBackend::submit_transaction ran for this op, which
+  // happens exactly when the primary built a transaction. A replica subop is
+  // a write by definition, and wb > 0 is kept as a fallback in case the
+  // submit_transaction probe could not be attached.
+  op.is_write = val->op_type == MSG_OSD_REPOP ||
+                val->submit_transaction_stamp != 0 || val->wb > 0;
+
   op.client_id = val->owner;
   op.req_id = val->tid;
 
   op.pg.m_pool = val->m_pool;
   op.pg.m_seed = val->m_seed;
+
+  op.object_name.assign(val->object_name,
+                        strnlen(val->object_name, OBJECT_NAME_LEN));
+  op.detail_ops_total = val->detail_ops_total;
+  op.detail_ops_unavailable = val->detail_ops_unavailable != 0;
+  for (__u32 i = 0;
+       i < val->detail_ops_captured && i < MAX_DETAIL_OPS;
+       ++i) {
+    op.detail_ops.push_back(val->detail_ops[i]);
+  }
 
   __u64 recv_stamp = val->recv_stamp;
   if (val->throttle_stamp < val->recv_stamp) { 
@@ -570,7 +699,7 @@ osd_op_t generate_op(op_v *val) {
 
   op.queue_lat += (val->dequeue_stamp - val->enqueue_stamp)/1000;
 
-  if (op.wb > 0)
+  if (op.is_write)
     op.osd_lat = (val->queue_transaction_stamp - val->dequeue_stamp)/1000;
   else if (op.rb > 0)
     op.osd_lat = (val->execute_ctx_stamp - val->dequeue_stamp) /1000;
@@ -589,7 +718,7 @@ osd_op_t generate_op(op_v *val) {
   op.bs_aio_wait_lat = (val->aio_done_stamp - val->aio_submit_stamp)/1000;
   op.bs_pg_seq_lat = (val->kv_submit_stamp - val->aio_done_stamp)/1000;
   op.bs_kv_commit_lat = (val->kv_committed_stamp - val->kv_submit_stamp)/1000;
-  if (op.wb > 0)
+  if (op.is_write)
     op.bs_lat = (val->kv_committed_stamp - val->queue_transaction_stamp)/1000;
   else if (op.rb > 0)
     op.bs_lat = (val->reply_stamp - val->execute_ctx_stamp)/1000;
@@ -605,12 +734,13 @@ void handle_full(struct op_v *val, int osd_id) {
     osd_op_t op = generate_op(val);
     if (op.op_lat/(1000) < threshold)
       return;
-    if (op.wb == 0) {
-      print_op_r(op, osd_id);
-    } else if (op.type == MSG_OSD_OP) {
-      print_op_w(op, osd_id);
-    } else if (op.type == MSG_OSD_REPOP) {
+    if (op.type == MSG_OSD_REPOP) {
       print_subop_w(op, osd_id);
+    } else if (op.type == MSG_OSD_OP) {
+      if (op.is_write)
+        print_op_w(op, osd_id);
+      else
+        print_op_r(op, osd_id);
     } else {
       printf("unsupported op type %d\n", op.type);
     }
@@ -1336,32 +1466,31 @@ static int load_dwarf_data(DwarfParser &dwarfparser, const TraceTarget &target) 
       return 1;
     }
     clog << "Successfully imported dwarf data from " << json_input_file << endl;
-    return 0;
-  }
-
-  // When -j is used to export JSON, force live parsing so the output reflects
-  // the installed binary (not a re-dump of the embedded data the header came
-  // from). Otherwise try embedded DWARF data first, keyed by the on-disk
-  // ELF build-id (arch-safe, snap-safe, custom-rebuild-safe).
-  //
-  // osd_path is the in-process view ("/usr/bin/ceph-osd"), which for a
-  // containerized OSD doesn't exist on the host.  Reach into the target's
-  // mount namespace via /proc/<pid>/root/ so the build-id read sees the
-  // same binary the kernel uprobe will attach to.
-  std::string osd_buildid_path = target.osd_path;
-  if (!target.pids.empty()) {
-    osd_buildid_path = "/proc/" + std::to_string(*target.pids.begin())
-                       + "/root" + target.osd_path;
-  }
-  std::string osd_buildid = get_elf_build_id(osd_buildid_path);
-  if (!export_json && !osd_buildid.empty() &&
-      dwarfparser.import_from_embedded(
-          {{get_basename(target.osd_path), osd_buildid}}, "osdtrace")) {
-    // Detailed match info already logged inside import_from_embedded.
   } else {
-    clog << "Start to parse dwarf info" << endl;
-    dwarfparser.add_module(target.osd_path);
-    dwarfparser.parse();
+    // When -j is used to export JSON, force live parsing so the output reflects
+    // the installed binary (not a re-dump of the embedded data the header came
+    // from). Otherwise try embedded DWARF data first, keyed by the on-disk
+    // ELF build-id (arch-safe, snap-safe, custom-rebuild-safe).
+    //
+    // osd_path is the in-process view ("/usr/bin/ceph-osd"), which for a
+    // containerized OSD doesn't exist on the host.  Reach into the target's
+    // mount namespace via /proc/<pid>/root/ so the build-id read sees the
+    // same binary the kernel uprobe will attach to.
+    std::string osd_buildid_path = target.osd_path;
+    if (!target.pids.empty()) {
+      osd_buildid_path = "/proc/" + std::to_string(*target.pids.begin())
+                         + "/root" + target.osd_path;
+    }
+    std::string osd_buildid = get_elf_build_id(osd_buildid_path);
+    if (!export_json && !osd_buildid.empty() &&
+        dwarfparser.import_from_embedded(
+            {{get_basename(target.osd_path), osd_buildid}}, "osdtrace")) {
+      // Detailed match info already logged inside import_from_embedded.
+    } else {
+      clog << "Start to parse dwarf info" << endl;
+      dwarfparser.add_module(target.osd_path);
+      dwarfparser.parse();
+    }
   }
   return 0;
 }
@@ -1396,6 +1525,7 @@ static const AttachEntry ATTACH_LIST[] = {
     {"PrimaryLogPG::log_op_stats", OP_SINGLE_PROBE, /*exact=*/true, 2},
     {"OSD::dequeue_op", OP_FULL_PROBE, false, 0},
     {"PrimaryLogPG::execute_ctx", OP_FULL_PROBE, false, 0},
+    {"ReplicatedBackend::submit_transaction", OP_FULL_PROBE, false, 0},
     {"ECBackend::submit_transaction", OP_FULL_PROBE, false, 0},
     {"OpRequest::mark_flag_point_string", OP_FULL_PROBE, false, 0},
     {"OpRequest::mark_flag_point", OP_FULL_PROBE, false, 0},
@@ -1404,6 +1534,7 @@ static const AttachEntry ATTACH_LIST[] = {
     {"BlueStore::queue_transactions", OP_FULL_PROBE, false, 0},
     {"BlueStore::_txc_calc_cost", OP_FULL_PROBE, false, 0},
     {"BlueStore::_txc_state_proc", OP_FULL_PROBE, false, 0},
+    {"BlueStore::_txc_add_transaction", OP_FULL_PROBE, false, 0},
     {"PrimaryLogPG::log_op_stats", OP_FULL_PROBE, false, 0},
     {"ReplicatedBackend::repop_commit", OP_FULL_PROBE, false, 0},
     {"OSD::enqueue_op", OP_FULL_PROBE, false, 0},
@@ -1423,9 +1554,29 @@ static int run_tracer(DwarfParser &dwarfparser, const TraceTarget &target) {
   clog << "Start to load uprobe" << endl;
 
   std::unique_ptr<osdtrace_bpf, decltype(&osdtrace_bpf__destroy)> skel(
-      osdtrace_bpf__open_and_load(), osdtrace_bpf__destroy);
+      osdtrace_bpf__open(), osdtrace_bpf__destroy);
   if (!skel) {
-    cerr << "Failed to open and load BPF skeleton" << endl;
+    cerr << "Failed to open BPF skeleton" << endl;
+    return 1;
+  }
+
+  // sizeof(OSDOp) is the stride used to walk the decoded op vector, so a wrong
+  // value yields plausible-looking garbage opcodes rather than an error.  Only
+  // trust the exact size recorded in the DWARF data; DWARF JSONs generated
+  // before type sizes were persisted must be regenerated.
+  int osd_op_size = dwarfparser.get_type_size(target.osd_path, "OSDOp");
+  if (osd_op_size <= 0) {
+    cerr << "No OSDOp size in the DWARF data for " << target.osd_path << endl;
+    cerr << "The DWARF JSON predates type-size support; regenerate it with -j"
+         << endl;
+    return 1;
+  }
+  skel->rodata->CEPH_OSD_OP_SIZE = osd_op_size;
+  clog << "Using target OSDOp size " << osd_op_size << endl;
+
+  int load_ret = osdtrace_bpf__load(skel.get());
+  if (load_ret) {
+    cerr << "Failed to load BPF skeleton: " << load_ret << endl;
     return 1;
   }
 
@@ -1495,6 +1646,7 @@ int main(int argc, char **argv) {
   if (resolve_trace_targets(target) != 0) return 1;
 
   DwarfParser dwarfparser(osd_probes, probe_units);
+  dwarfparser.request_type_size("OSDOp");
   if (load_dwarf_data(dwarfparser, target) != 0) return 1;
 
   if (export_json) return do_export_json(dwarfparser, target);

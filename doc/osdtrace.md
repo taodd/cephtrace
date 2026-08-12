@@ -183,11 +183,11 @@ sudo ./osdtrace -p 12345 -i dwarf.json --skip-version-check
 ### Example Output
 
 ```
-osd 1 pg 20.138 op_r size 8192 client 169954691 tid 150680 throttle_lat 2 recv_lat 11 dispatch_lat 12 queue_lat 41 osd_lat 35 bluestore_lat 231 op_lat 332
-osd 38 pg 20.14f op_r size 4096 client 169954691 tid 150884 throttle_lat 2 recv_lat 10 dispatch_lat 12 queue_lat 45 osd_lat 40 bluestore_lat 334 op_lat 443
-osd 38 pg 20.16b op_w size 12288 client 179589331 tid 24057 throttle_lat 2 recv_lat 26 dispatch_lat 15 queue_lat 57 osd_lat 187 peers [(34, 8079), (40, 5065)] bluestore_lat 10639 (prepare 107 aio_wait 0 (aio_size 0) seq_wait 6 kv_commit 10525) op_lat 10966
-osd 38 pg 20.0 subop_w size 17067 client 179589331 tid 24056 throttle_lat 0 recv_lat 56 dispatch_lat 12 queue_lat 42 osd_lat 50 bluestore_lat 11737 (prepare 68 aio_wait 0 (aio_size 0) seq_wait 8 kv_commit 11660) subop_lat 11943
-osd 1 pg 164.2 subop_w size 780 client 174758496 tid 4640511 throttle_lat 0 recv_lat 4 dispatch_lat 2 queue_lat 160 osd_lat 25 bluestore_lat 2988 (prepare 31 aio_wait 0 (aio_size 0) seq_wait 7 kv_commit 2949) subop_lat 3301
+osd 1 pg 20.138 op_r size 8192 client 169954691 tid 150680 object benchmark_data_host_3093113_object10 osd_ops [read] throttle_lat 2 recv_lat 11 dispatch_lat 12 queue_lat 41 osd_lat 35 bluestore_lat 231 op_lat 332
+osd 38 pg 20.14f op_r size 4096 client 169954691 tid 150884 object benchmark_data_host_3093113_object47 osd_ops [read] throttle_lat 2 recv_lat 10 dispatch_lat 12 queue_lat 45 osd_lat 40 bluestore_lat 334 op_lat 443
+osd 38 pg 20.16b op_w size 12288 client 179589331 tid 24057 object benchmark_data_host_3093113_object52 osd_ops [write] throttle_lat 2 recv_lat 26 dispatch_lat 15 queue_lat 57 osd_lat 187 peers [(34, 8079), (40, 5065)] bluestore_lat 10639 (prepare 107 aio_wait 0 (aio_size 0) seq_wait 6 kv_commit 10525) op_lat 10966
+osd 38 pg 20.0 subop_w size 17067 client 179589331 tid 24056 object benchmark_data_host_3093113_object52 txn_ops [write,setattrs] throttle_lat 0 recv_lat 56 dispatch_lat 12 queue_lat 42 osd_lat 50 bluestore_lat 11737 (prepare 68 aio_wait 0 (aio_size 0) seq_wait 8 kv_commit 11660) subop_lat 11943
+osd 1 pg 164.2 subop_w size 780 client 174758496 tid 4640511 object - txn_ops [touch,write] throttle_lat 0 recv_lat 4 dispatch_lat 2 queue_lat 160 osd_lat 25 bluestore_lat 2988 (prepare 31 aio_wait 0 (aio_size 0) seq_wait 7 kv_commit 2949) subop_lat 3301
 ```
 
 ### Operation Types
@@ -200,6 +200,11 @@ Each operation is labeled by type:
 | **op_w** | Write operation | Client → Primary OSD |
 | **subop_w** | Sub-write operation | Primary OSD → Replica OSDs |
 
+An op counts as a write when the primary built an ObjectStore transaction for
+it, not when it carried a payload. Class methods that only touch omap — RGW's
+`rgw.bucket_prepare_op`, `rgw.obj_remove` and friends — therefore show up as
+`op_w size 0`, matching the `subop_w` rows they produce on the replicas.
+
 ### Field Descriptions
 
 | Field | Description | Unit | Present In |
@@ -210,6 +215,9 @@ Each operation is labeled by type:
 | **size** | Operation data size | bytes | All ops |
 | **client** | Client global ID | - | All ops |
 | **tid** | Client request Transaction ID | - | All ops |
+| **object** | Target object name (`-` when unavailable; truncated to 63 bytes, unsafe bytes percent-encoded) | - | All ops |
+| **osd_ops** | Decoded client `CEPH_OSD_OP_*` names (up to 8, with truncation count) | - | op_r, op_w |
+| **txn_ops** | Replica `ObjectStore::Transaction::OP_*` names (up to 8, with truncation count) | - | subop_w |
 | **throttle_lat** | Message throttling delay | μs | All ops |
 | **recv_lat** | Message receive time | μs | All ops |
 | **dispatch_lat** | Dispatch to OSD layer | μs | All ops |
@@ -234,7 +242,7 @@ first entered into the OSD to the time when OSD has done processing and reply to
 Let's analyze a write operation in detail:
 
 ```
-osd 38 pg 20.16b op_w size 12288 client 179589331 tid 24057 throttle_lat 2 recv_lat 26 dispatch_lat 15 queue_lat 57 osd_lat 187 peers [(34, 8079), (40, 5065)] bluestore_lat 10639 (prepare 107 aio_wait 0 (aio_size 0) seq_wait 6 kv_commit 10525) op_lat 10966
+osd 38 pg 20.16b op_w size 12288 client 179589331 tid 24057 object benchmark_data_host_3093113_object52 osd_ops [write] throttle_lat 2 recv_lat 26 dispatch_lat 15 queue_lat 57 osd_lat 187 peers [(34, 8079), (40, 5065)] bluestore_lat 10639 (prepare 107 aio_wait 0 (aio_size 0) seq_wait 6 kv_commit 10525) op_lat 10966
 ```
 
 ### Stage-by-Stage Breakdown
@@ -399,4 +407,3 @@ man osdtrace
 ```
 
 Or see: [osdtrace.8](man/8/osdtrace.rst)
-

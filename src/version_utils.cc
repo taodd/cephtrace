@@ -441,7 +441,8 @@ bool check_process_executable_deleted(int pid, const std::string& exe_name) {
     return false;
 }
 
-bool is_ceph_version_squid_or_above(const std::string& version) {
+bool parse_ceph_version(const std::string& version, int& major, int& minor,
+                        int& patch) {
     if (version.empty() || version == "unknown") {
         return false;
     }
@@ -459,9 +460,16 @@ bool is_ceph_version_squid_or_above(const std::string& version) {
     }
 
     // Extract major.minor.patch by parsing until non-version characters
-    int major = 0, minor = 0, patch = 0;
+    major = minor = patch = 0;
     if (sscanf(ver_str.c_str(), "%d.%d.%d", &major, &minor, &patch) < 2) {
-        // Failed to parse at least major.minor
+        return false;
+    }
+    return true;
+}
+
+bool is_ceph_version_squid_or_above(const std::string& version) {
+    int major = 0, minor = 0, patch = 0;
+    if (!parse_ceph_version(version, major, minor, patch)) {
         return false;
     }
 
