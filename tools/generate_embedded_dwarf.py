@@ -56,6 +56,10 @@ def analyze_limits(all_data):
     max_funcs = 0
     max_var_fields = 0
     max_fields = 0
+    # Both default to 1 rather than 0: the arrays are fixed-size members of
+    # EmbeddedModule, and a zero-length array is not valid C++.
+    max_type_sizes = 1
+    max_member_offsets = 1
 
     for data in all_data:
         num_modules = 0
@@ -65,6 +69,12 @@ def analyze_limits(all_data):
             num_modules += 1
             if "func2pc" in val:
                 max_funcs = max(max_funcs, len(val["func2pc"]))
+            max_type_sizes = max(
+                max_type_sizes, len(val.get("type_sizes", {}))
+            )
+            max_member_offsets = max(
+                max_member_offsets, len(val.get("member_offsets", {}))
+            )
             if "func2vf" in val:
                 max_funcs = max(max_funcs, len(val["func2vf"]))
                 for func_data in val["func2vf"].values():
@@ -74,7 +84,14 @@ def analyze_limits(all_data):
                         max_fields = max(max_fields, len(vf.get("fields", [])))
         max_modules = max(max_modules, num_modules)
 
-    return max_modules, max_funcs, max_var_fields, max_fields
+    return (
+        max_modules,
+        max_funcs,
+        max_var_fields,
+        max_fields,
+        max_type_sizes,
+        max_member_offsets,
+    )
 
 
 def _c_str(s):
@@ -109,6 +126,7 @@ def _generate_var_field(vf, indent):
         f'{{{fields_str}}}}},')
 
 
+# pylint: disable-next=too-many-locals
 def _generate_module(mod_name, mod_data, indent):
     """Generate C++ initializer for one module entry."""
     lines = []
@@ -118,6 +136,26 @@ def _generate_module(mod_name, mod_data, indent):
     # build-id keying scheme; the embedded loader treats "" as
     # never-matches so legacy entries stay inert to the new lookup path).
     lines.append(f'{indent}      {_c_str(mod_data.get("build_id", ""))},')
+
+    type_sizes = mod_data.get("type_sizes", {})
+    lines.append(f'{indent}      {len(type_sizes)}, // num_type_sizes')
+    lines.append(f'{indent}      {{ // type_sizes')
+    for type_name, size in type_sizes.items():
+        lines.append(
+            f'{indent}        {{{_c_str(type_name)}, {size}}},'
+        )
+    lines.append(f'{indent}      }},')
+
+    member_offsets = mod_data.get("member_offsets", {})
+    lines.append(
+        f'{indent}      {len(member_offsets)}, // num_member_offsets'
+    )
+    lines.append(f'{indent}      {{ // member_offsets')
+    for member_key, offset in member_offsets.items():
+        lines.append(
+            f'{indent}        {{{_c_str(member_key)}, {offset}}},'
+        )
+    lines.append(f'{indent}      }},')
 
     func2pc = mod_data.get("func2pc", {})
     lines.append(f'{indent}      {len(func2pc)}, // num_func2pc')
@@ -172,7 +210,14 @@ def generate_version_entry(data, indent="    "):
 
 def generate_header(osdtrace, radostrace, limits):
     """Generate the complete C++ header file."""
-    max_modules, max_funcs, max_var_fields, max_fields = limits
+    (
+        max_modules,
+        max_funcs,
+        max_var_fields,
+        max_fields,
+        max_type_sizes,
+        max_member_offsets,
+    ) = limits
     header = f"""\
 #ifndef EMBEDDED_DWARF_DATA_H
 #define EMBEDDED_DWARF_DATA_H
@@ -191,6 +236,8 @@ def generate_header(osdtrace, radostrace, limits):
 #define EMB_MAX_FUNCS {max_funcs}
 #define EMB_MAX_VAR_FIELDS {max_var_fields}
 #define EMB_MAX_FIELDS {max_fields}
+#define EMB_MAX_TYPE_SIZES {max_type_sizes}
+#define EMB_MAX_MEMBER_OFFSETS {max_member_offsets}
 
 struct EmbeddedField {{
     int offset;
@@ -218,10 +265,26 @@ struct EmbeddedFuncPC {{
     uint64_t addr;
 }};
 
+struct EmbeddedTypeSize {{
+    const char* type_name;
+    uint32_t size;
+}};
+
+// Byte offset of a member within a type, keyed "Type::a.b"
+// (DwarfParser::member_offset_key).
+struct EmbeddedMemberOffset {{
+    const char* member_key;
+    uint32_t offset;
+}};
+
 struct EmbeddedModule {{
     const char* module_name;
     // Hex-encoded GNU build-id; "" for legacy entries.
     const char* build_id;
+    int num_type_sizes;
+    EmbeddedTypeSize type_sizes[EMB_MAX_TYPE_SIZES];
+    int num_member_offsets;
+    EmbeddedMemberOffset member_offsets[EMB_MAX_MEMBER_OFFSETS];
     int num_func2pc;
     EmbeddedFuncPC func2pc[EMB_MAX_FUNCS];
     int num_func2vf;
@@ -291,12 +354,13 @@ def main():
 
     all_data = osdtrace + radostrace
     limits = analyze_limits(all_data)
-    max_modules, max_funcs, max_var_fields, max_fields = limits
     print(
-        f"Limits: modules={max_modules},"
-        f" funcs={max_funcs},"
-        f" var_fields={max_var_fields},"
-        f" fields={max_fields}"
+        f"Limits: modules={limits[0]},"
+        f" funcs={limits[1]},"
+        f" var_fields={limits[2]},"
+        f" fields={limits[3]},"
+        f" type_sizes={limits[4]},"
+        f" member_offsets={limits[5]}"
     )
 
     header = generate_header(osdtrace, radostrace, limits)

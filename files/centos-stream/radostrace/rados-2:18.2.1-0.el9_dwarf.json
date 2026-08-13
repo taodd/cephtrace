@@ -7,6 +7,16 @@
       "Objecter::_finish_op": 5798224,
       "Objecter::_send_op": 5819104
     },
+    "type_sizes": {
+      "OSDOp": 152
+    },
+    "member_offsets": {
+      "OSDOp::indata._carriage": 96,
+      "OSDOp::op.cls.class_len": 6,
+      "OSDOp::op.cls.method_len": 7,
+      "OSDOp::op.extent.length": 14,
+      "OSDOp::op.extent.offset": 6
+    },
     "func2vf": {
       "Objecter::_finish_op": {
         "var_fields": [
@@ -391,6 +401,16 @@
       "Objecter::_finish_op": 950448,
       "Objecter::_send_op": 952544
     },
+    "type_sizes": {
+      "OSDOp": 152
+    },
+    "member_offsets": {
+      "OSDOp::indata._carriage": 96,
+      "OSDOp::op.cls.class_len": 6,
+      "OSDOp::op.cls.method_len": 7,
+      "OSDOp::op.extent.length": 14,
+      "OSDOp::op.extent.offset": 6
+    },
     "func2vf": {
       "Objecter::_finish_op": {
         "var_fields": [
@@ -773,6 +793,16 @@
     "build_id": "e0a6d6c7e0a9c330bf794861e8f15edc4f9aa347",
     "func2pc": {
       "Objecter::_finish_op": 4907264
+    },
+    "type_sizes": {
+      "OSDOp": 152
+    },
+    "member_offsets": {
+      "OSDOp::indata._carriage": 96,
+      "OSDOp::op.cls.class_len": 6,
+      "OSDOp::op.cls.method_len": 7,
+      "OSDOp::op.extent.length": 14,
+      "OSDOp::op.extent.offset": 6
     },
     "func2vf": {
       "Objecter::_finish_op": {

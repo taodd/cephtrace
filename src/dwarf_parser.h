@@ -6,6 +6,7 @@
 #include <elfutils/libdw.h>
 #include <elfutils/libdwfl.h>
 #include <elfutils/known-dwarf.h>
+#include <set>
 #include <vector>
 #include "nlohmann/json.hpp"  // nlohmann/json library
 
@@ -34,11 +35,20 @@ class DwarfParser {
   typedef std::map<std::string, Dwarf_Addr> func2pc_t;
   typedef std::map<std::string, func2vf_t> mod_func2vf_t;
   typedef std::map<std::string, func2pc_t> mod_func2pc_t;
+  typedef std::map<std::string, uint32_t> type_sizes_t;
+  typedef std::map<std::string, type_sizes_t> mod_type_sizes_t;
+  // Byte offset of a member within a type, keyed by "Type::a.b" (see
+  // member_offset_key).  Flat keys keep the JSON and embedded-table
+  // representations as simple as type_sizes'.
+  typedef std::map<std::string, uint32_t> member_offsets_t;
+  typedef std::map<std::string, member_offsets_t> mod_member_offsets_t;
 
  public:
   typedef std::map<std::string, std::vector<std::vector<std::string>>> probes_t;
   mod_func2vf_t mod_func2vf;
   mod_func2pc_t mod_func2pc;
+  mod_type_sizes_t mod_type_sizes;
+  mod_member_offsets_t mod_member_offsets;
   // basename → full path on disk for every add_module() call.  Lets
   // export_to_json() read each module's ELF build-id without the caller
   // needing to re-derive the path.
@@ -67,6 +77,24 @@ class DwarfParser {
   bool die_has_loclist(Dwarf_Die *);
   bool has_loclist();
   Dwarf_Die *resolve_typedecl(Dwarf_Die *);
+  Dwarf_Die *resolve_type_name(const std::string&);
+  void request_type_size(const std::string&);
+  int get_type_size(const std::string&, const std::string&) const;
+  // Byte offset of a (possibly nested) member within a type, e.g.
+  // request_member_offset("OSDOp", {"indata", "_carriage"}) yields
+  // offsetof(OSDOp, indata) + offsetof(bufferlist, _carriage).  Offsets
+  // contributed by base classes along the way are included, so a member
+  // inherited from a base resolves to its offset in the derived type.
+  // Requests must be registered before parse(); get_member_offset()
+  // returns -1 when the type or any path element could not be resolved.
+  void request_member_offset(const std::string&,
+                             const std::vector<std::string>&);
+  int get_member_offset(const std::string&, const std::string&,
+                        const std::vector<std::string>&) const;
+  // "Type::a.b" for a (type, path) pair -- the key used by mod_member_offsets,
+  // the JSON `member_offsets` object, and the embedded tables.
+  static std::string member_offset_key(const std::string&,
+                                       const std::vector<std::string>&);
   const char *cache_type_prefix(Dwarf_Die *);
   int iterate_types_in_cu(mod_cu_type_cache_t &, Dwarf_Die *);
   void traverse_module(Dwfl_Module *, Dwarf *, bool);
@@ -170,6 +198,18 @@ class DwarfParser {
 
   static const char* dwarf_attr_string(unsigned int attrnum);
   static const char* dwarf_form_string(unsigned int form);
+
+ private:
+  std::set<std::string> requested_type_sizes;
+  int resolve_type_size(Dwfl_Module *, const std::string&);
+  std::set<std::pair<std::string, std::vector<std::string>>>
+      requested_member_offsets;
+  // Look a type name up in this module's CU type cache, trying the bare name
+  // and the struct/union/enum-prefixed forms, and strip any typedef/cv
+  // wrappers.  Shared by resolve_type_size and resolve_member_offset.
+  bool find_cached_type(Dwfl_Module *, const std::string&, Dwarf_Die &);
+  int resolve_member_offset(Dwfl_Module *, const std::string&,
+                            const std::vector<std::string>&);
 };
 
 #endif

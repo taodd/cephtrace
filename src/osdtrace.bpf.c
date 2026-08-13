@@ -48,6 +48,9 @@ struct {
   __uint(max_entries, 8192);
 } hprobes SEC(".maps");
 
+// struct op_v no longer fits on the BPF stack after adding object_name.
+static struct op_v zero_op_v = {};
+
 static __always_inline int read_hprobe_varfield(struct pt_regs *ctx, int varid, void *dst, size_t size) {
   struct VarField *vf = bpf_map_lookup_elem(&hprobes, &varid);
   if (NULL != vf) {
@@ -73,6 +76,31 @@ static __always_inline int read_hprobe_utime(struct pt_regs *ctx, int varid, __u
   }
   bpf_printk("got NULL vf at varid %d\n", varid);
   return -1;
+}
+
+// Set by userspace before BPF load. OSDOp changed size in Squid when
+// buffer::list became smaller; ceph_osd_op remains the first member.
+const volatile __u32 CEPH_OSD_OP_SIZE = 0;
+
+static __always_inline void capture_decoded_osd_ops(
+    struct op_v *vp, __u64 ops_start, __u64 ops_finish)
+{
+  if (vp == NULL || CEPH_OSD_OP_SIZE == 0 || ops_start == 0 ||
+      ops_finish < ops_start)
+    return;
+
+  __u64 ops_bytes = ops_finish - ops_start;
+  vp->detail_ops_total = ops_bytes / CEPH_OSD_OP_SIZE;
+#pragma unroll
+  for (__u32 i = 0; i < MAX_DETAIL_OPS; ++i) {
+    if (i >= vp->detail_ops_total)
+      break;
+    __u16 opcode = 0;
+    bpf_probe_read_user(&opcode, sizeof(opcode),
+                        (void *)(ops_start + i * CEPH_OSD_OP_SIZE));
+    vp->detail_ops[i] = opcode;
+    vp->detail_ops_captured++;
+  }
 }
 
 SEC("uprobe")
@@ -133,27 +161,25 @@ int uprobe_enqueue_op(struct pt_regs *ctx) {
                key.owner, key.tid, age_ns);
   }
 
-  struct op_v value;
-  memset(&value, 0, sizeof(value));
-
-  value.enqueue_stamp = bpf_ktime_get_boot_ns();
-  value.pid = key.pid;
-  value.tid = key.tid;
-  value.owner = key.owner;
-  value.op_type = op_type;
-  value.pi.peer1 = -1;
-  value.pi.peer2 = -1;
-
-  if (read_hprobe_utime(ctx, varid++, &value.recv_stamp) != 0)
-    return 0;
-  if (read_hprobe_utime(ctx, varid++, &value.throttle_stamp) != 0)
-    return 0;
-  if (read_hprobe_utime(ctx, varid++, &value.recv_complete_stamp) != 0)
-    return 0;
-  if (read_hprobe_utime(ctx, varid++, &value.dispatch_stamp) != 0)
+  bpf_map_update_elem(&ops, &key, &zero_op_v, 0);
+  struct op_v *value = bpf_map_lookup_elem(&ops, &key);
+  if (value == NULL)
     return 0;
 
-  bpf_map_update_elem(&ops, &key, &value, 0);
+  value->enqueue_stamp = bpf_ktime_get_boot_ns();
+  value->pid = key.pid;
+  value->tid = key.tid;
+  value->owner = key.owner;
+  value->op_type = op_type;
+  value->pi.peer1 = -1;
+  value->pi.peer2 = -1;
+
+  if (read_hprobe_utime(ctx, varid++, &value->recv_stamp) != 0 ||
+      read_hprobe_utime(ctx, varid++, &value->throttle_stamp) != 0 ||
+      read_hprobe_utime(ctx, varid++, &value->recv_complete_stamp) != 0 ||
+      read_hprobe_utime(ctx, varid++, &value->dispatch_stamp) != 0) {
+    bpf_map_delete_elem(&ops, &key);
+  }
   return 0;
 }
 
@@ -231,6 +257,37 @@ int uprobe_execute_ctx(struct pt_regs *ctx) {
         key.owner, key.tid);
     return 0;
   }
+
+  // ctx->ops points at the fully decoded std::vector<OSDOp>. Read its start
+  // and finish pointers, then sample the bounded opcode prefix.
+  int ops_varid = 24;
+  if (CEPH_OSD_OP_SIZE != 0) {
+    __u64 ops_start = 0;
+    if (read_hprobe_varfield(ctx, ops_varid++, &ops_start,
+                             sizeof(ops_start)) == 0 &&
+        ops_start != 0) {
+      __u64 ops_finish = 0;
+      if (read_hprobe_varfield(ctx, ops_varid, &ops_finish,
+                               sizeof(ops_finish)) == 0)
+        capture_decoded_osd_ops(vp, ops_start, ops_finish);
+    }
+  }
+
+  __u64 name_len = 0;
+  if (read_hprobe_varfield(ctx, varid++, &name_len, sizeof(name_len)) != 0)
+    return 0;
+
+  __u64 str_addr = 0;
+  if (read_hprobe_varfield(ctx, varid++, &str_addr, sizeof(str_addr)) != 0)
+    return 0;
+  if (str_addr == 0 || name_len == 0)
+    return 0;
+
+  __u32 len = name_len;
+  if (len > OBJECT_NAME_LEN - 1)
+    len = OBJECT_NAME_LEN - 1;
+  bpf_probe_read_user(vp->object_name, len & (OBJECT_NAME_LEN - 1),
+                      (void *)str_addr);
 
   return 0;
 }
@@ -434,34 +491,37 @@ SEC("uprobe")
 int uprobe_log_op_stats_v2(struct pt_regs *ctx) {
   bpf_printk("Entered into uprobe_log_op_stats v2\n");
   int varid = 90;
-  struct op_v op;
-  memset(&op, 0, sizeof(op));
-  read_hprobe_varfield(ctx, varid++, &op.owner, sizeof(op.owner));
-  if (read_hprobe_varfield(ctx, varid++, &op.tid, sizeof(op.tid)) != 0)
+  struct op_v *op = bpf_ringbuf_reserve(&rb, sizeof(struct op_v), 0);
+  if (op == NULL)
     return 0;
+  *op = zero_op_v;
 
-  op.pid = get_pid();
-  op.reply_stamp = bpf_ktime_get_boot_ns();
-  ++varid;
-  op.wb = PT_REGS_PARM3(ctx);
-  ++varid;
-  op.rb = PT_REGS_PARM4(ctx);
-
-  if (read_hprobe_utime(ctx, varid++, &op.recv_stamp) != 0)
-    return 0;
-
-  if (read_hprobe_varfield(ctx, varid++, &op.op_type, sizeof(op.op_type)) != 0)
-    return 0;
-
-  bpf_printk(" log_op_stats_v2 client %lld tid %lld recv_stamp %lld ", op.owner, op.tid, op.recv_stamp);
-  bpf_printk(" inb %lld outb %lld op type %lld\n",op.wb, op.rb, op.op_type);
-
-  struct op_v *e = bpf_ringbuf_reserve(&rb, sizeof(struct op_v), 0);
-  if (NULL == e) {
+  read_hprobe_varfield(ctx, varid++, &op->owner, sizeof(op->owner));
+  if (read_hprobe_varfield(ctx, varid++, &op->tid, sizeof(op->tid)) != 0) {
+    bpf_ringbuf_discard(op, 0);
     return 0;
   }
-  *e = op;
-  bpf_ringbuf_submit(e, 0);
+
+  op->pid = get_pid();
+  op->reply_stamp = bpf_ktime_get_boot_ns();
+  ++varid;
+  op->wb = PT_REGS_PARM3(ctx);
+  ++varid;
+  op->rb = PT_REGS_PARM4(ctx);
+
+  if (read_hprobe_utime(ctx, varid++, &op->recv_stamp) != 0) {
+    bpf_ringbuf_discard(op, 0);
+    return 0;
+  }
+
+  if (read_hprobe_varfield(ctx, varid++, &op->op_type, sizeof(op->op_type)) != 0) {
+    bpf_ringbuf_discard(op, 0);
+    return 0;
+  }
+
+  bpf_printk(" log_op_stats_v2 client %lld tid %lld recv_stamp %lld ", op->owner, op->tid, op->recv_stamp);
+  bpf_printk(" inb %lld outb %lld op type %lld\n",op->wb, op->rb, op->op_type);
+  bpf_ringbuf_submit(op, 0);
   return 0;
 }
 
@@ -707,6 +767,24 @@ int uprobe_repop_commit(struct pt_regs *ctx)
   vp->wb = len;
   vp->reply_stamp = bpf_ktime_get_boot_ns();
 
+  // MOSDRepOp::poid is populated by finish_decode() in do_repop(), before
+  // repop_commit runs.  The userspace resolver lowers the Message* downcast
+  // in these varpaths to ordinary offsets and pointer dereferences.
+  __u64 name_len = 0;
+  if (read_hprobe_varfield(ctx, varid++, &name_len, sizeof(name_len)) == 0 &&
+      name_len > 0) {
+    __u64 str_addr = 0;
+    if (read_hprobe_varfield(ctx, varid++, &str_addr, sizeof(str_addr)) == 0 &&
+        str_addr != 0) {
+      __u32 name_read_len = name_len;
+      if (name_read_len > OBJECT_NAME_LEN - 1)
+        name_read_len = OBJECT_NAME_LEN - 1;
+      bpf_probe_read_user(vp->object_name,
+                          name_read_len & (OBJECT_NAME_LEN - 1),
+                          (void *)str_addr);
+    }
+  }
+
   struct op_v *e = bpf_ringbuf_reserve(&rb, sizeof(struct op_v), 0);
   if (NULL == e) {
     return 0;
@@ -772,8 +850,90 @@ int uprobe_log_latency_fn(struct pt_regs *ctx)
   if (NULL == e) {
     return 0;
   }
+
   *e = bsl;
   bpf_ringbuf_submit(e, 0);
+
+  return 0;
+}
+
+// BlueStore::_txc_add_transaction
+//
+// A replica MOSDRepOp no longer contains the original ceph_osd_op vector.
+// Its native lower-level operations are ObjectStore::Transaction::Op entries.
+// queue_transactions invokes this function once per Transaction while the
+// dequeue thread correlation is still present in ptid_opk.
+SEC("uprobe")
+int uprobe_txc_add_transaction(struct pt_regs *ctx)
+{
+  __u64 ptid = bpf_get_current_pid_tgid();
+  struct op_k *key = bpf_map_lookup_elem(&ptid_opk, &ptid);
+  if (key == NULL)
+    return 0;
+
+  struct op_v *vp = bpf_map_lookup_elem(&ops, key);
+  if (vp == NULL || vp->op_type != MSG_OSD_REPOP)
+    return 0;
+
+  int varid = 200;
+  __u64 txn_ops = 0;
+  if (read_hprobe_varfield(ctx, varid++, &txn_ops, sizeof(txn_ops)) != 0)
+    return 0;
+  if (txn_ops == 0)
+    return 0;
+  vp->detail_ops_total += txn_ops;
+
+  // op_bl reserves 32 packed Op entries per buffer. Capture only a
+  // single-buffer list; otherwise report the total but do not mislabel data
+  // from the append buffer as the beginning of the transaction.
+  __u32 num_buffers = 0;
+  if (read_hprobe_varfield(ctx, varid + 1, &num_buffers,
+                           sizeof(num_buffers)) != 0)
+    return 0;
+  if (num_buffers != 1) {
+    vp->detail_ops_captured = 0;
+    vp->detail_ops_unavailable = 1;
+    return 0;
+  }
+  if (vp->detail_ops_unavailable)
+    return 0;
+
+  __u64 carriage = 0;
+  if (read_hprobe_varfield(ctx, varid, &carriage, sizeof(carriage)) != 0)
+    return 0;
+  if (carriage == 0)
+    return 0;
+
+  __u64 raw = 0;
+  bpf_probe_read_user(&raw, sizeof(raw),
+                      (void *)(carriage + OSDTRACE_BUFFER_PTR_RAW_OFFSET));
+  if (raw == 0)
+    return 0;
+
+  __u32 buffer_offset = 0;
+  bpf_probe_read_user(&buffer_offset, sizeof(buffer_offset),
+                      (void *)(carriage + OSDTRACE_BUFFER_PTR_OFF_OFFSET));
+
+  __u64 raw_data = 0;
+  bpf_probe_read_user(&raw_data, sizeof(raw_data),
+                      (void *)(raw + OSDTRACE_BUFFER_RAW_DATA_OFFSET));
+  if (raw_data == 0)
+    return 0;
+  __u64 op_buffer = raw_data + buffer_offset;
+
+#pragma unroll
+  for (__u32 i = 0; i < MAX_DETAIL_OPS; ++i) {
+    if (i >= txn_ops)
+      break;
+    __u32 captured = vp->detail_ops_captured;
+    if (captured >= MAX_DETAIL_OPS)
+      break;
+    __u32 opcode = 0;
+    bpf_probe_read_user(&opcode, sizeof(opcode),
+                        (void *)(op_buffer + i * OBJECTSTORE_TXN_OP_SIZE));
+    vp->detail_ops[captured & (MAX_DETAIL_OPS - 1)] = opcode;
+    vp->detail_ops_captured = captured + 1;
+  }
 
   return 0;
 }

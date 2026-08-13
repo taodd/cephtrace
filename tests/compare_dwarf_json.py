@@ -169,6 +169,34 @@ def compare_binary_data(file1_name: str, data1: Dict[str, Any],
     all_errors = []
     all_success = True
 
+    # Legacy JSONs predate type_sizes. Preserve comparison compatibility until
+    # both files carry the metadata; once present in both, compare it exactly.
+    if "type_sizes" in data1 and "type_sizes" in data2 and \
+            data1["type_sizes"] != data2["type_sizes"]:
+        all_success = False
+        all_errors.append(
+            colored(
+                f"\n[type_sizes differences in {binary_path}]",
+                Colors.YELLOW
+            )
+        )
+        all_errors.append(f"  {file1_name}: {data1['type_sizes']}")
+        all_errors.append(f"  {file2_name}: {data2['type_sizes']}")
+
+    # Same both-present guard as type_sizes: JSONs generated before member
+    # offsets were recorded simply lack the key.
+    if "member_offsets" in data1 and "member_offsets" in data2 and \
+            data1["member_offsets"] != data2["member_offsets"]:
+        all_success = False
+        all_errors.append(
+            colored(
+                f"\n[member_offsets differences in {binary_path}]",
+                Colors.YELLOW
+            )
+        )
+        all_errors.append(f"  {file1_name}: {data1['member_offsets']}")
+        all_errors.append(f"  {file2_name}: {data2['member_offsets']}")
+
     # Compare func2pc
     if "func2pc" in data1 or "func2pc" in data2:
         func2pc1 = data1.get("func2pc", {})

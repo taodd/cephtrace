@@ -296,7 +296,9 @@ static int handle_event(void *ctx, void *data, size_t size) {
     std::stringstream ops_list;
     bool print_offset_length = false;
     ops_list << "[";
-    for (__u32 i = 0; i < op_v->ops_size; ++i) {
+    __u32 shown_ops = op_v->ops_size < MAX_CLIENT_OPS ? op_v->ops_size
+                                                      : MAX_CLIENT_OPS;
+    for (__u32 i = 0; i < shown_ops; ++i) {
         if (i) ops_list << " ";
         if (ceph_osd_op_extent(op_v->ops[i])) {
             ops_list << ceph_osd_op_str(op_v->ops[i]);
@@ -307,6 +309,10 @@ static int handle_event(void *ctx, void *data, size_t size) {
         } else {
             ops_list << ceph_osd_op_str(op_v->ops[i]);
         }
+    }
+    if (op_v->ops_size > shown_ops) {
+        if (shown_ops) ops_list << " ";
+        ops_list << "...+" << (op_v->ops_size - shown_ops);
     }
     ops_list << "]";
     std::string ops_str = ops_list.str();
@@ -660,6 +666,13 @@ int main(int argc, char **argv) {
   struct ring_buffer *rb;
 
   DwarfParser dwarfparser(rados_probes, probe_units);
+  // Layout facts the BPF program needs; must be registered before parse().
+  dwarfparser.request_type_size("OSDOp");
+  dwarfparser.request_member_offset("OSDOp", {"indata", "_carriage"});
+  dwarfparser.request_member_offset("OSDOp", {"op", "extent", "offset"});
+  dwarfparser.request_member_offset("OSDOp", {"op", "extent", "length"});
+  dwarfparser.request_member_offset("OSDOp", {"op", "cls", "class_len"});
+  dwarfparser.request_member_offset("OSDOp", {"op", "cls", "method_len"});
 
   // Use the new function to find library paths dynamically
   std::string librbd_path = find_library_path("librbd.so.1", process_id);
@@ -686,9 +699,6 @@ int main(int argc, char **argv) {
      return 1;
    }
 
-  // Set by the embedded path on success; used later by the squid-version
-  // gate so it doesn't need a separate dpkg/rpm shell-out.
-  bool used_embedded = false;
   std::string embedded_matched_version;
 
   if (import_json) {
@@ -736,7 +746,6 @@ int main(int argc, char **argv) {
       };
       if (!export_json && dwarfparser.import_from_embedded(
               rados_mods, "radostrace", &embedded_matched_version)) {
-          used_embedded = true;
           // Detailed match info already logged inside import_from_embedded.
       } else {
           clog << "Start to parse dwarf info" << endl;
@@ -785,47 +794,70 @@ int main(int argc, char **argv) {
    * Values differ between Ceph versions due to struct layout changes.
    */
 
-  // Determine Ceph version for the squid struct-offset gate, in priority order:
-  //   1. The "version" field of the JSON we just imported (-i path).
-  //   2. The matched embedded entry's version (build-id-keyed fast path).
-  //   3. dpkg/rpm package metadata for the live-parsed binary (live-parse path).
-  std::string ceph_version;
-  if (import_json) {
-    ceph_version = get_version_from_json(json_input_file);
-    clog << "Using version from JSON file: " << ceph_version << endl;
-  } else if (used_embedded && !embedded_matched_version.empty()) {
-    ceph_version = embedded_matched_version;
-    clog << "Using version from embedded match: " << ceph_version << endl;
-  } else {
-    ceph_version = get_package_version(librados_path);
-    clog << "Using version from package: " << ceph_version << endl;
-  }
+  // Struct layout the BPF program needs to walk the OSDOp vector and reach a
+  // class-method call's cls/method names.  Taken from the target's own DWARF:
+  // OSDOp shrank in Squid when buffer::list did, and a release-keyed table of
+  // sizes silently produces garbage the next time a layout moves -- the same
+  // reasoning that made osdtrace resolve sizeof(OSDOp) from DWARF.  All three
+  // traced libraries are searched because any of them may carry the type.
+  const std::string layout_mods[] = {libceph_common_path, librados_path,
+                                     librbd_path};
+  bool layout_ok = true;
 
-  bool is_squid_or_above = is_ceph_version_squid_or_above(ceph_version);
+  auto need_size = [&](const char *type) -> __u32 {
+    for (const auto& mod : layout_mods) {
+      int v = dwarfparser.get_type_size(mod, type);
+      if (v > 0) return static_cast<__u32>(v);
+    }
+    cerr << "No size for " << type << " in the DWARF data" << endl;
+    layout_ok = false;
+    return 0;
+  };
 
-  if (is_squid_or_above) {
-    // Ceph squid (19.2.0) and above: smaller OSDOp struct
-    skel->rodata->CEPH_OSD_OP_SIZE = 112;              // sizeof(OSDOp) for squid+
-    skel->rodata->CEPH_OSD_OP_BUFFER_CARRIAGE_OFFSET = 56; // offset to _carriage from OSDOp start for squid+
-    clog << "Using Ceph squid (19.2.0+) struct offsets" << endl;
-  } else {
-    // Ceph reef (18.x) and earlier
-    skel->rodata->CEPH_OSD_OP_SIZE = 152;              // sizeof(OSDOp) for pre-squid
-    skel->rodata->CEPH_OSD_OP_BUFFER_CARRIAGE_OFFSET = 96; // offset to _carriage from OSDOp start for pre-squid
-    clog << "Using Ceph pre-squid struct offsets" << endl;
-  }
+  auto need_off = [&](const char *type,
+                      const std::vector<std::string>& path) -> __u32 {
+    for (const auto& mod : layout_mods) {
+      int v = dwarfparser.get_member_offset(mod, type, path);
+      if (v >= 0) return static_cast<__u32>(v);
+    }
+    cerr << "No offset for " << DwarfParser::member_offset_key(type, path)
+         << " in the DWARF data" << endl;
+    layout_ok = false;
+    return 0;
+  };
 
-  skel->rodata->CEPH_OSD_OP_EXTENT_OFFSET_OFFSET = 6;   // offsetof(ceph_osd_op, extent.offset)
-  skel->rodata->CEPH_OSD_OP_EXTENT_LENGTH_OFFSET = 14;  // offsetof(ceph_osd_op, extent.length)
-  skel->rodata->CEPH_OSD_OP_CLS_CLASS_OFFSET = 6;       // offsetof(ceph_osd_op, cls.class_len)
-  skel->rodata->CEPH_OSD_OP_CLS_METHOD_OFFSET = 7;      // offsetof(ceph_osd_op, cls.method_len)
+  skel->rodata->CEPH_OSD_OP_SIZE = need_size("OSDOp");
+  skel->rodata->CEPH_OSD_OP_BUFFER_CARRIAGE_OFFSET =
+      need_off("OSDOp", {"indata", "_carriage"});
+  skel->rodata->CEPH_OSD_OP_EXTENT_OFFSET_OFFSET =
+      need_off("OSDOp", {"op", "extent", "offset"});
+  skel->rodata->CEPH_OSD_OP_EXTENT_LENGTH_OFFSET =
+      need_off("OSDOp", {"op", "extent", "length"});
+  skel->rodata->CEPH_OSD_OP_CLS_CLASS_OFFSET =
+      need_off("OSDOp", {"op", "cls", "class_len"});
+  skel->rodata->CEPH_OSD_OP_CLS_METHOD_OFFSET =
+      need_off("OSDOp", {"op", "cls", "method_len"});
+
+  // ptr_node and raw live in namespace ceph::buffer, which the DWARF type
+  // cache does not index (iterate_types_in_cu skips DW_TAG_namespace), so
+  // these two stay fixed.  Unlike the OSDOp layout they have never been
+  // version-gated here.
   skel->rodata->CEPH_OSD_OP_BUFFER_RAW_OFFSET = 8;      // offset to _raw in ptr_node
   skel->rodata->CEPH_OSD_OP_BUFFER_DATA_OFFSET = 32;    // offset to data in raw
 
-  clog << "Ceph struct offsets set in BPF globals:" << endl;
+  if (!layout_ok) {
+    cerr << "The DWARF data does not describe the OSDOp layout; regenerate it "
+            "with -j against a build with debug symbols" << endl;
+    radostrace_bpf__destroy(skel);
+    return 1;
+  }
+
+  clog << "Ceph struct offsets from DWARF:" << endl;
   clog << "  CEPH_OSD_OP_SIZE: " << skel->rodata->CEPH_OSD_OP_SIZE << endl;
   clog << "  CEPH_OSD_OP_EXTENT_OFFSET_OFFSET: " << skel->rodata->CEPH_OSD_OP_EXTENT_OFFSET_OFFSET << endl;
   clog << "  CEPH_OSD_OP_EXTENT_LENGTH_OFFSET: " << skel->rodata->CEPH_OSD_OP_EXTENT_LENGTH_OFFSET << endl;
+  clog << "  CEPH_OSD_OP_CLS_CLASS_OFFSET: " << skel->rodata->CEPH_OSD_OP_CLS_CLASS_OFFSET << endl;
+  clog << "  CEPH_OSD_OP_CLS_METHOD_OFFSET: " << skel->rodata->CEPH_OSD_OP_CLS_METHOD_OFFSET << endl;
   clog << "  CEPH_OSD_OP_BUFFER_CARRIAGE_OFFSET: " << skel->rodata->CEPH_OSD_OP_BUFFER_CARRIAGE_OFFSET << endl;
 
   /* Now load the BPF program with the configured globals */
