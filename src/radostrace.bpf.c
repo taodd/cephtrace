@@ -161,10 +161,11 @@ int uprobe_send_op(struct pt_regs *ctx) {
     return 0;
   }
 
-  val->ops_size &= 3;
+  // Keep ops_size as the true op count so userspace can report what was
+  // dropped; only the capture loop is bounded by the array size.
   val->offset = 0;
   val->length = 0;
-  for (__u32 i = 0; i  < 3; ++i) {
+  for (__u32 i = 0; i  < MAX_CLIENT_OPS; ++i) {
     if (i < val->ops_size) {
       bpf_probe_read_user(&(val->ops[i]), sizeof(val->ops[i]), (void *)m_start); 
       if (ceph_osd_op_extent(val->ops[i])){

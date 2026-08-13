@@ -172,7 +172,7 @@ The generated JSON file contains:
   each module (used to key the embedded-DWARF matching)
 - **Function addresses:** Locations of functions to probe
 - **Struct layouts:** Member offsets and sizes for Ceph internal structures
-- **Type information:** Data types and their properties
+- **Type sizes:** Exact module-local sizes for data types requested by a tracer
 
 The version information is automatically embedded and used for compatibility checking when importing.
 

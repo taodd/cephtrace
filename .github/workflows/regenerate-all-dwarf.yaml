@@ -1,0 +1,417 @@
+name: Regenerate all DWARF references
+
+on:
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: Distro scope to regenerate
+        type: choice
+        options:
+          - all
+          - centos-stream
+          - ubuntu
+          - debian
+        default: all
+      force:
+        description: Force regenerate even if references already exist
+        type: boolean
+        default: true
+      create_pr:
+        description: Create a Pull Request with regenerated JSON files
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  matrix:
+    runs-on: ubuntu-24.04
+    outputs:
+      value: ${{ steps.build.outputs.value }}
+      count: ${{ steps.build.outputs.count }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: build
+        env:
+          SCOPE: ${{ inputs.scope || 'all' }}
+          FORCE: ${{ inputs.force || 'true' }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import glob
+          import json
+          import os
+          import re
+
+          scope = os.environ["SCOPE"]
+          force = os.environ["FORCE"].lower() in ("true", "1", "yes")
+
+          groups = {}
+          for path in glob.glob("files/**/*.json", recursive=True):
+              parts = path.split("/")
+              if len(parts) < 4:
+                  continue
+              distro = parts[1]
+              if scope != "all" and distro != scope:
+                  continue
+
+              data = json.load(open(path, encoding="utf-8"))
+              if not force:
+                  has_size = any(
+                      isinstance(value, dict)
+                      and value.get("type_sizes", {}).get("OSDOp")
+                      for value in data.values()
+                  )
+                  if has_size:
+                      continue
+
+              version = data.get("version", "unknown")
+              groups.setdefault((distro, version), []).append(path)
+
+          include = []
+          for (distro, version), paths in sorted(groups.items()):
+              key = re.sub(r"[^A-Za-z0-9_.-]", "_", f"{distro}-{version}")
+              include.append({
+                  "key": key,
+                  "distro": distro,
+                  "version": version,
+                  "files": sorted(paths),
+              })
+
+          print(f"count={len(include)}")
+          print("value=" + json.dumps({"include": include}, separators=(",", ":")))
+          PY
+
+  generate:
+    needs: matrix
+    if: ${{ needs.matrix.outputs.count != '0' }}
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix: ${{ fromJson(needs.matrix.outputs.value) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    env:
+      FILES_JSON: ${{ toJson(matrix.files) }}
+      REF_VERSION: ${{ matrix.version }}
+      REF_DISTRO: ${{ matrix.distro }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install build tools and podman
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++ clang libelf-dev libc6-dev-i386 \
+            libdw-dev debuginfod podman python3
+
+      - name: Build cephtrace generators (Ubuntu/Debian)
+        if: ${{ matrix.distro != 'centos-stream' }}
+        run: make -j2 osdtrace radostrace
+
+      - name: Regenerate CentOS Stream references
+        if: ${{ matrix.distro == 'centos-stream' }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import subprocess
+
+          files = json.loads(os.environ["FILES_JSON"])
+          version = os.environ["REF_VERSION"]
+
+          # Determine package version from existing reference JSON
+          pkgver = None
+          tools = set()
+          for path in files:
+              data = json.load(open(path, encoding="utf-8"))
+              pkgver = data.get("version", version)
+              if "/osdtrace/" in path:
+                  tools.add("osdtrace")
+              if "/radostrace/" in path:
+                  tools.add("radostrace")
+
+          tools_arg = ",".join(sorted(tools))
+          print(f"Running gen_dwarf_for_version.sh centos-stream {tools_arg} {version} {pkgver}")
+          cmd = ["./tools/gen_dwarf_for_version.sh", "centos-stream", tools_arg, version, pkgver]
+          subprocess.run(cmd, check=True)
+
+          for path in files:
+              output = pathlib.Path("out") / path
+              output.parent.mkdir(parents=True, exist_ok=True)
+              data = json.load(open(path, encoding="utf-8"))
+              output.write_text(json.dumps(data, indent=4) + "\n")
+          PY
+
+      - name: Regenerate Ubuntu/Debian references
+        if: ${{ matrix.distro != 'centos-stream' }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import shutil
+          import subprocess
+          import time
+          import re
+          import urllib.parse
+          import urllib.request
+
+          files = json.loads(os.environ["FILES_JSON"])
+          distro = os.environ["REF_DISTRO"]
+          version = os.environ["REF_VERSION"]
+
+          package_root = pathlib.Path("/tmp/package-root")
+          package_root.mkdir(exist_ok=True)
+
+          references = [json.load(open(path, encoding="utf-8")) for path in files]
+          required_modules = {
+              module
+              for reference in references
+              for module, data in reference.items()
+              if isinstance(data, dict) and ("func2pc" in data or "func2vf" in data)
+          }
+          package_modules = set(required_modules)
+          if any("/radostrace/" in path for path in files):
+              package_modules.add("librbd.so.1")
+
+          def load_url(url):
+              for attempt in range(8):
+                  try:
+                      return json.load(urllib.request.urlopen(url, timeout=180))
+                  except Exception:
+                      if attempt == 7:
+                          raise
+                      time.sleep(15 * (attempt + 1))
+
+          if distro == "ubuntu":
+              build_url = None
+              if "~cloud" in version:
+                  if version == "17.2.9-0ubuntu0.22.04.1~cloud0":
+                      archive = "yoga-proposed"
+                  elif version == "19.2.3-0ubuntu0.24.04.2~cloud0":
+                      archive = "caracal-proposed"
+                  else:
+                      archive = "yoga-staging" if version.startswith("17.") else "caracal-staging"
+                  api_url = f"https://api.launchpad.net/1.0/~ubuntu-cloud-archive/+archive/ubuntu/{archive}"
+                  query = urllib.parse.urlencode({
+                      "ws.op": "getBuildRecords",
+                      "source_name": "ceph",
+                      "arch_tag": "amd64",
+                      "ws.size": "300",
+                  })
+                  records = load_url(f"{api_url}?{query}")
+                  for build in records.get("entries", []):
+                      if (build.get("source_package_version") == version
+                              and build.get("arch_tag") == "amd64"
+                              and build.get("buildstate") == "Successfully built"):
+                          build_url = build["web_link"] + "/+files"
+                          break
+              else:
+                  source_url = f"https://launchpad.net/ubuntu/+source/ceph/{version}"
+                  source_html = subprocess.check_output(
+                      [
+                          "curl", "-fsSL", "--retry", "12",
+                          "--retry-delay", "10", "--retry-all-errors",
+                          "--connect-timeout", "30", "--max-time", "600",
+                          source_url,
+                      ],
+                      text=True
+                  )
+                  builds = sorted(set(re.findall(r'/[^" ]+/\+build/[0-9]+', source_html)))
+                  for build in builds:
+                      api_url = f"https://api.launchpad.net/1.0{build}"
+                      try:
+                          metadata = load_url(api_url)
+                      except Exception:
+                          continue
+                      if metadata.get("arch_tag") == "amd64":
+                          build_url = f"https://launchpad.net{build}/+files"
+                          break
+
+              if not build_url:
+                  raise RuntimeError(f"no amd64 Launchpad build found for {version}")
+
+              package_for_module = {
+                  "ceph-osd": "ceph-osd",
+                  "libceph-common.so.2": "ceph-common",
+                  "librados.so.2": "librados2",
+                  "librbd.so.1": "librbd1",
+              }
+              packages = []
+              for module in sorted(package_modules):
+                  package = package_for_module[module]
+                  packages.extend((package, f"{package}-dbgsym"))
+
+              for package in packages:
+                  extension = "ddeb" if package.endswith("-dbgsym") else "deb"
+                  artifact = f"{package}_{version}_amd64.{extension}"
+                  destination = pathlib.Path("/tmp") / artifact
+
+                  if "~cloud" in version:
+                      pool = "https://ubuntu-cloud.archive.canonical.com/ubuntu/pool/main/c/ceph"
+                  elif extension == "ddeb":
+                      pool = "https://ddebs.ubuntu.com/pool/main/c/ceph"
+                  else:
+                      pool = "https://archive.ubuntu.com/ubuntu/pool/main/c/ceph"
+
+                  pool_url = f"{pool}/{artifact}"
+                  sources = (pool_url, f"{build_url}/{artifact}")
+                  for source_url in sources:
+                      result = subprocess.run([
+                          "curl", "-fL", "--continue-at", "-",
+                          "--retry", "12", "--retry-delay", "10",
+                          "--retry-connrefused",
+                          "--connect-timeout", "30", "--max-time", "3600",
+                          "-o", str(destination), source_url
+                      ])
+                      if result.returncode == 0:
+                          break
+                  else:
+                      raise subprocess.CalledProcessError(result.returncode, result.args)
+
+                  subprocess.run(["dpkg-deb", "-x", str(destination), str(package_root)], check=True)
+
+          else: # debian
+              package_for_module = {
+                  "ceph-osd": "ceph-osd",
+                  "libceph-common.so.2": "ceph-common",
+                  "librados.so.2": "librados2",
+                  "librbd.so.1": "librbd1",
+              }
+              packages = []
+              for module in sorted(package_modules):
+                  package = package_for_module[module]
+                  packages.extend((package, f"{package}-dbg"))
+
+              encoded_version = urllib.parse.quote(version, safe="")
+              for package in packages:
+                  api_url = f"https://snapshot.debian.org/mr/binary/{package}/{encoded_version}/binfiles"
+                  metadata = load_url(api_url)
+                  match = next((entry for entry in metadata["result"] if entry["architecture"] == "amd64"), None)
+                  if not match:
+                      raise RuntimeError(f"no amd64 snapshot for {package} {version}")
+
+                  destination = pathlib.Path("/tmp") / f"{package}.deb"
+                  subprocess.run([
+                      "curl", "-fL", "--continue-at", "-",
+                      "--retry", "12", "--retry-delay", "10",
+                      "--retry-all-errors", "--connect-timeout", "30",
+                      "--max-time", "3600", "-o", str(destination),
+                      f"https://snapshot.debian.org/file/{match['hash']}"
+                  ], check=True)
+                  subprocess.run(["dpkg-deb", "-x", str(destination), str(package_root)], check=True)
+
+          # Install extracted binaries, libraries, and debug info into system locations (/usr/)
+          subprocess.run(["sudo", "cp", "-rn", f"{package_root}/usr/.", "/usr/"], check=True)
+          subprocess.run(["sudo", "ldconfig"], check=True)
+
+          for ref_path in files:
+              reference = json.load(open(ref_path, encoding="utf-8"))
+              output = pathlib.Path("out") / ref_path
+              output.parent.mkdir(parents=True, exist_ok=True)
+
+              if "/osdtrace/" in ref_path:
+                  command = ["./osdtrace", "-j", str(output)]
+              else:
+                  command = ["./radostrace", "-j", str(output)]
+
+              subprocess.run(command, check=True, timeout=1800)
+              generated = json.load(open(output, encoding="utf-8"))
+              generated["version"] = version
+              generated["arch"] = reference.get("arch", "amd64")
+              output.write_text(json.dumps(generated, indent=4) + "\n")
+
+              modules = {
+                  key: value for key, value in reference.items()
+                  if isinstance(value, dict) and ("func2pc" in value or "func2vf" in value)
+              }
+              generated_modules = {
+                  key: value for key, value in generated.items()
+                  if isinstance(value, dict) and ("func2pc" in value or "func2vf" in value)
+              }
+              for module, data in modules.items():
+                  assert generated_modules[module]["build_id"] == data["build_id"]
+              assert any(
+                  data.get("type_sizes", {}).get("OSDOp")
+                  for data in generated_modules.values()
+              )
+              if "/radostrace/" in ref_path:
+                  assert any(
+                      len(data.get("member_offsets", {})) == 5
+                      for data in generated_modules.values()
+                  )
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: archived-dwarf-${{ matrix.key }}
+          path: out/files/**/*.json
+          if-no-files-found: error
+          retention-days: 3
+
+  create-pr:
+    needs: [matrix, generate]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools and python
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++ clang libelf-dev libc6-dev-i386 \
+            libdw-dev python3
+
+      - name: Download all regenerated DWARF artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/downloaded-artifacts
+
+      - name: Update repository JSON files from artifacts
+        run: |
+          python3 - <<'PY'
+          import glob
+          import shutil
+          import os
+
+          for path in glob.glob("/tmp/downloaded-artifacts/**/*.json", recursive=True):
+              filename = os.path.basename(path)
+              # Search for target file in files/
+              matches = glob.glob(f"files/**/{filename}", recursive=True)
+              for target in matches:
+                  shutil.copy2(path, target)
+                  print(f"Updated {target}")
+          PY
+
+      - name: Re-aggregate embedded DWARF header and verify build
+        run: |
+          python3 tools/generate_embedded_dwarf.py
+          make clean
+          make -j"$(nproc)" osdtrace radostrace
+
+      - name: Create Pull Request if files changed
+        if: ${{ inputs.create_pr }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -z "$(git status --porcelain files/ src/embedded_dwarf.h)" ]; then
+            echo "No files modified, skipping PR creation."
+            exit 0
+          fi
+
+          BRANCH="chore/regenerate-dwarf-${{ github.run_id }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add files/ src/embedded_dwarf.h
+          git commit -m "chore: regenerate all DWARF references"
+          git push origin "$BRANCH"
+
+          gh pr create \
+            --title "chore: regenerate all DWARF references" \
+            --body "Automated DWARF reference regeneration triggered via workflow dispatch." \
+            --head "$BRANCH" \
+            --base "${{ github.ref_name }}"

@@ -90,6 +90,14 @@ bool check_executable_deleted(int process_id, const std::string& exe_name);
 bool is_ceph_version_squid_or_above(const std::string& version);
 
 /**
+ * Parse a Ceph package version into numeric components.
+ *
+ * @return true when at least major.minor could be parsed
+ */
+bool parse_ceph_version(const std::string& version, int& major, int& minor,
+                        int& patch);
+
+/**
  * Get the version string from a DWARF JSON file.
  *
  * @param json_file The path to the JSON file

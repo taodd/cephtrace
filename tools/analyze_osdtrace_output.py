@@ -50,6 +50,10 @@ pattern_lat = re.compile(
     r"size\s+(?P<size>\d+)\s+"
     r"client\s+(?P<client>\d+)\s+"
     r"tid\s+(?P<tid>\d+)\s+"
+    # object name and decoded op types precede the latencies, and are absent
+    # from output produced before they were captured
+    r"(?:object\s+(?P<object>\S+)\s+)?"
+    r"(?:(?:osd_ops|txn_ops)\s+(?P<ops>\[.*?\])\s+)?"
     r"throttle_lat\s+(?P<throttle_lat>\d+)\s+"
     r"recv_lat\s+(?P<recv_lat>\d+)\s+"
     r"dispatch_lat\s+(?P<dispatch_lat>\d+)\s+"
@@ -85,6 +89,16 @@ def parse_line(line: str = "") -> list:
         data[BD] = {k: int(v) for k, v in details}
     else:
         data[BD] = {}
+
+    # Object name and decoded op types are absent from output produced before
+    # they were captured.  Drop the unmatched groups instead of normalizing
+    # them, so such lines render exactly as they did before those fields
+    # existed rather than gaining an "object None ops None".  Deleting (rather
+    # than reassigning) also keeps the surviving keys in their printf order,
+    # which the sorted view relies on.
+    for key in ("object", "ops"):
+        if data.get(key) is None:
+            del data[key]
 
     # Convert all relevant numeric fields
     for key in [
