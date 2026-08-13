@@ -597,7 +597,7 @@ void print_subop_w(osd_op_t &op, int osd_id) {
 	 "object %s txn_ops %s "
 	 "throttle_lat %lld recv_lat %lld dispatch_lat %lld "
 	 "queue_lat %lld osd_lat %lld "
-	 "bluestore_lat %lld "
+	 "bluestore_lat %lld (prepare %lld aio_wait %lld (aio_size %d) seq_wait %lld kv_commit %lld) "
 	 "subop_lat %lld\n",
          osd_id, op.pg.m_pool, pgid.c_str(),
 	  op.wb, op.client_id, op.req_id,
@@ -605,7 +605,7 @@ void print_subop_w(osd_op_t &op, int osd_id) {
 	  detail_ops.c_str(),
 	  op.throttle_lat, op.recv_lat, op.dispatch_lat,
 	  op.queue_lat, op.osd_lat,
-	  op.bs_lat,
+	  op.bs_lat, op.bs_prepare_lat, op.bs_aio_wait_lat, op.aio_size, op.bs_pg_seq_lat, op.bs_kv_commit_lat,
 	  op.op_lat);
   print_delayed_info(op);
 }
@@ -623,7 +623,7 @@ void print_op_w(osd_op_t &op, int osd_id) {
 	 "object %s osd_ops %s "
 	 "throttle_lat %lld recv_lat %lld dispatch_lat %lld "
 	 "queue_lat %lld osd_lat %lld peers [(%d, %lld), (%d, %lld)] "
-	 "bluestore_lat %lld "
+	 "bluestore_lat %lld (prepare %lld aio_wait %lld (aio_size %d) seq_wait %lld kv_commit %lld) "
 	 "op_lat %lld\n",
          osd_id, op.pg.m_pool, pgid.c_str(),
 	  op.wb, op.client_id, op.req_id,
@@ -631,7 +631,7 @@ void print_op_w(osd_op_t &op, int osd_id) {
 	  detail_ops.c_str(),
 	  op.throttle_lat, op.recv_lat, op.dispatch_lat,
 	  op.queue_lat, op.osd_lat,  op.peers[0].peer, op.peers[0].latency, op.peers[1].peer, op.peers[1].latency,
-	  op.bs_lat,
+	  op.bs_lat, op.bs_prepare_lat, op.bs_aio_wait_lat, op.aio_size, op.bs_pg_seq_lat, op.bs_kv_commit_lat,
 	  op.op_lat);
   print_delayed_info(op);
 }
