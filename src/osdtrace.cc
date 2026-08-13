@@ -598,8 +598,7 @@ void print_subop_w(osd_op_t &op, int osd_id) {
 	 "throttle_lat %lld recv_lat %lld dispatch_lat %lld "
 	 "queue_lat %lld osd_lat %lld "
 	 "bluestore_lat %lld "
-	 "subop_lat %lld
-",
+	 "subop_lat %lld\n",
          osd_id, op.pg.m_pool, pgid.c_str(),
 	  op.wb, op.client_id, op.req_id,
 	  object_name.c_str(),
@@ -625,8 +624,7 @@ void print_op_w(osd_op_t &op, int osd_id) {
 	 "throttle_lat %lld recv_lat %lld dispatch_lat %lld "
 	 "queue_lat %lld osd_lat %lld peers [(%d, %lld), (%d, %lld)] "
 	 "bluestore_lat %lld "
-	 "op_lat %lld
-",
+	 "op_lat %lld\n",
          osd_id, op.pg.m_pool, pgid.c_str(),
 	  op.wb, op.client_id, op.req_id,
 	  object_name.c_str(),
