@@ -50,14 +50,12 @@ TRACE_EXPECTED_IO_SIZE=2097152
 #
 #   subop_w | osd | pool | pg | size | client | tid
 #           | throttle_lat | recv_lat | dispatch_lat | queue_lat | osd_lat
-#           | bluestore_lat | prepare_lat | aio_wait_lat | seq_wait_lat
-#           | kv_commit_lat | subop_lat | object | txn_ops
+#           | bluestore_lat | subop_lat | object | txn_ops
 #
 #   op_w    | osd | pool | pg | size | client | tid
 #           | throttle_lat | recv_lat | dispatch_lat | queue_lat | osd_lat
 #           | peer0_id | peer0_lat | peer1_id | peer1_lat
-#           | bluestore_lat | prepare_lat | aio_wait_lat | seq_wait_lat
-#           | kv_commit_lat | op_lat | object | osd_ops
+#           | bluestore_lat | op_lat | object | osd_ops
 #
 # The object field is "-" when the trace could not capture the object name
 # (the relevant capture point was not reached, or the DWARF data predates
@@ -69,7 +67,7 @@ TRACE_EXPECTED_IO_SIZE=2097152
 # peer-latency token (`(-1, 18446743169577026)]`), and a naive `$NF + 0`
 # verifier mistakes that for the total op_lat.  This parser instead
 # matches each op type by exact NF AND by literal field-name landmarks
-# (e.g. `$28 == "op_lat"` for op_r, `$26 == "peers"` + `$43 == "op_lat"`
+# (e.g. `$28 == "op_lat"` for op_r, `$26 == "peers"` + `$33 == "op_lat"`
 # for op_w).  Truncated rows fail at least one landmark and are dropped.
 # Same logic drops rows with the `[delayed%d ... ]` continuation tokens
 # appended (their NF is inflated past the expected count).
@@ -100,25 +98,24 @@ _osdtrace_rows() {
                     $7, $9, $11, \
                     $17, $19, $21, $23, $25, \
                     $27, $29, $13, $15)
-            } else if (op == "subop_w" && NF == 39 && \
+            } else if (op == "subop_w" && NF == 29 && \
                        $12 == "object" && $14 == "txn_ops" && \
-                       $26 == "bluestore_lat" && $28 == "(prepare" && \
-                       $38 == "subop_lat") {
-                candidate = sprintf("subop_w|%d|%s|%s|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%s|%s", \
+                       $26 == "bluestore_lat" && $28 == "subop_lat") {
+                candidate = sprintf("subop_w|%d|%s|%s|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%s|%s", \
                     $2, pg[1], pg[2], \
                     $7, $9, $11, \
                     $17, $19, $21, $23, $25, \
-                    $27, $29, $31, $35, num($37), $39, $13, $15)
-            } else if (op == "op_w" && NF == 44 && \
+                    $27, $29, $13, $15)
+            } else if (op == "op_w" && NF == 34 && \
                        $12 == "object" && $14 == "osd_ops" && \
                        $26 == "peers" && $31 == "bluestore_lat" && \
-                       $33 == "(prepare" && $43 == "op_lat") {
-                candidate = sprintf("op_w|%d|%s|%s|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%s|%s", \
+                       $33 == "op_lat") {
+                candidate = sprintf("op_w|%d|%s|%s|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%s|%s", \
                     $2, pg[1], pg[2], \
                     $7, $9, $11, \
                     $17, $19, $21, $23, $25, \
                     num($27), num($28), num($29), num($30), \
-                    $32, $34, $36, $40, num($42), $44, $13, $15)
+                    $32, $34, $13, $15)
             }
             # else: row was truncated, has [delayed...] suffix, or printed
             #       an op type we do not parse.  Dropped silently.
@@ -251,8 +248,8 @@ _verify_osdtrace_output_impl() {
     # Per-op-type field lists, used to populate $row from the parser
     # output and to enumerate sub-latency fields for the strict bound.
     local -a OP_R_SUBLATS=(throttle_lat recv_lat dispatch_lat queue_lat osd_lat bluestore_lat)
-    local -a SUBOP_W_SUBLATS=(throttle_lat recv_lat dispatch_lat queue_lat osd_lat bluestore_lat prepare_lat aio_wait_lat seq_wait_lat kv_commit_lat)
-    local -a OP_W_SUBLATS=(throttle_lat recv_lat dispatch_lat queue_lat osd_lat bluestore_lat prepare_lat aio_wait_lat seq_wait_lat kv_commit_lat)
+    local -a SUBOP_W_SUBLATS=(throttle_lat recv_lat dispatch_lat queue_lat osd_lat bluestore_lat)
+    local -a OP_W_SUBLATS=(throttle_lat recv_lat dispatch_lat queue_lat osd_lat bluestore_lat)
 
     while IFS= read -r line; do
         [ -z "$line" ] && continue
@@ -276,8 +273,7 @@ _verify_osdtrace_output_impl() {
                     row[size] row[client] row[tid] \
                     row[throttle_lat] row[recv_lat] row[dispatch_lat] \
                     row[queue_lat] row[osd_lat] \
-                    row[bluestore_lat] row[prepare_lat] row[aio_wait_lat] \
-                    row[seq_wait_lat] row[kv_commit_lat] row[op_lat] \
+                    row[bluestore_lat] row[op_lat] \
                     row[object] row[detail_ops] <<< "$line"
                 subop_w_total=$((subop_w_total + 1))
                 _osdtrace_check_common || return 1
@@ -289,8 +285,7 @@ _verify_osdtrace_output_impl() {
                     row[throttle_lat] row[recv_lat] row[dispatch_lat] \
                     row[queue_lat] row[osd_lat] \
                     row[peer0_id] row[peer0_lat] row[peer1_id] row[peer1_lat] \
-                    row[bluestore_lat] row[prepare_lat] row[aio_wait_lat] \
-                    row[seq_wait_lat] row[kv_commit_lat] row[op_lat] \
+                    row[bluestore_lat] row[op_lat] \
                     row[object] row[detail_ops] <<< "$line"
                 op_w_total=$((op_w_total + 1))
                 _osdtrace_check_common || return 1

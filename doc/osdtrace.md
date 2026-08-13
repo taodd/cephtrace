@@ -185,9 +185,9 @@ sudo ./osdtrace -p 12345 -i dwarf.json --skip-version-check
 ```
 osd 1 pg 20.138 op_r size 8192 client 169954691 tid 150680 object benchmark_data_host_3093113_object10 osd_ops [read] throttle_lat 2 recv_lat 11 dispatch_lat 12 queue_lat 41 osd_lat 35 bluestore_lat 231 op_lat 332
 osd 38 pg 20.14f op_r size 4096 client 169954691 tid 150884 object benchmark_data_host_3093113_object47 osd_ops [read] throttle_lat 2 recv_lat 10 dispatch_lat 12 queue_lat 45 osd_lat 40 bluestore_lat 334 op_lat 443
-osd 38 pg 20.16b op_w size 12288 client 179589331 tid 24057 object benchmark_data_host_3093113_object52 osd_ops [write] throttle_lat 2 recv_lat 26 dispatch_lat 15 queue_lat 57 osd_lat 187 peers [(34, 8079), (40, 5065)] bluestore_lat 10639 (prepare 107 aio_wait 0 (aio_size 0) seq_wait 6 kv_commit 10525) op_lat 10966
-osd 38 pg 20.0 subop_w size 17067 client 179589331 tid 24056 object benchmark_data_host_3093113_object52 txn_ops [write,setattrs] throttle_lat 0 recv_lat 56 dispatch_lat 12 queue_lat 42 osd_lat 50 bluestore_lat 11737 (prepare 68 aio_wait 0 (aio_size 0) seq_wait 8 kv_commit 11660) subop_lat 11943
-osd 1 pg 164.2 subop_w size 780 client 174758496 tid 4640511 object - txn_ops [touch,write] throttle_lat 0 recv_lat 4 dispatch_lat 2 queue_lat 160 osd_lat 25 bluestore_lat 2988 (prepare 31 aio_wait 0 (aio_size 0) seq_wait 7 kv_commit 2949) subop_lat 3301
+osd 38 pg 20.16b op_w size 12288 client 179589331 tid 24057 object benchmark_data_host_3093113_object52 osd_ops [write] throttle_lat 2 recv_lat 26 dispatch_lat 15 queue_lat 57 osd_lat 187 peers [(34, 8079), (40, 5065)] bluestore_lat 10639 op_lat 10966
+osd 38 pg 20.0 subop_w size 17067 client 179589331 tid 24056 object benchmark_data_host_3093113_object52 txn_ops [write,setattrs] throttle_lat 0 recv_lat 56 dispatch_lat 12 queue_lat 42 osd_lat 50 bluestore_lat 11737 subop_lat 11943
+osd 1 pg 164.2 subop_w size 780 client 174758496 tid 4640511 object - txn_ops [touch,write] throttle_lat 0 recv_lat 4 dispatch_lat 2 queue_lat 160 osd_lat 25 bluestore_lat 2988 subop_lat 3301
 ```
 
 ### Operation Types
@@ -225,11 +225,6 @@ it, not when it carried a payload. Class methods that only touch omap — RGW's
 | **osd_lat** | OSD processing time | μs | All ops |
 | **peers** | Replica wait times | [(osd, μs), ...] | op_w only |
 | **bluestore_lat** | Total BlueStore time | μs | All ops |
-| **prepare** | Transaction prep | μs | Write ops |
-| **aio_wait** | Async I/O wait | μs | Write ops |
-| **aio_size** | Async I/O size | bytes | Write ops |
-| **seq_wait** | Sequencer wait | μs | Write ops |
-| **kv_commit** | KV store commit | μs | Write ops |
 | **op_lat / subop_lat** | Total end-to-end latency | μs | All ops |
 
 Note:
@@ -242,7 +237,7 @@ first entered into the OSD to the time when OSD has done processing and reply to
 Let's analyze a write operation in detail:
 
 ```
-osd 38 pg 20.16b op_w size 12288 client 179589331 tid 24057 object benchmark_data_host_3093113_object52 osd_ops [write] throttle_lat 2 recv_lat 26 dispatch_lat 15 queue_lat 57 osd_lat 187 peers [(34, 8079), (40, 5065)] bluestore_lat 10639 (prepare 107 aio_wait 0 (aio_size 0) seq_wait 6 kv_commit 10525) op_lat 10966
+osd 38 pg 20.16b op_w size 12288 client 179589331 tid 24057 object benchmark_data_host_3093113_object52 osd_ops [write] throttle_lat 2 recv_lat 26 dispatch_lat 15 queue_lat 57 osd_lat 187 peers [(34, 8079), (40, 5065)] bluestore_lat 10639 op_lat 10966
 ```
 
 ### Stage-by-Stage Breakdown
@@ -290,29 +285,8 @@ osd 38 pg 20.16b op_w size 12288 client 179589331 tid 24057 object benchmark_dat
 
 **bluestore_lat: 10639μs (10.6ms)** - Total BlueStore processing
 
-For write operations this is broken down into:
-
-**prepare: 107μs**
-- Transaction preparation
-- Allocating space, building write operations
-- Generally low overhead
-
-**aio_wait: 0μs**
-- Async I/O completion wait time
-- Time waiting for disk I/O (for data writes)
-- aio_size: 0 bytes (no deferred writes in this case)
-
-**seq_wait: 6μs**
-- Sequencer wait time
-- Ordering needed for concurrent operations happens on same PG
-- Usually very low
-
-**kv_commit: 10525μs (10.5ms)**
-- Flush data to main device and metadata to rocksdb
-- **Often the dominant latency component**
-- Affected by disk performance, write amplification, compaction
-
-**Total BlueStore: 10.6ms** (dominated by kv_commit)
+The operation output reports only the overall BlueStore latency. Use
+BlueStore probe mode when individual internal operations need to be analyzed.
 
 #### 4. Total Operation Latency
 
@@ -333,9 +307,9 @@ throttle_lat 5000 recv_lat 120000 dispatch_lat 20 ...
 
 #### Storage Bottleneck
 ```
-osd_lat 50 bluestore_lat 2500000 (prepare 100 aio_wait 0 kv_commit 2480000) ...
+osd_lat 50 bluestore_lat 2500000 ...
 ```
-- High bluestore_lat, especially kv_commit
+- High bluestore_lat
 - **Solution:** Check disk performance, reduce write amplification, tune RocksDB
 
 #### Replication Issues
