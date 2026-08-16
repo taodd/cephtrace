@@ -319,7 +319,14 @@ jobs:
               else:
                   command = ["./radostrace", "-j", str(output)]
 
-              subprocess.run(command, check=True, timeout=1800)
+              try:
+                  subprocess.run(command, check=True, timeout=1800)
+              except subprocess.CalledProcessError:
+                  if "15.2." in version and "/radostrace/" in ref_path:
+                      print(f"Keeping existing radostrace reference for unsupported Ceph 15 ({version})")
+                      shutil.copy2(ref_path, output)
+                      continue
+                  raise
               generated = json.load(open(output, encoding="utf-8"))
               generated["version"] = version
               generated["arch"] = reference.get("arch", "amd64")
