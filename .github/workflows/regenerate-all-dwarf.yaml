@@ -346,10 +346,15 @@ jobs:
                   )
           PY
 
+      - name: Package DWARF artifacts
+        run: |
+          mkdir -p /tmp/dwarf-pkg
+          tar -czf /tmp/dwarf-pkg/dwarf.tar.gz -C out .
+
       - uses: actions/upload-artifact@v4
         with:
           name: archived-dwarf-${{ matrix.key }}
-          path: out/files/**/*.json
+          path: /tmp/dwarf-pkg/dwarf.tar.gz
           if-no-files-found: error
           retention-days: 3
 
@@ -372,19 +377,10 @@ jobs:
 
       - name: Update repository JSON files from artifacts
         run: |
-          python3 - <<'PY'
-          import glob
-          import shutil
-          import os
-
-          for path in glob.glob("/tmp/downloaded-artifacts/**/*.json", recursive=True):
-              filename = os.path.basename(path)
-              # Search for target file in files/
-              matches = glob.glob(f"files/**/{filename}", recursive=True)
-              for target in matches:
-                  shutil.copy2(path, target)
-                  print(f"Updated {target}")
-          PY
+          for tarball in $(find /tmp/downloaded-artifacts -name "dwarf.tar.gz"); do
+            echo "Extracting $tarball"
+            tar -xzf "$tarball" -C .
+          done
 
       - name: Re-aggregate embedded DWARF header and verify build
         run: |
