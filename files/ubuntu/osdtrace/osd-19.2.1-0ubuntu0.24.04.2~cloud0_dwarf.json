@@ -28,7 +28,11 @@
         "type_sizes": {
             "OSDOp": 112
         },
-        "member_offsets": {},
+        "member_offsets": {
+            "OSDOp::indata._carriage": 56,
+            "OSDOp::op.cls.class_len": 6,
+            "OSDOp::op.cls.method_len": 7
+        },
         "func2vf": {
             "BlueStore::_do_write": {
                 "var_fields": []
