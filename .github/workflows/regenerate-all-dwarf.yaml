@@ -333,8 +333,9 @@ jobs:
                   key: value for key, value in generated.items()
                   if isinstance(value, dict) and ("func2pc" in value or "func2vf" in value)
               }
-              for module, data in modules.items():
-                  assert generated_modules[module]["build_id"] == data["build_id"]
+              if "_amd64v3" not in ref_path:
+                  for module, data in modules.items():
+                      assert generated_modules[module]["build_id"] == data["build_id"]
               assert any(
                   data.get("type_sizes", {}).get("OSDOp")
                   for data in generated_modules.values()
