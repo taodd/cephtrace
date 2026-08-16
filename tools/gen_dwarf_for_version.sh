@@ -47,7 +47,8 @@ case "$DISTRO" in
     *) echo "ERROR: unsupported distro $DISTRO (only centos-stream in phase 1)" >&2; exit 2 ;;
 esac
 
-CTR="dwarfgen-${VERSION//./-}-$$"
+CTR_NAME_CLEAN=$(echo "$VERSION" | tr -c 'a-zA-Z0-9_.-' '_')
+CTR="dwarfgen-${CTR_NAME_CLEAN}-$$"
 cleanup() { podman rm -f "$CTR" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 
