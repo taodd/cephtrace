@@ -109,16 +109,19 @@ podman exec -u root "$CTR" dnf install -y --enablerepo="$BUILD_REPO" --alloweras
 # package.
 podman exec -u root "$CTR" dnf install -y epel-release >/dev/null
 
+CLEAN_VERSION="${VERSION#*:}"
+CLEAN_VERSION="${CLEAN_VERSION%%-*}"
+
 podman exec -i -u root "$CTR" \
     bash -c 'cat > /etc/yum.repos.d/ceph-pinned.repo' <<EOF
 [ceph-pinned]
-name=ceph-pinned-${VERSION}-x86_64
-baseurl=https://download.ceph.com/rpm-${VERSION}/el${EL}/x86_64/
+name=ceph-pinned-${CLEAN_VERSION}-x86_64
+baseurl=https://download.ceph.com/rpm-${CLEAN_VERSION}/el${EL}/x86_64/
 gpgcheck=0
 enabled=1
 [ceph-pinned-noarch]
-name=ceph-pinned-${VERSION}-noarch
-baseurl=https://download.ceph.com/rpm-${VERSION}/el${EL}/noarch/
+name=ceph-pinned-${CLEAN_VERSION}-noarch
+baseurl=https://download.ceph.com/rpm-${CLEAN_VERSION}/el${EL}/noarch/
 gpgcheck=0
 enabled=1
 EOF
@@ -198,9 +201,9 @@ for tool in ${TOOLS//,/ }; do
     esac
     echo "==> generating ${tool} JSON -> ${out}"
     podman exec --workdir=/workspace "$CTR" \
-        ./"$tool" -j "$out" -p "$OSD_PID" >/tmp/${tool}-${VERSION}.log 2>&1 || {
-            echo "ERROR: ${tool} -j failed; last 20 lines of /tmp/${tool}-${VERSION}.log:" >&2
-            tail -20 /tmp/${tool}-${VERSION}.log >&2 || true
+        ./"$tool" -j "$out" -p "$OSD_PID" >/tmp/${tool}-${CTR_NAME_CLEAN}.log 2>&1 || {
+            echo "ERROR: ${tool} -j failed; last 20 lines of /tmp/${tool}-${CTR_NAME_CLEAN}.log:" >&2
+            tail -20 /tmp/${tool}-${CTR_NAME_CLEAN}.log >&2 || true
             exit 1
         }
     # Sanity: file exists and is non-trivial JSON.
