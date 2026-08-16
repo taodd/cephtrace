@@ -289,6 +289,7 @@ typedef struct osd_op {
 // loaded DWARF data predates object-name support
   std::string object_name;
   std::vector<__u32> detail_ops;
+  cls_op_t cls_ops[MAX_DETAIL_OPS] = {};
   __u32 detail_ops_total;
   bool detail_ops_unavailable;
 } osd_op_t;
@@ -543,13 +544,18 @@ std::string format_detail_ops(const osd_op_t& op, bool transaction_ops) {
     if (i != 0)
       out << ",";
     __u32 opcode = op.detail_ops[i];
-    const char *name = transaction_ops
-                           ? objectstore_txn_op_str(opcode)
-                           : ceph_osd_op_str(opcode);
-    if (name != nullptr)
-      out << name;
-    else
-      out << "unknown-" << opcode;
+    if (!transaction_ops && ceph_osd_op_call(opcode) && i < MAX_DETAIL_OPS &&
+        op.cls_ops[i].cls_name[0] != '\0') {
+      out << "call(" << op.cls_ops[i].cls_name << "." << op.cls_ops[i].method_name << ")";
+    } else {
+      const char *name = transaction_ops
+                             ? objectstore_txn_op_str(opcode)
+                             : ceph_osd_op_str(opcode);
+      if (name != nullptr)
+        out << name;
+      else
+        out << "unknown-" << opcode;
+    }
   }
   if (op.detail_ops_total > op.detail_ops.size()) {
     if (!op.detail_ops.empty())
@@ -682,6 +688,7 @@ osd_op_t generate_op(op_v *val) {
        i < val->detail_ops_captured && i < MAX_DETAIL_OPS;
        ++i) {
     op.detail_ops.push_back(val->detail_ops[i]);
+    op.cls_ops[i] = val->cls_ops[i];
   }
 
   __u64 recv_stamp = val->recv_stamp;
@@ -1574,6 +1581,21 @@ static int run_tracer(DwarfParser &dwarfparser, const TraceTarget &target) {
   skel->rodata->CEPH_OSD_OP_SIZE = osd_op_size;
   clog << "Using target OSDOp size " << osd_op_size << endl;
 
+  int carriage_off = dwarfparser.get_member_offset(target.osd_path, "OSDOp",
+                                                   {"indata", "_carriage"});
+  int cls_off = dwarfparser.get_member_offset(target.osd_path, "OSDOp",
+                                              {"op", "cls", "class_len"});
+  int method_off = dwarfparser.get_member_offset(target.osd_path, "OSDOp",
+                                                 {"op", "cls", "method_len"});
+  if (carriage_off >= 0 && cls_off >= 0 && method_off >= 0) {
+    skel->rodata->CEPH_OSD_OP_BUFFER_CARRIAGE_OFFSET = carriage_off;
+    skel->rodata->CEPH_OSD_OP_CLS_CLASS_OFFSET = cls_off;
+    skel->rodata->CEPH_OSD_OP_CLS_METHOD_OFFSET = method_off;
+    clog << "Using target OSDOp carriage offset " << carriage_off
+         << ", cls offset " << cls_off << ", method offset " << method_off
+         << endl;
+  }
+
   int load_ret = osdtrace_bpf__load(skel.get());
   if (load_ret) {
     cerr << "Failed to load BPF skeleton: " << load_ret << endl;
@@ -1647,6 +1669,9 @@ int main(int argc, char **argv) {
 
   DwarfParser dwarfparser(osd_probes, probe_units);
   dwarfparser.request_type_size("OSDOp");
+  dwarfparser.request_member_offset("OSDOp", {"indata", "_carriage"});
+  dwarfparser.request_member_offset("OSDOp", {"op", "cls", "class_len"});
+  dwarfparser.request_member_offset("OSDOp", {"op", "cls", "method_len"});
   if (load_dwarf_data(dwarfparser, target) != 0) return 1;
 
   if (export_json) return do_export_json(dwarfparser, target);
