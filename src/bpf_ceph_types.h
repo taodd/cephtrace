@@ -35,7 +35,7 @@ static const __u8 flag_commit_sent = 1 << 5;
 #define MAX_CLIENT_OPS 3
 
 typedef struct cls_op {
-  char cls_name[8];
+  char cls_name[16];
   char method_name[32];
 } cls_op_t;
 
@@ -197,6 +197,7 @@ struct op_v {
   __u32 m_seed;
   char object_name[OBJECT_NAME_LEN];
   __u32 detail_ops[MAX_DETAIL_OPS];
+  cls_op_t cls_ops[MAX_DETAIL_OPS];
   __u32 detail_ops_captured;
   __u32 detail_ops_total;
   __u32 detail_ops_unavailable;
