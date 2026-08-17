@@ -305,7 +305,7 @@ _verify_osdtrace_output_impl() {
             named_objects=$((named_objects + 1))
         fi
 
-        if [[ ! "${row[detail_ops]}" =~ ^\[[[:alnum:]_,.+-]*\]$ ]]; then
+        if [[ ! "${row[detail_ops]}" =~ ^\[[[:alnum:]_,.+()-]*\]$ ]]; then
             err "Malformed detailed-op list '${row[detail_ops]}' (op=${row[op]} osd=${row[osd_id]} tid=${row[tid]})"
             return 1
         fi
