@@ -183,7 +183,8 @@ _purge_partial_clusters() {
 # cephadm_bootstrap_single_host).
 _orch_backend_ready() {
     local fsid="$1"
-    cephadm shell --fsid "$fsid" -- ceph orch status >/dev/null 2>&1
+    local cephadm_bin="${2:-/tmp/cephadm}"
+    timeout 15 "$cephadm_bin" shell --fsid "$fsid" -- ceph --connect-timeout 5 orch status >/dev/null 2>&1
 }
 
 
@@ -277,7 +278,7 @@ cephadm_bootstrap_single_host() {
             >&2 || rc=$?
 
         fsid=$(ls /var/lib/ceph/ 2>/dev/null | grep -E '^[0-9a-f]{8}-[0-9a-f-]+$' | head -1)
-        if [[ -n "$fsid" ]] && _orch_backend_ready "$fsid"; then
+        if [[ -n "$fsid" ]] && _orch_backend_ready "$fsid" "$cephadm_bin"; then
             # Cluster is up with a working orchestrator backend; a non-zero
             # rc here is the benign service-apply mismatch described above.
             # info() goes to stdout, which this function's caller captures as
