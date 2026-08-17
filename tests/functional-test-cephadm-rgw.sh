@@ -93,6 +93,56 @@ trap cleanup EXIT
 info "=== Step 1: install host deps (podman, s3cmd, lvm2) ==="
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -q
+
+# GitHub's ubuntu-22.04/24.04 runner images (>= 20260810, runner-images
+# #14412) untar the mgoltzsche/podman-static 5.8.4 bundle into /usr/local
+# (podman, crun, runc, conmon, netavark, aardvark-dns, pasta,
+# fuse-overlayfs, systemd units) and drop its config into /etc/containers
+# (containers.conf, storage.conf, seccomp.json, plus containers.conf.d
+# drop-ins pinning crun to /usr/local/bin/crun).  Ubuntu 26.04 gets podman
+# from apt and is unaffected.
+#
+# That bundle breaks this test two ways.  With /usr/local/bin/podman
+# first on PATH, cephadm resolves the engine to the 5.8.4 static binary
+# and the mon container fails to start during bootstrap.  Even with the
+# distro podman installed below and first on PATH, podman's built-in
+# conmon search order prefers /usr/local/lib/podman/conmon -- built
+# without journald -- so every `podman run` dies with exit 126
+# "[conmon:e]: Include journald in compilation path to log to systemd
+# journal", and the drop-ins still route it to the bundle's crun.
+#
+# Strip the bundle, its config and any container-storage state its podman
+# initialised (the image build ran `podman network reload` as root, which
+# creates a 5.x sqlite libpod DB under /var/lib/containers) so the host
+# looks like a stock Ubuntu box, then install the distro podman this test
+# has always run against.  Keyed on the bundle's own layout
+# (/usr/local/lib/podman/conmon) rather than just /usr/local/bin/podman so
+# a hand-installed podman on a developer machine is left alone.
+if [ -x /usr/local/bin/podman ] && [ -x /usr/local/lib/podman/conmon ]; then
+    info "removing runner-image static podman bundle ($(/usr/local/bin/podman --version 2>/dev/null | head -1))"
+    systemctl disable --now podman.socket podman.service podman-restart.service 2>/dev/null || true
+    rm -f /usr/local/bin/podman /usr/local/bin/crun /usr/local/bin/runc \
+          /usr/local/bin/pasta /usr/local/bin/pasta.avx2 \
+          /usr/local/bin/fuse-overlayfs /usr/local/bin/fusermount3
+    rm -rf /usr/local/lib/podman /usr/local/libexec/podman
+    rm -f /usr/local/lib/systemd/system/podman.socket \
+          /usr/local/lib/systemd/system/podman.service \
+          /usr/local/lib/systemd/system/podman-restart.service \
+          /usr/local/lib/systemd/user/podman.socket \
+          /usr/local/lib/systemd/user/podman.service \
+          /usr/local/lib/systemd/user/podman-restart.service \
+          /usr/local/lib/systemd/system-generators/podman-system-generator \
+          /usr/local/lib/systemd/user-generators/podman-user-generator
+    rm -f /etc/containers/containers.conf /etc/containers/storage.conf \
+          /etc/containers/seccomp.json \
+          /etc/containers/containers.conf.d/00-fix-runtime.conf \
+          /etc/containers/containers.conf.d/99-fix-firewall.conf
+    rm -rf /var/lib/containers/storage /var/lib/containers/cache \
+           /run/containers/storage /run/libpod
+    systemctl daemon-reload 2>/dev/null || true
+    hash -r 2>/dev/null || true
+fi
+
 apt-get install -y -q podman s3cmd python3 curl lvm2 gdisk parted
 
 # Quincy's bundled cephadm (v17.2.x) has a buggy `_fetch_apparmor` that
