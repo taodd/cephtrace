@@ -363,6 +363,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Install build tools and python
         run: |
@@ -393,7 +395,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ -z "$(git status --porcelain files/ src/embedded_dwarf.h)" ]; then
+          if [ -z "$(git status --porcelain files/)" ]; then
             echo "No files modified, skipping PR creation."
             exit 0
           fi
@@ -402,7 +404,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -b "$BRANCH"
-          git add files/ src/embedded_dwarf.h
+          git add files/
           git commit -m "chore: regenerate all DWARF references"
           git push origin "$BRANCH"
 
