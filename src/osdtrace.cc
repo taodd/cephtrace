@@ -85,56 +85,57 @@ func_id_t func_id = {
     {"Allocator::get_name", 390}
 };
 
-std::map<std::string, int> func_progid = {
-    {"OSD::enqueue_op", 0},
-    {"OSD::dequeue_op", 1},
-    {"PrimaryLogPG::execute_ctx", 2},
-    {"ReplicatedBackend::submit_transaction", 3},
-    {"BlueStore::queue_transactions", 4},
-    {"BlueStore::_do_write", 5},
-    {"BlueStore::_wctx_finish", 6},
-    {"BlueStore::_txc_state_proc", 7},
-    {"PrimaryLogPG::log_op_stats", 8},
-    {"PrimaryLogPG::log_op_stats_v2", 9},
-    {"ReplicatedBackend::generate_subop", 10},
-    {"ReplicatedBackend::do_repop_reply", 11},
-    {"OpRequest::mark_flag_point_string", 12},
-    {"BlueStore::log_latency", 13},
-    {"log_subop_stats", 14},
-    {"ECBackend::submit_transaction", 15},
-    {"BlueStore::_txc_calc_cost", 16},
-    {"ReplicatedBackend::repop_commit", 17},
-    {"OpRequest::mark_flag_point", 18},
-    {"BlueStore::log_latency_fn", 19},
-    {"BlueStore::_txc_add_transaction", 20},
-    // Allocator tracing (-A). Several names may map to the same program: they are
+// Ceph function -> BPF program (by name, resolved through
+// bpf_object__find_program_by_name at attach time, so this table does not
+// depend on the order programs appear in the skeleton).  A "<func>_v2"
+// entry is the variant attach_probe() selects for v=2.
+std::map<std::string, const char *> func_prog = {
+    {"OSD::enqueue_op", "uprobe_enqueue_op"},
+    {"OSD::dequeue_op", "uprobe_dequeue_op"},
+    {"PrimaryLogPG::execute_ctx", "uprobe_execute_ctx"},
+    {"ReplicatedBackend::submit_transaction", "uprobe_submit_transaction"},
+    {"BlueStore::queue_transactions", "uprobe_queue_transactions"},
+    {"BlueStore::_do_write", "uprobe_do_write"},
+    {"BlueStore::_wctx_finish", "uprobe_wctx_finish"},
+    {"BlueStore::_txc_state_proc", "uprobe_txc_state_proc"},
+    {"PrimaryLogPG::log_op_stats", "uprobe_log_op_stats"},
+    {"PrimaryLogPG::log_op_stats_v2", "uprobe_log_op_stats_v2"},
+    {"ReplicatedBackend::generate_subop", "uprobe_generate_subop"},
+    {"ReplicatedBackend::do_repop_reply", "uprobe_do_repop_reply"},
+    {"OpRequest::mark_flag_point_string", "uprobe_mark_flag_point_string"},
+    {"BlueStore::log_latency", "uprobe_log_latency"},
+    {"log_subop_stats", "uprobe_log_subop_stats"},
+    {"ECBackend::submit_transaction", "uprobe_ec_submit_transaction"},
+    {"BlueStore::_txc_calc_cost", "uprobe_txc_calc_cost"},
+    {"ReplicatedBackend::repop_commit", "uprobe_repop_commit"},
+    {"OpRequest::mark_flag_point", "uprobe_mark_flag_point"},
+    {"BlueStore::log_latency_fn", "uprobe_log_latency_fn"},
+    {"BlueStore::_txc_add_transaction", "uprobe_txc_add_transaction"},
+    // Allocator tracing (-A). Several names map to the same program: they are
     // the same method under different class names across Ceph releases, and
-    // at most one exists in a given binary. All returns share one uretprobe
-    // (the *_v2 entries; attach_probe(..., v=2) looks up "<func>_v2").
-    // NOTE: ids are skeleton program indices: all SEC("uprobe") programs in
-    // source order, then SEC("uretprobe").
-    {"StupidAllocator::allocate", 21},
-    {"BitmapAllocator::allocate", 22},
-    {"AvlAllocator::allocate", 23},
-    {"BtreeAllocator::allocate", 24},
-    {"Btree2Allocator::allocate", 25},
-    {"HybridAllocatorBase<AvlAllocator>::allocate", 26},
-    {"HybridAllocator<AvlAllocator>::allocate", 26},
-    {"HybridAllocator::allocate", 26},
-    {"HybridAllocatorBase<Btree2Allocator>::allocate", 27},
-    {"HybridAllocator<Btree2Allocator>::allocate", 27},
-    {"HybridBtree2Allocator::allocate", 28},
-    {"StupidAllocator::allocate_v2", 29},
-    {"BitmapAllocator::allocate_v2", 29},
-    {"AvlAllocator::allocate_v2", 29},
-    {"BtreeAllocator::allocate_v2", 29},
-    {"Btree2Allocator::allocate_v2", 29},
-    {"HybridAllocatorBase<AvlAllocator>::allocate_v2", 29},
-    {"HybridAllocator<AvlAllocator>::allocate_v2", 29},
-    {"HybridAllocator::allocate_v2", 29},
-    {"HybridAllocatorBase<Btree2Allocator>::allocate_v2", 29},
-    {"HybridAllocator<Btree2Allocator>::allocate_v2", 29},
-    {"HybridBtree2Allocator::allocate_v2", 29}
+    // at most one exists in a given binary. All returns share one uretprobe.
+    {"StupidAllocator::allocate", "uprobe_alloc_stupid"},
+    {"BitmapAllocator::allocate", "uprobe_alloc_bitmap"},
+    {"AvlAllocator::allocate", "uprobe_alloc_avl"},
+    {"BtreeAllocator::allocate", "uprobe_alloc_btree"},
+    {"Btree2Allocator::allocate", "uprobe_alloc_btree2"},
+    {"HybridAllocatorBase<AvlAllocator>::allocate", "uprobe_alloc_hybrid_avl"},
+    {"HybridAllocator<AvlAllocator>::allocate", "uprobe_alloc_hybrid_avl"},
+    {"HybridAllocator::allocate", "uprobe_alloc_hybrid_avl"},
+    {"HybridAllocatorBase<Btree2Allocator>::allocate", "uprobe_alloc_hybrid_btree2"},
+    {"HybridAllocator<Btree2Allocator>::allocate", "uprobe_alloc_hybrid_btree2"},
+    {"HybridBtree2Allocator::allocate", "uprobe_alloc_hybrid_btree2_outer"},
+    {"StupidAllocator::allocate_v2", "uretprobe_allocator"},
+    {"BitmapAllocator::allocate_v2", "uretprobe_allocator"},
+    {"AvlAllocator::allocate_v2", "uretprobe_allocator"},
+    {"BtreeAllocator::allocate_v2", "uretprobe_allocator"},
+    {"Btree2Allocator::allocate_v2", "uretprobe_allocator"},
+    {"HybridAllocatorBase<AvlAllocator>::allocate_v2", "uretprobe_allocator"},
+    {"HybridAllocator<AvlAllocator>::allocate_v2", "uretprobe_allocator"},
+    {"HybridAllocator::allocate_v2", "uretprobe_allocator"},
+    {"HybridAllocatorBase<Btree2Allocator>::allocate_v2", "uretprobe_allocator"},
+    {"HybridAllocator<Btree2Allocator>::allocate_v2", "uretprobe_allocator"},
+    {"HybridBtree2Allocator::allocate_v2", "uretprobe_allocator"}
 };
 
 DwarfParser::probes_t osd_probes = {
@@ -1281,11 +1282,22 @@ int attach_probe(struct osdtrace_bpf *skel,
   }
   if (v > 0)
       funcname = funcname + "_v" + std::to_string(v);
-  int pid = func_progid[funcname];
+  auto pit = func_prog.find(funcname);
+  if (pit == func_prog.end()) {
+    cerr << "Error: no BPF program mapped for " << funcname << endl;
+    return -1;
+  }
+  struct bpf_program *prog =
+      bpf_object__find_program_by_name(skel->obj, pit->second);
+  if (prog == NULL) {
+    cerr << "Error: BPF program " << pit->second << " (for " << funcname
+         << ") not found in the skeleton" << endl;
+    return -1;
+  }
 
   std::string attach_path = (process_id == -1) ? path : "/proc/" + std::to_string(process_id) + "/root/" + path;
   struct bpf_link *ulink = bpf_program__attach_uprobe(
-      *skel->skeleton->progs[pid].prog,
+      prog,
       is_retprobe,
       process_id,
       attach_path.c_str(), func_addr);
@@ -1705,7 +1717,7 @@ static const AttachEntry ATTACH_LIST[] = {
     {"BlueStore::log_latency", BLUESTORE_PROBE, false, 0, false},
     {"BlueStore::log_latency_fn", BLUESTORE_PROBE, false, 0, false},
     // Allocator tracing (-A): one entry uprobe + the shared uretprobe (v=2,
-    // "<func>_v2" in func_progid) per concrete allocate() override.  A given
+    // "<func>_v2" in func_prog) per concrete allocate() override.  A given
     // binary only defines some of these; the rest skip with a warning.
     {"StupidAllocator::allocate", ALLOC_PROBE, false, 0, false},
     {"StupidAllocator::allocate", ALLOC_PROBE, false, 2, true},
@@ -1747,6 +1759,17 @@ static int run_tracer(DwarfParser &dwarfparser, const TraceTarget &target) {
   if (!skel) {
     cerr << "Failed to open BPF skeleton" << endl;
     return 1;
+  }
+
+  // Every BPF program named in func_prog must exist in the object; catch a
+  // renamed/mistyped program up front rather than at attach time for whatever
+  // subset the current probe_mode happens to use.
+  for (const auto &fp : func_prog) {
+    if (bpf_object__find_program_by_name(skel->obj, fp.second) == NULL) {
+      cerr << "Error: func_prog maps " << fp.first << " to unknown BPF program "
+           << fp.second << endl;
+      return 1;
+    }
   }
 
   // sizeof(OSDOp) is the stride used to walk the decoded op vector, so a wrong
