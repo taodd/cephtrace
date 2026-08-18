@@ -189,7 +189,7 @@ int uprobe_send_op(struct pt_regs *ctx) {
 	__u64 data = 0;
 	bpf_probe_read_user(&data, sizeof(data), (void *)raw + CEPH_OSD_OP_BUFFER_DATA_OFFSET);
         // read class name
-	cls_len &= 7;
+	cls_len &= 15;
 	bpf_probe_read_user(val->cls_ops[i].cls_name, cls_len, (void *)data);
 	// read method name
 	method_len &= 31;

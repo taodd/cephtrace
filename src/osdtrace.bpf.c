@@ -81,6 +81,9 @@ static __always_inline int read_hprobe_utime(struct pt_regs *ctx, int varid, __u
 // Set by userspace before BPF load. OSDOp changed size in Squid when
 // buffer::list became smaller; ceph_osd_op remains the first member.
 const volatile __u32 CEPH_OSD_OP_SIZE = 0;
+const volatile __u32 CEPH_OSD_OP_BUFFER_CARRIAGE_OFFSET = 0;
+const volatile __u32 CEPH_OSD_OP_CLS_CLASS_OFFSET = 0;
+const volatile __u32 CEPH_OSD_OP_CLS_METHOD_OFFSET = 0;
 
 static __always_inline void capture_decoded_osd_ops(
     struct op_v *vp, __u64 ops_start, __u64 ops_finish)
@@ -95,10 +98,39 @@ static __always_inline void capture_decoded_osd_ops(
   for (__u32 i = 0; i < MAX_DETAIL_OPS; ++i) {
     if (i >= vp->detail_ops_total)
       break;
+    __u64 op_addr = ops_start + i * CEPH_OSD_OP_SIZE;
     __u16 opcode = 0;
-    bpf_probe_read_user(&opcode, sizeof(opcode),
-                        (void *)(ops_start + i * CEPH_OSD_OP_SIZE));
+    bpf_probe_read_user(&opcode, sizeof(opcode), (void *)op_addr);
     vp->detail_ops[i] = opcode;
+
+    if (ceph_osd_op_call(opcode)) {
+      __builtin_memset(&vp->cls_ops[i], 0, sizeof(vp->cls_ops[i]));
+      __u8 cls_len = 0;
+      __u8 method_len = 0;
+      bpf_probe_read_user(&cls_len, sizeof(cls_len),
+                          (void *)(op_addr + CEPH_OSD_OP_CLS_CLASS_OFFSET));
+      bpf_probe_read_user(&method_len, sizeof(method_len),
+                          (void *)(op_addr + CEPH_OSD_OP_CLS_METHOD_OFFSET));
+
+      __u64 node = 0;
+      bpf_probe_read_user(&node, sizeof(node),
+                          (void *)(op_addr + CEPH_OSD_OP_BUFFER_CARRIAGE_OFFSET - 16));
+
+      __u64 raw = 0;
+      __u32 off = 0;
+      bpf_probe_read_user(&raw, sizeof(raw), (void *)(node + 8));
+      bpf_probe_read_user(&off, sizeof(off), (void *)(node + 16));
+
+      __u64 data = 0;
+      bpf_probe_read_user(&data, sizeof(data), (void *)(raw + 32));
+
+      __u64 str_start = data + off;
+      __u8 clen = cls_len & 15;
+      __u8 mlen = method_len & 31;
+      bpf_probe_read_user(vp->cls_ops[i].cls_name, clen, (void *)str_start);
+      bpf_probe_read_user(vp->cls_ops[i].method_name, mlen,
+                          (void *)(str_start + cls_len));
+    }
     vp->detail_ops_captured++;
   }
 }
