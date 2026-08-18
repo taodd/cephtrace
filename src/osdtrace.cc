@@ -38,7 +38,11 @@ using namespace std;
 typedef std::map<std::string, int> func_id_t;
 
 std::vector<std::string> probe_units = {
-    "OpRequest.cc", "OSD.cc", "BlueStore.cc", "PrimaryLogPG.cc", "ReplicatedBackend.cc", "ECBackend.cc"};
+    "OpRequest.cc", "OSD.cc", "BlueStore.cc", "PrimaryLogPG.cc", "ReplicatedBackend.cc", "ECBackend.cc",
+    // allocator tracing (-A)
+    "StupidAllocator.cc", "BitmapAllocator.cc", "AvlAllocator.cc",
+    "BtreeAllocator.cc", "Btree2Allocator.cc", "HybridAllocator.cc",
+    "AllocatorBase.cc", "Allocator.cc"};
 
 func_id_t func_id = {
     {"OSD::enqueue_op", 0},
@@ -61,7 +65,24 @@ func_id_t func_id = {
     {"ReplicatedBackend::repop_commit", 170},
     {"OpRequest::mark_flag_point", 180},
     {"BlueStore::log_latency_fn", 190},
-    {"BlueStore::_txc_add_transaction", 200}
+    {"BlueStore::_txc_add_transaction", 200},
+    // Allocator tracing (-A). Several names may map to the same varid
+    // base: they are the same method under different class names across
+    // Ceph releases, and at most one exists in a given binary.
+    {"StupidAllocator::allocate", 300},
+    {"BitmapAllocator::allocate", 310},
+    {"AvlAllocator::allocate", 320},
+    {"BtreeAllocator::allocate", 330},
+    {"Btree2Allocator::allocate", 340},
+    {"HybridAllocatorBase<AvlAllocator>::allocate", 350},
+    {"HybridAllocator<AvlAllocator>::allocate", 350},
+    {"HybridAllocator::allocate", 350},
+    {"HybridAllocatorBase<Btree2Allocator>::allocate", 360},
+    {"HybridAllocator<Btree2Allocator>::allocate", 360},
+    {"HybridBtree2Allocator::allocate", 370},
+    // name-varpath donors, never attached (see ALLOC_NAME_VARID)
+    {"AllocatorBase::get_name", 390},
+    {"Allocator::get_name", 390}
 };
 
 std::map<std::string, int> func_progid = {
@@ -85,7 +106,35 @@ std::map<std::string, int> func_progid = {
     {"ReplicatedBackend::repop_commit", 17},
     {"OpRequest::mark_flag_point", 18},
     {"BlueStore::log_latency_fn", 19},
-    {"BlueStore::_txc_add_transaction", 20}
+    {"BlueStore::_txc_add_transaction", 20},
+    // Allocator tracing (-A). Several names may map to the same program: they are
+    // the same method under different class names across Ceph releases, and
+    // at most one exists in a given binary. All returns share one uretprobe
+    // (the *_v2 entries; attach_probe(..., v=2) looks up "<func>_v2").
+    // NOTE: ids are skeleton program indices: all SEC("uprobe") programs in
+    // source order, then SEC("uretprobe").
+    {"StupidAllocator::allocate", 21},
+    {"BitmapAllocator::allocate", 22},
+    {"AvlAllocator::allocate", 23},
+    {"BtreeAllocator::allocate", 24},
+    {"Btree2Allocator::allocate", 25},
+    {"HybridAllocatorBase<AvlAllocator>::allocate", 26},
+    {"HybridAllocator<AvlAllocator>::allocate", 26},
+    {"HybridAllocator::allocate", 26},
+    {"HybridAllocatorBase<Btree2Allocator>::allocate", 27},
+    {"HybridAllocator<Btree2Allocator>::allocate", 27},
+    {"HybridBtree2Allocator::allocate", 28},
+    {"StupidAllocator::allocate_v2", 29},
+    {"BitmapAllocator::allocate_v2", 29},
+    {"AvlAllocator::allocate_v2", 29},
+    {"BtreeAllocator::allocate_v2", 29},
+    {"Btree2Allocator::allocate_v2", 29},
+    {"HybridAllocatorBase<AvlAllocator>::allocate_v2", 29},
+    {"HybridAllocator<AvlAllocator>::allocate_v2", 29},
+    {"HybridAllocator::allocate_v2", 29},
+    {"HybridAllocatorBase<Btree2Allocator>::allocate_v2", 29},
+    {"HybridAllocator<Btree2Allocator>::allocate_v2", 29},
+    {"HybridBtree2Allocator::allocate_v2", 29}
 };
 
 DwarfParser::probes_t osd_probes = {
@@ -206,7 +255,63 @@ DwarfParser::probes_t osd_probes = {
     {"BlueStore::_txc_add_transaction",
      {{"t", "data", "ops"},
       {"t", "op_bl", "_carriage"},
-      {"t", "op_bl", "_num"}}}
+      {"t", "op_bl", "_num"}}},
+    // Allocator tracing (-A). Each allocate() declares the PExtentVector
+    // internals so the uretprobe can walk the returned extents; scalar
+    // args (want/unit/max/hint) are read straight from registers.
+    {"StupidAllocator::allocate",
+     {{"extents", "_M_impl", "_M_start"},
+      {"extents", "_M_impl", "_M_finish"}}},
+
+    {"BitmapAllocator::allocate",
+     {{"extents", "_M_impl", "_M_start"},
+      {"extents", "_M_impl", "_M_finish"}}},
+
+    {"AvlAllocator::allocate",
+     {{"extents", "_M_impl", "_M_start"},
+      {"extents", "_M_impl", "_M_finish"}}},
+
+    {"BtreeAllocator::allocate",
+     {{"extents", "_M_impl", "_M_start"},
+      {"extents", "_M_impl", "_M_finish"}}},
+
+    {"Btree2Allocator::allocate",
+     {{"extents", "_M_impl", "_M_start"},
+      {"extents", "_M_impl", "_M_finish"}}},
+
+    {"HybridAllocatorBase<AvlAllocator>::allocate",
+     {{"extents", "_M_impl", "_M_start"},
+      {"extents", "_M_impl", "_M_finish"}}},
+
+    // older releases: non-Base template / plain class names
+    {"HybridAllocator<AvlAllocator>::allocate",
+     {{"extents", "_M_impl", "_M_start"},
+      {"extents", "_M_impl", "_M_finish"}}},
+
+    {"HybridAllocator::allocate",
+     {{"extents", "_M_impl", "_M_start"},
+      {"extents", "_M_impl", "_M_finish"}}},
+
+    {"HybridAllocatorBase<Btree2Allocator>::allocate",
+     {{"extents", "_M_impl", "_M_start"},
+      {"extents", "_M_impl", "_M_finish"}}},
+
+    {"HybridAllocator<Btree2Allocator>::allocate",
+     {{"extents", "_M_impl", "_M_start"},
+      {"extents", "_M_impl", "_M_finish"}}},
+
+    {"HybridBtree2Allocator::allocate",
+     {{"extents", "_M_impl", "_M_start"},
+      {"extents", "_M_impl", "_M_finish"}}},
+
+    // never attached: donates the allocator-name varpath (ALLOC_NAME_VARID).
+    // The name lives in the SocketHook, whose full DWARF definition only
+    // exists in the CU that defines get_name.
+    {"AllocatorBase::get_name",
+     {{"this", "asok_hook", "name", "_M_dataplus", "_M_p"}}},
+
+    {"Allocator::get_name",
+     {{"this", "asok_hook", "name", "_M_dataplus", "_M_p"}}}
 };
 
 enum mode_e { MODE_AVG = 1, MODE_MAX, MODE_ALL };
@@ -216,7 +321,9 @@ enum mode_e mode = MODE_ALL;
 enum probe_mode_e {
     OP_SINGLE_PROBE = 1,
     OP_FULL_PROBE = 2,
-    BLUESTORE_PROBE = 4
+    BLUESTORE_PROBE = 4,
+    // 8 is reserved for BDEV_PROBE (feat/bdev-io-tracing)
+    ALLOC_PROBE = 16
 };
 
 int probe_mode = OP_FULL_PROBE;
@@ -763,6 +870,43 @@ void handle_bluestore(struct bluestore_lat_v *val, int osd_id) {
     printf("osd %d bluestore %s lat %lld us\n", osd_id, name, lat_us);
 }
 
+// ring buffer events are dispatched by size, keep the event structs distinct
+static_assert(sizeof(struct alloc_v) != sizeof(struct op_v),
+              "alloc_v and op_v must have distinct sizes");
+static_assert(sizeof(struct alloc_v) != sizeof(struct bluestore_lat_v),
+              "alloc_v and bluestore_lat_v must have distinct sizes");
+
+void handle_alloc(struct alloc_v *val, int osd_id) {
+  __u64 lat_us = val->lat / 1000;
+  // -l threshold is in milliseconds
+  if (threshold > 0 && lat_us / 1000 < threshold)
+    return;
+
+  printf("osd %d alloc %-10s ", osd_id, val->name[0] ? val->name : "?");
+  if (val->depth)
+    printf("(nested d%u) ", val->depth);
+  printf("want 0x%llx unit 0x%llx ", val->want, val->unit);
+  if (val->hint > 0)  // 0 and -1 both mean "no hint"
+    printf("hint 0x%llx ", (unsigned long long)val->hint);
+
+  if (val->rval < 0) {
+    printf("-> ret %lld%s ", val->rval, val->rval == -28 ? " (ENOSPC)" : "");
+  } else {
+    printf("-> 0x%llx%s ", (unsigned long long)val->rval,
+           (__u64)val->rval < val->want ? " SHORT" : "");
+  }
+
+  printf("exts %u [", val->nextents);
+  __u32 shown = val->nextents < ALLOC_MAX_EXTENTS ? val->nextents
+                                                  : ALLOC_MAX_EXTENTS;
+  for (__u32 i = 0; i < shown; ++i)
+    printf("%s0x%llx~0x%llx", i ? " " : "", val->ext[i].offset,
+           val->ext[i].length);
+  if (val->nextents > shown)
+    printf(" ...");
+  printf("] lat %lluus comm %s\n", lat_us, val->comm);
+}
+
 static int handle_event(void *ctx, void *data, size_t size) {
   (void)ctx;
   int osd_id = -1;
@@ -771,6 +915,7 @@ static int handle_event(void *ctx, void *data, size_t size) {
   // Determine event type based on size
   bool is_bluestore_event = (size == sizeof(struct bluestore_lat_v));
   bool is_op_event = (size == sizeof(struct op_v));
+  bool is_alloc_event = (size == sizeof(struct alloc_v));
 
   if (is_op_event && (probe_mode & (OP_SINGLE_PROBE | OP_FULL_PROBE))) {
     struct op_v *val = (struct op_v *)data;
@@ -787,6 +932,11 @@ static int handle_event(void *ctx, void *data, size_t size) {
     pid = val->pid;
     osd_id = osd_pid_to_id(pid);
     handle_bluestore(val, osd_id);
+  } else if (is_alloc_event && (probe_mode & ALLOC_PROBE)) {
+    struct alloc_v *val = (struct alloc_v *)data;
+    pid = val->pid;
+    osd_id = osd_pid_to_id(pid);
+    handle_alloc(val, osd_id);
   }
 
   if (!exists(osd_id)) {
@@ -980,7 +1130,7 @@ int parse_args(int argc, char **argv) {
   // it in a plain char is unsafe on platforms where char is unsigned by
   // default (the `!= -1` test can then loop forever).  Match kfstrace.
   int opt;
-  while ((opt = getopt_long(argc, argv, ":st:bj:i:l:p:Va", long_options, &option_index)) != -1) {
+  while ((opt = getopt_long(argc, argv, ":st:bAj:i:l:p:Va", long_options, &option_index)) != -1) {
     switch (opt) {
       case 0:
         // Handle long options
@@ -1025,6 +1175,11 @@ int parse_args(int argc, char **argv) {
       case 'b':
         probe_mode |= BLUESTORE_PROBE;
         break;
+      case 'A':
+        // focused allocator view; composes with -b like -s does
+        probe_mode &= ~OP_FULL_PROBE;
+        probe_mode |= ALLOC_PROBE;
+        break;
       case 'j':
         export_json = true;
         json_output_file = optarg;
@@ -1060,10 +1215,11 @@ int parse_args(int argc, char **argv) {
         break;
       case '?':
       case 'h':
-        std::cout << "Usage: " << argv[0] << " [-s] [-l <milliseconds>] [-b] [-j] [-i <filename>] [-t <seconds>] [-a] [-p <pid1,pid2,...>] [--id <osd-id1,osd-id2,...>] [--skip-version-check] [--list] [--list-embedded]\n";
+        std::cout << "Usage: " << argv[0] << " [-s] [-l <milliseconds>] [-b] [-A] [-j] [-i <filename>] [-t <seconds>] [-a] [-p <pid1,pid2,...>] [--id <osd-id1,osd-id2,...>] [--skip-version-check] [--list] [--list-embedded]\n";
         std::cout << "  -s                        Set probe mode to Single OP (logs PrimaryLogPG::log_op_stats only)\n";
         std::cout << "  -l <milliseconds>         Set operation latency threshold to capture\n";
         std::cout << "  -b                        Set probe mode to Bluestore\n";
+        std::cout << "  -A                        Trace BlueStore/BlueFS allocator calls (allocator, requested size, returned extents, latency)\n";
         std::cout << "  -j                        Export DWARF info to JSON file\n";
         std::cout << "  -i <filename>             Import DWARF info from JSON file\n";
         std::cout << "  -t <seconds>              Set execution timeout in seconds\n";
@@ -1526,27 +1682,53 @@ struct AttachEntry {
   int mode;
   bool exact;
   int v;
+  bool ret;  // attach as uretprobe
 };
 
 static const AttachEntry ATTACH_LIST[] = {
-    {"PrimaryLogPG::log_op_stats", OP_SINGLE_PROBE, /*exact=*/true, 2},
-    {"OSD::dequeue_op", OP_FULL_PROBE, false, 0},
-    {"PrimaryLogPG::execute_ctx", OP_FULL_PROBE, false, 0},
-    {"ReplicatedBackend::submit_transaction", OP_FULL_PROBE, false, 0},
-    {"ECBackend::submit_transaction", OP_FULL_PROBE, false, 0},
-    {"OpRequest::mark_flag_point_string", OP_FULL_PROBE, false, 0},
-    {"OpRequest::mark_flag_point", OP_FULL_PROBE, false, 0},
-    {"ReplicatedBackend::generate_subop", OP_FULL_PROBE, false, 0},
-    {"ReplicatedBackend::do_repop_reply", OP_FULL_PROBE, false, 0},
-    {"BlueStore::queue_transactions", OP_FULL_PROBE, false, 0},
-    {"BlueStore::_txc_calc_cost", OP_FULL_PROBE, false, 0},
-    {"BlueStore::_txc_state_proc", OP_FULL_PROBE, false, 0},
-    {"BlueStore::_txc_add_transaction", OP_FULL_PROBE, false, 0},
-    {"PrimaryLogPG::log_op_stats", OP_FULL_PROBE, false, 0},
-    {"ReplicatedBackend::repop_commit", OP_FULL_PROBE, false, 0},
-    {"OSD::enqueue_op", OP_FULL_PROBE, false, 0},
-    {"BlueStore::log_latency", BLUESTORE_PROBE, false, 0},
-    {"BlueStore::log_latency_fn", BLUESTORE_PROBE, false, 0},
+    {"PrimaryLogPG::log_op_stats", OP_SINGLE_PROBE, /*exact=*/true, 2, false},
+    {"OSD::dequeue_op", OP_FULL_PROBE, false, 0, false},
+    {"PrimaryLogPG::execute_ctx", OP_FULL_PROBE, false, 0, false},
+    {"ReplicatedBackend::submit_transaction", OP_FULL_PROBE, false, 0, false},
+    {"ECBackend::submit_transaction", OP_FULL_PROBE, false, 0, false},
+    {"OpRequest::mark_flag_point_string", OP_FULL_PROBE, false, 0, false},
+    {"OpRequest::mark_flag_point", OP_FULL_PROBE, false, 0, false},
+    {"ReplicatedBackend::generate_subop", OP_FULL_PROBE, false, 0, false},
+    {"ReplicatedBackend::do_repop_reply", OP_FULL_PROBE, false, 0, false},
+    {"BlueStore::queue_transactions", OP_FULL_PROBE, false, 0, false},
+    {"BlueStore::_txc_calc_cost", OP_FULL_PROBE, false, 0, false},
+    {"BlueStore::_txc_state_proc", OP_FULL_PROBE, false, 0, false},
+    {"BlueStore::_txc_add_transaction", OP_FULL_PROBE, false, 0, false},
+    {"PrimaryLogPG::log_op_stats", OP_FULL_PROBE, false, 0, false},
+    {"ReplicatedBackend::repop_commit", OP_FULL_PROBE, false, 0, false},
+    {"OSD::enqueue_op", OP_FULL_PROBE, false, 0, false},
+    {"BlueStore::log_latency", BLUESTORE_PROBE, false, 0, false},
+    {"BlueStore::log_latency_fn", BLUESTORE_PROBE, false, 0, false},
+    // Allocator tracing (-A): one entry uprobe + the shared uretprobe (v=2,
+    // "<func>_v2" in func_progid) per concrete allocate() override.  A given
+    // binary only defines some of these; the rest skip with a warning.
+    {"StupidAllocator::allocate", ALLOC_PROBE, false, 0, false},
+    {"StupidAllocator::allocate", ALLOC_PROBE, false, 2, true},
+    {"BitmapAllocator::allocate", ALLOC_PROBE, false, 0, false},
+    {"BitmapAllocator::allocate", ALLOC_PROBE, false, 2, true},
+    {"AvlAllocator::allocate", ALLOC_PROBE, false, 0, false},
+    {"AvlAllocator::allocate", ALLOC_PROBE, false, 2, true},
+    {"BtreeAllocator::allocate", ALLOC_PROBE, false, 0, false},
+    {"BtreeAllocator::allocate", ALLOC_PROBE, false, 2, true},
+    {"Btree2Allocator::allocate", ALLOC_PROBE, false, 0, false},
+    {"Btree2Allocator::allocate", ALLOC_PROBE, false, 2, true},
+    {"HybridAllocatorBase<AvlAllocator>::allocate", ALLOC_PROBE, false, 0, false},
+    {"HybridAllocatorBase<AvlAllocator>::allocate", ALLOC_PROBE, false, 2, true},
+    {"HybridAllocator<AvlAllocator>::allocate", ALLOC_PROBE, false, 0, false},
+    {"HybridAllocator<AvlAllocator>::allocate", ALLOC_PROBE, false, 2, true},
+    {"HybridAllocator::allocate", ALLOC_PROBE, false, 0, false},
+    {"HybridAllocator::allocate", ALLOC_PROBE, false, 2, true},
+    {"HybridAllocatorBase<Btree2Allocator>::allocate", ALLOC_PROBE, false, 0, false},
+    {"HybridAllocatorBase<Btree2Allocator>::allocate", ALLOC_PROBE, false, 2, true},
+    {"HybridAllocator<Btree2Allocator>::allocate", ALLOC_PROBE, false, 0, false},
+    {"HybridAllocator<Btree2Allocator>::allocate", ALLOC_PROBE, false, 2, true},
+    {"HybridBtree2Allocator::allocate", ALLOC_PROBE, false, 0, false},
+    {"HybridBtree2Allocator::allocate", ALLOC_PROBE, false, 2, true},
 };
 
 // Load the BPF skeleton, attach the probes selected by probe_mode, and poll
@@ -1611,11 +1793,15 @@ static int run_tracer(DwarfParser &dwarfparser, const TraceTarget &target) {
     bool enabled = e.exact ? (probe_mode == e.mode) : (probe_mode & e.mode);
     if (!enabled) continue;
     if (attach_probes(skel.get(), dwarfparser, target.osd_path, target.pids,
-                      e.func, /*is_retprobe=*/false, e.v) == 0)
+                      e.func, e.ret, e.v) == 0)
       ++attached;
   }
   if (attached == 0) {
     cerr << "Error: no probes could be attached to " << target.osd_path << endl;
+    if (probe_mode & ALLOC_PROBE)
+      cerr << "Hint: -A needs DWARF data that includes the allocator probes; "
+              "DWARF JSONs / embedded data generated before allocator tracing "
+              "was added lack them (regenerate with -j)" << endl;
     return 1;
   }
 

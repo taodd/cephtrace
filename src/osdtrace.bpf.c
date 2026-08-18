@@ -135,6 +135,23 @@ static __always_inline void capture_decoded_osd_ops(
   }
 }
 
+// per-thread allocate() nesting depth (-A mode)
+struct {
+  __uint(type, BPF_MAP_TYPE_HASH);
+  __type(key, __u64);
+  __type(value, __u32);
+  __uint(max_entries, 256);
+} alloc_depth SEC(".maps");
+
+// in-flight allocate() calls, keyed by {pid_tgid, depth}. LRU so entries
+// orphaned by a missed return probe self-evict.
+struct {
+  __uint(type, BPF_MAP_TYPE_LRU_HASH);
+  __type(key, struct alloc_k);
+  __type(value, struct alloc_inflight);
+  __uint(max_entries, 1024);
+} allocs_inflight SEC(".maps");
+
 SEC("uprobe")
 int uprobe_enqueue_op(struct pt_regs *ctx) {
   int varid = 0;
@@ -967,5 +984,180 @@ int uprobe_txc_add_transaction(struct pt_regs *ctx)
     vp->detail_ops_captured = captured + 1;
   }
 
+  return 0;
+}
+
+/*
+ * Allocator tracing (-A).
+ *
+ * Every concrete allocator overrides the pure-virtual
+ * Allocator::allocate(want, unit, max_alloc_size, hint, PExtentVector*),
+ * so the overrides are guaranteed out-of-line and form a choke point for
+ * both BlueStore data allocations and BlueFS file allocations. Entry
+ * probes stash the request per {thread, nesting depth}; a shared
+ * uretprobe computes the latency and walks the returned PExtentVector.
+ *
+ * Nesting matters: HybridAllocator's allocate() falls back to its
+ * internal BitmapAllocator's allocate(), and HybridBtree2Allocator's
+ * allocate() calls its base class version -- all probed, so a per-thread
+ * depth counter keeps the entry/return pairs matched.
+ */
+
+// shared entry body; varid points at this function's
+// {"extents","_M_impl","_M_start"} / {"_M_finish"} varpaths
+static __always_inline int alloc_entry(struct pt_regs *ctx, int varid) {
+  __u64 ptid = bpf_get_current_pid_tgid();
+  __u32 depth = 0;
+  __u32 *dp = bpf_map_lookup_elem(&alloc_depth, &ptid);
+  if (NULL != dp)
+    depth = *dp;
+  __u32 ndepth = depth + 1;
+  bpf_map_update_elem(&alloc_depth, &ptid, &ndepth, 0);
+  if (depth >= ALLOC_MAX_DEPTH)
+    return 0;  // not stashed; the uretprobe still decrements
+
+  struct alloc_inflight in;
+  memset(&in, 0, sizeof(in));
+
+  // allocator instance name ("block", "bluefs-db", ...) via the varpath
+  // harvested from {AllocatorBase,Allocator}::get_name -- `this` sits in
+  // the same register at any method entry, so the location is reusable
+  int nvarid = ALLOC_NAME_VARID;
+  struct VarField *vf = bpf_map_lookup_elem(&hprobes, &nvarid);
+  if (NULL != vf) {
+    __u64 v = fetch_register(ctx, vf->varloc.reg);
+    __u64 mp_addr = fetch_var_member_addr(v, vf);
+    __u64 str_addr = 0;
+    bpf_probe_read_user(&str_addr, sizeof(str_addr), (void *)mp_addr);
+    bpf_probe_read_user_str(in.name, sizeof(in.name), (void *)str_addr);
+  }
+
+  // offsets of _M_start/_M_finish inside PExtentVector, for the uretprobe
+  // (member chain is offset-only: base classes and direct members)
+  vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL != vf && vf->size >= 3)
+    in.start_off = vf->fields[1].offset + vf->fields[2].offset;
+  else
+    bpf_printk("alloc_entry got NULL/short vf at varid %d\n", varid);
+  ++varid;
+  vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL != vf && vf->size >= 3)
+    in.finish_off = vf->fields[1].offset + vf->fields[2].offset;
+
+  in.want = PT_REGS_PARM2(ctx);
+  in.unit = PT_REGS_PARM3(ctx);
+  in.max_alloc = PT_REGS_PARM4(ctx);
+  in.hint = (__s64)PT_REGS_PARM5(ctx);
+  in.extents = PT_REGS_PARM6(ctx);
+  in.tid = get_tid();
+  bpf_get_current_comm(in.comm, sizeof(in.comm));
+  in.ts = bpf_ktime_get_boot_ns();
+
+  struct alloc_k key;
+  memset(&key, 0, sizeof(key));
+  key.ptid = ptid;
+  key.depth = depth;
+  bpf_map_update_elem(&allocs_inflight, &key, &in, 0);
+  return 0;
+}
+
+SEC("uprobe")
+int uprobe_alloc_stupid(struct pt_regs *ctx) { return alloc_entry(ctx, 300); }
+
+SEC("uprobe")
+int uprobe_alloc_bitmap(struct pt_regs *ctx) { return alloc_entry(ctx, 310); }
+
+SEC("uprobe")
+int uprobe_alloc_avl(struct pt_regs *ctx) { return alloc_entry(ctx, 320); }
+
+SEC("uprobe")
+int uprobe_alloc_btree(struct pt_regs *ctx) { return alloc_entry(ctx, 330); }
+
+SEC("uprobe")
+int uprobe_alloc_btree2(struct pt_regs *ctx) { return alloc_entry(ctx, 340); }
+
+// HybridAllocatorBase<AvlAllocator> / HybridAllocator<AvlAllocator> /
+// HybridAllocator (pre-template releases)
+SEC("uprobe")
+int uprobe_alloc_hybrid_avl(struct pt_regs *ctx) { return alloc_entry(ctx, 350); }
+
+// HybridAllocatorBase<Btree2Allocator> / HybridAllocator<Btree2Allocator>
+SEC("uprobe")
+int uprobe_alloc_hybrid_btree2(struct pt_regs *ctx) { return alloc_entry(ctx, 360); }
+
+// HybridBtree2Allocator's own override (cache fast path wrapper)
+SEC("uprobe")
+int uprobe_alloc_hybrid_btree2_outer(struct pt_regs *ctx) { return alloc_entry(ctx, 370); }
+
+// shared return probe for all allocate() variants
+SEC("uretprobe")
+int uretprobe_allocator(struct pt_regs *ctx) {
+  __u64 ptid = bpf_get_current_pid_tgid();
+  __u32 *dp = bpf_map_lookup_elem(&alloc_depth, &ptid);
+  if (NULL == dp)
+    return 0;
+  __u32 depth = *dp;
+  if (depth == 0) {
+    bpf_map_delete_elem(&alloc_depth, &ptid);
+    return 0;
+  }
+  depth -= 1;
+  if (depth == 0)
+    bpf_map_delete_elem(&alloc_depth, &ptid);
+  else
+    bpf_map_update_elem(&alloc_depth, &ptid, &depth, 0);
+  if (depth >= ALLOC_MAX_DEPTH)
+    return 0;  // entry was not stashed
+
+  struct alloc_k key;
+  memset(&key, 0, sizeof(key));
+  key.ptid = ptid;
+  key.depth = depth;
+  struct alloc_inflight *in = bpf_map_lookup_elem(&allocs_inflight, &key);
+  if (NULL == in)
+    return 0;
+
+  __u64 now = bpf_ktime_get_boot_ns();
+  struct alloc_v *e = bpf_ringbuf_reserve(&rb, sizeof(struct alloc_v), 0);
+  if (NULL == e) {
+    bpf_map_delete_elem(&allocs_inflight, &key);
+    return 0;
+  }
+  memset(e, 0, sizeof(*e));
+  e->pid = get_pid();
+  e->tid = in->tid;
+  __builtin_memcpy(e->comm, in->comm, sizeof(e->comm));
+  __builtin_memcpy(e->name, in->name, sizeof(e->name));
+  e->depth = depth;
+  e->want = in->want;
+  e->unit = in->unit;
+  e->max_alloc = in->max_alloc;
+  e->hint = in->hint;
+  e->rval = (__s64)PT_REGS_RC(ctx);
+  e->lat = now - in->ts;
+
+  // walk the returned PExtentVector: {_M_start, _M_finish} pointers,
+  // elements are bluestore_pextent_t {u64 offset; u32 length;} = 16 bytes
+  __u64 vstart = 0, vfinish = 0;
+  bpf_probe_read_user(&vstart, sizeof(vstart),
+                      (void *)(in->extents + in->start_off));
+  bpf_probe_read_user(&vfinish, sizeof(vfinish),
+                      (void *)(in->extents + in->finish_off));
+  __u32 n = 0;
+  if (vfinish > vstart)
+    n = (vfinish - vstart) / 16;
+  e->nextents = n;
+  for (int i = 0; i < ALLOC_MAX_EXTENTS; i++) {
+    if ((__u32)i >= n)
+      break;
+    __u64 base = vstart + 16ULL * (__u64)i;
+    bpf_probe_read_user(&e->ext[i].offset, sizeof(__u64), (void *)base);
+    __u32 l = 0;
+    bpf_probe_read_user(&l, sizeof(l), (void *)(base + 8));
+    e->ext[i].length = l;
+  }
+
+  bpf_ringbuf_submit(e, 0);
+  bpf_map_delete_elem(&allocs_inflight, &key);
   return 0;
 }
