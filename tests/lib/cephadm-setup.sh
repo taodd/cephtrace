@@ -183,7 +183,8 @@ _purge_partial_clusters() {
 # cephadm_bootstrap_single_host).
 _orch_backend_ready() {
     local fsid="$1"
-    cephadm shell --fsid "$fsid" -- ceph orch status >/dev/null 2>&1
+    local cephadm_bin="${2:-/tmp/cephadm}"
+    timeout 15 "$cephadm_bin" shell --fsid "$fsid" -- ceph --connect-timeout 5 orch status >/dev/null 2>&1
 }
 
 
@@ -277,7 +278,7 @@ cephadm_bootstrap_single_host() {
             >&2 || rc=$?
 
         fsid=$(ls /var/lib/ceph/ 2>/dev/null | grep -E '^[0-9a-f]{8}-[0-9a-f-]+$' | head -1)
-        if [[ -n "$fsid" ]] && _orch_backend_ready "$fsid"; then
+        if [[ -n "$fsid" ]] && _orch_backend_ready "$fsid" "$cephadm_bin"; then
             # Cluster is up with a working orchestrator backend; a non-zero
             # rc here is the benign service-apply mismatch described above.
             # info() goes to stdout, which this function's caller captures as
@@ -324,10 +325,16 @@ wait_cephadm_healthy() {
     while [[ $(date +%s) -lt $deadline ]]; do
         local s
         s=$(_ceph "$fsid" ceph -s --format=json 2>/dev/null) || true
-        if [[ -n "$s" ]] && python3 -c "
+        # Feed the JSON through stdin rather than splicing it into the
+        # python source: embedded in a string literal, JSON escapes such
+        # as the \n inside progress_events[].message (present for as long
+        # as any progress bar is showing -- quincy keeps a "Global Recovery
+        # Event" up for many minutes) turn into real control characters and
+        # json.loads() fails, so the loop never sees the cluster as ready.
+        if [[ -n "$s" ]] && printf '%s' "$s" | python3 -c "
 import json, sys
 try:
-    d = json.loads('''$s''')
+    d = json.load(sys.stdin)
 except Exception:
     sys.exit(2)
 mon  = len(d.get('quorum_names', []))
