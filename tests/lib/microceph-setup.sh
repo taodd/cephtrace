@@ -60,10 +60,13 @@ microceph_setup_single_node() {
     while [ "$elapsed" -lt "$health_timeout" ]; do
         local status_json
         status_json=$(microceph.ceph status --format=json 2>/dev/null) || true
-        if [ -n "$status_json" ] && python3 -c "
+        # JSON via stdin, not spliced into the python source: escapes such as
+        # the \n in progress_events[].message would become real control
+        # characters inside the string literal and break json.loads().
+        if [ -n "$status_json" ] && printf '%s' "$status_json" | python3 -c "
 import json, sys
 try:
-    d = json.loads('''$status_json''')
+    d = json.load(sys.stdin)
 except Exception:
     sys.exit(2)
 health = d.get('health', {}).get('status', '')

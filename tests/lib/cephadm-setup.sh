@@ -325,10 +325,16 @@ wait_cephadm_healthy() {
     while [[ $(date +%s) -lt $deadline ]]; do
         local s
         s=$(_ceph "$fsid" ceph -s --format=json 2>/dev/null) || true
-        if [[ -n "$s" ]] && python3 -c "
+        # Feed the JSON through stdin rather than splicing it into the
+        # python source: embedded in a string literal, JSON escapes such
+        # as the \n inside progress_events[].message (present for as long
+        # as any progress bar is showing -- quincy keeps a "Global Recovery
+        # Event" up for many minutes) turn into real control characters and
+        # json.loads() fails, so the loop never sees the cluster as ready.
+        if [[ -n "$s" ]] && printf '%s' "$s" | python3 -c "
 import json, sys
 try:
-    d = json.loads('''$s''')
+    d = json.load(sys.stdin)
 except Exception:
     sys.exit(2)
 mon  = len(d.get('quorum_names', []))
