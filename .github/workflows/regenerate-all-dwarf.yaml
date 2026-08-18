@@ -118,18 +118,21 @@ jobs:
           import json
           import os
           import pathlib
+          import re
           import shutil
           import subprocess
 
           files = json.loads(os.environ["FILES_JSON"])
-          version = os.environ["REF_VERSION"]
+          # The matrix "version" is the reference JSON's "version" field, i.e.
+          # the full RPM EVR such as "2:17.2.6-0.el8".  gen_dwarf_for_version.sh
+          # takes that as its <pkgver> argument, but its <version> argument is
+          # the upstream x.y.z ("17.2.6") that names the download.ceph.com repo
+          # and the container -- see the usage block in the script.
+          pkgver = os.environ["REF_VERSION"]
+          version = re.sub(r"^\d+:", "", pkgver).split("-")[0]
 
-          # Determine package version from existing reference JSON
-          pkgver = None
           tools = set()
           for path in files:
-              data = json.load(open(path, encoding="utf-8"))
-              pkgver = data.get("version", version)
               if "/osdtrace/" in path:
                   tools.add("osdtrace")
               if "/radostrace/" in path:
