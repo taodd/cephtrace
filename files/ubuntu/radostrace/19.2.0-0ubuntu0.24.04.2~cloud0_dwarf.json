@@ -1,1186 +1,1186 @@
 {
-    "version": "19.2.0-0ubuntu0.24.04.2~cloud0",
-    "arch": "amd64",
-    "libceph-common.so.2": {
-        "build_id": "f5b2886579b5c465471b9b71d4e8ecf2f5147562",
-        "func2pc": {
-            "Objecter::_finish_op": 8655344,
-            "Objecter::_send_op": 8595888
-        },
-        "type_sizes": {
-            "OSDOp": 112
-        },
-        "member_offsets": {
-            "OSDOp::indata._carriage": 56,
-            "OSDOp::op.cls.class_len": 6,
-            "OSDOp::op.cls.method_len": 7,
-            "OSDOp::op.extent.length": 14,
-            "OSDOp::op.extent.offset": 6
-        },
-        "func2vf": {
-            "Objecter::_finish_op": {
-                "var_fields": [
-                    {
-                        "location": {
-                            "reg": 4,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 1064,
-                                "pointer": true
-                            }
-                        ]
-                    },
-                    {
-                        "location": {
-                            "reg": 5,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 32,
-                                "pointer": true
-                            },
-                            {
-                                "offset": 1368,
-                                "pointer": true
-                            }
-                        ]
-                    },
-                    {
-                        "location": {
-                            "reg": 4,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 40,
-                                "pointer": true
-                            },
-                            {
-                                "offset": 400,
-                                "pointer": false
-                            }
-                        ]
-                    }
-                ]
-            },
-            "Objecter::_send_op": {
-                "var_fields": [
-                    {
-                        "location": {
-                            "reg": 4,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 1064,
-                                "pointer": true
-                            }
-                        ]
-                    },
-                    {
-                        "location": {
-                            "reg": 5,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 32,
-                                "pointer": true
-                            },
-                            {
-                                "offset": 1368,
-                                "pointer": true
-                            }
-                        ]
-                    },
-                    {
-                        "location": {
-                            "reg": 4,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 40,
-                                "pointer": true
-                            },
-                            {
-                                "offset": 400,
-                                "pointer": false
-                            }
-                        ]
-                    },
-                    {
-                        "location": {
-                            "reg": 4,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 40,
-                                "pointer": true
-                            },
-                            {
-                                "offset": 8,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 8,
-                                "pointer": false
-                            }
-                        ]
-                    },
-                    {
-                        "location": {
-                            "reg": 4,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 40,
-                                "pointer": true
-                            },
-                            {
-                                "offset": 8,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            }
-                        ]
-                    },
-                    {
-                        "location": {
-                            "reg": 4,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 40,
-                                "pointer": true
-                            },
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            }
-                        ]
-                    },
-                    {
-                        "location": {
-                            "reg": 4,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 40,
-                                "pointer": true
-                            },
-                            {
-                                "offset": 272,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            }
-                        ]
-                    },
-                    {
-                        "location": {
-                            "reg": 4,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 40,
-                                "pointer": true
-                            },
-                            {
-                                "offset": 272,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 8,
-                                "pointer": false
-                            }
-                        ]
-                    },
-                    {
-                        "location": {
-                            "reg": 4,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 40,
-                                "pointer": true
-                            },
-                            {
-                                "offset": 336,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            }
-                        ]
-                    },
-                    {
-                        "location": {
-                            "reg": 4,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 40,
-                                "pointer": true
-                            },
-                            {
-                                "offset": 336,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 8,
-                                "pointer": false
-                            }
-                        ]
-                    },
-                    {
-                        "location": {
-                            "reg": 4,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 464,
-                                "pointer": true
-                            },
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            }
-                        ]
-                    },
-                    {
-                        "location": {
-                            "reg": 4,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 464,
-                                "pointer": true
-                            },
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 8,
-                                "pointer": false
-                            }
-                        ]
-                    }
-                ]
-            }
-        }
+  "version": "19.2.0-0ubuntu0.24.04.2~cloud0",
+  "arch": "amd64",
+  "libceph-common.so.2": {
+    "build_id": "f5b2886579b5c465471b9b71d4e8ecf2f5147562",
+    "func2pc": {
+      "Objecter::_finish_op": 8655344,
+      "Objecter::_send_op": 8595888
     },
-    "librados.so.2": {
-        "build_id": "b88ed685ad283f9259df920fa969bdc266e5cf3f",
-        "func2pc": {
-            "Objecter::_finish_op": 960560,
-            "Objecter::_send_op": 901104
-        },
-        "type_sizes": {
-            "OSDOp": 112
-        },
-        "member_offsets": {
-            "OSDOp::indata._carriage": 56,
-            "OSDOp::op.cls.class_len": 6,
-            "OSDOp::op.cls.method_len": 7,
-            "OSDOp::op.extent.length": 14,
-            "OSDOp::op.extent.offset": 6
-        },
-        "func2vf": {
-            "Objecter::_finish_op": {
-                "var_fields": [
-                    {
-                        "location": {
-                            "reg": 4,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 1064,
-                                "pointer": true
-                            }
-                        ]
-                    },
-                    {
-                        "location": {
-                            "reg": 5,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 32,
-                                "pointer": true
-                            },
-                            {
-                                "offset": 1368,
-                                "pointer": true
-                            }
-                        ]
-                    },
-                    {
-                        "location": {
-                            "reg": 4,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 40,
-                                "pointer": true
-                            },
-                            {
-                                "offset": 400,
-                                "pointer": false
-                            }
-                        ]
-                    }
-                ]
-            },
-            "Objecter::_send_op": {
-                "var_fields": [
-                    {
-                        "location": {
-                            "reg": 4,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 1064,
-                                "pointer": true
-                            }
-                        ]
-                    },
-                    {
-                        "location": {
-                            "reg": 5,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 32,
-                                "pointer": true
-                            },
-                            {
-                                "offset": 1368,
-                                "pointer": true
-                            }
-                        ]
-                    },
-                    {
-                        "location": {
-                            "reg": 4,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 40,
-                                "pointer": true
-                            },
-                            {
-                                "offset": 400,
-                                "pointer": false
-                            }
-                        ]
-                    },
-                    {
-                        "location": {
-                            "reg": 4,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 40,
-                                "pointer": true
-                            },
-                            {
-                                "offset": 8,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 8,
-                                "pointer": false
-                            }
-                        ]
-                    },
-                    {
-                        "location": {
-                            "reg": 4,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 40,
-                                "pointer": true
-                            },
-                            {
-                                "offset": 8,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            }
-                        ]
-                    },
-                    {
-                        "location": {
-                            "reg": 4,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 40,
-                                "pointer": true
-                            },
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            }
-                        ]
-                    },
-                    {
-                        "location": {
-                            "reg": 4,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 40,
-                                "pointer": true
-                            },
-                            {
-                                "offset": 272,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            }
-                        ]
-                    },
-                    {
-                        "location": {
-                            "reg": 4,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 40,
-                                "pointer": true
-                            },
-                            {
-                                "offset": 272,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 8,
-                                "pointer": false
-                            }
-                        ]
-                    },
-                    {
-                        "location": {
-                            "reg": 4,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 40,
-                                "pointer": true
-                            },
-                            {
-                                "offset": 336,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            }
-                        ]
-                    },
-                    {
-                        "location": {
-                            "reg": 4,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 40,
-                                "pointer": true
-                            },
-                            {
-                                "offset": 336,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 8,
-                                "pointer": false
-                            }
-                        ]
-                    },
-                    {
-                        "location": {
-                            "reg": 4,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 464,
-                                "pointer": true
-                            },
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            }
-                        ]
-                    },
-                    {
-                        "location": {
-                            "reg": 4,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 464,
-                                "pointer": true
-                            },
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 8,
-                                "pointer": false
-                            }
-                        ]
-                    }
-                ]
-            }
-        }
+    "type_sizes": {
+      "OSDOp": 112
     },
-    "librbd.so.1": {
-        "build_id": "a3f1e9db89cee48c44ae9d23434a7da70aea7317",
-        "func2pc": {
-            "Objecter::_finish_op": 7129760,
-            "Objecter::_send_op": 7070304
-        },
-        "type_sizes": {
-            "OSDOp": 112
-        },
-        "member_offsets": {
-            "OSDOp::indata._carriage": 56,
-            "OSDOp::op.cls.class_len": 6,
-            "OSDOp::op.cls.method_len": 7,
-            "OSDOp::op.extent.length": 14,
-            "OSDOp::op.extent.offset": 6
-        },
-        "func2vf": {
-            "Objecter::_finish_op": {
-                "var_fields": [
-                    {
-                        "location": {
-                            "reg": 4,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 1064,
-                                "pointer": true
-                            }
-                        ]
-                    },
-                    {
-                        "location": {
-                            "reg": 5,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 32,
-                                "pointer": true
-                            },
-                            {
-                                "offset": 1368,
-                                "pointer": true
-                            }
-                        ]
-                    },
-                    {
-                        "location": {
-                            "reg": 4,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 40,
-                                "pointer": true
-                            },
-                            {
-                                "offset": 400,
-                                "pointer": false
-                            }
-                        ]
-                    }
-                ]
+    "member_offsets": {
+      "OSDOp::indata._carriage": 56,
+      "OSDOp::op.cls.class_len": 6,
+      "OSDOp::op.cls.method_len": 7,
+      "OSDOp::op.extent.length": 14,
+      "OSDOp::op.extent.offset": 6
+    },
+    "func2vf": {
+      "Objecter::_finish_op": {
+        "var_fields": [
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
             },
-            "Objecter::_send_op": {
-                "var_fields": [
-                    {
-                        "location": {
-                            "reg": 4,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 1064,
-                                "pointer": true
-                            }
-                        ]
-                    },
-                    {
-                        "location": {
-                            "reg": 5,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 32,
-                                "pointer": true
-                            },
-                            {
-                                "offset": 1368,
-                                "pointer": true
-                            }
-                        ]
-                    },
-                    {
-                        "location": {
-                            "reg": 4,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 40,
-                                "pointer": true
-                            },
-                            {
-                                "offset": 400,
-                                "pointer": false
-                            }
-                        ]
-                    },
-                    {
-                        "location": {
-                            "reg": 4,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 40,
-                                "pointer": true
-                            },
-                            {
-                                "offset": 8,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 8,
-                                "pointer": false
-                            }
-                        ]
-                    },
-                    {
-                        "location": {
-                            "reg": 4,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 40,
-                                "pointer": true
-                            },
-                            {
-                                "offset": 8,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            }
-                        ]
-                    },
-                    {
-                        "location": {
-                            "reg": 4,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 40,
-                                "pointer": true
-                            },
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            }
-                        ]
-                    },
-                    {
-                        "location": {
-                            "reg": 4,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 40,
-                                "pointer": true
-                            },
-                            {
-                                "offset": 272,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            }
-                        ]
-                    },
-                    {
-                        "location": {
-                            "reg": 4,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 40,
-                                "pointer": true
-                            },
-                            {
-                                "offset": 272,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 8,
-                                "pointer": false
-                            }
-                        ]
-                    },
-                    {
-                        "location": {
-                            "reg": 4,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 40,
-                                "pointer": true
-                            },
-                            {
-                                "offset": 336,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            }
-                        ]
-                    },
-                    {
-                        "location": {
-                            "reg": 4,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 40,
-                                "pointer": true
-                            },
-                            {
-                                "offset": 336,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 8,
-                                "pointer": false
-                            }
-                        ]
-                    },
-                    {
-                        "location": {
-                            "reg": 4,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 464,
-                                "pointer": true
-                            },
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            }
-                        ]
-                    },
-                    {
-                        "location": {
-                            "reg": 4,
-                            "offset": 0,
-                            "stack": false
-                        },
-                        "fields": [
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 464,
-                                "pointer": true
-                            },
-                            {
-                                "offset": 0,
-                                "pointer": false
-                            },
-                            {
-                                "offset": 8,
-                                "pointer": false
-                            }
-                        ]
-                    }
-                ]
-            }
-        }
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 1064,
+                "pointer": true
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 5,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 32,
+                "pointer": true
+              },
+              {
+                "offset": 1368,
+                "pointer": true
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 400,
+                "pointer": false
+              }
+            ]
+          }
+        ]
+      },
+      "Objecter::_send_op": {
+        "var_fields": [
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 1064,
+                "pointer": true
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 5,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 32,
+                "pointer": true
+              },
+              {
+                "offset": 1368,
+                "pointer": true
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 400,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 8,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 8,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 8,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 272,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 272,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 8,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 336,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 336,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 8,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 464,
+                "pointer": true
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 464,
+                "pointer": true
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 8,
+                "pointer": false
+              }
+            ]
+          }
+        ]
+      }
     }
+  },
+  "librados.so.2": {
+    "build_id": "b88ed685ad283f9259df920fa969bdc266e5cf3f",
+    "func2pc": {
+      "Objecter::_finish_op": 960560,
+      "Objecter::_send_op": 901104
+    },
+    "type_sizes": {
+      "OSDOp": 112
+    },
+    "member_offsets": {
+      "OSDOp::indata._carriage": 56,
+      "OSDOp::op.cls.class_len": 6,
+      "OSDOp::op.cls.method_len": 7,
+      "OSDOp::op.extent.length": 14,
+      "OSDOp::op.extent.offset": 6
+    },
+    "func2vf": {
+      "Objecter::_finish_op": {
+        "var_fields": [
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 1064,
+                "pointer": true
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 5,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 32,
+                "pointer": true
+              },
+              {
+                "offset": 1368,
+                "pointer": true
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 400,
+                "pointer": false
+              }
+            ]
+          }
+        ]
+      },
+      "Objecter::_send_op": {
+        "var_fields": [
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 1064,
+                "pointer": true
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 5,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 32,
+                "pointer": true
+              },
+              {
+                "offset": 1368,
+                "pointer": true
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 400,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 8,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 8,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 8,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 272,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 272,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 8,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 336,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 336,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 8,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 464,
+                "pointer": true
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 464,
+                "pointer": true
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 8,
+                "pointer": false
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "librbd.so.1": {
+    "build_id": "a3f1e9db89cee48c44ae9d23434a7da70aea7317",
+    "func2pc": {
+      "Objecter::_finish_op": 7129760,
+      "Objecter::_send_op": 7070304
+    },
+    "type_sizes": {
+      "OSDOp": 112
+    },
+    "member_offsets": {
+      "OSDOp::indata._carriage": 56,
+      "OSDOp::op.cls.class_len": 6,
+      "OSDOp::op.cls.method_len": 7,
+      "OSDOp::op.extent.length": 14,
+      "OSDOp::op.extent.offset": 6
+    },
+    "func2vf": {
+      "Objecter::_finish_op": {
+        "var_fields": [
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 1064,
+                "pointer": true
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 5,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 32,
+                "pointer": true
+              },
+              {
+                "offset": 1368,
+                "pointer": true
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 400,
+                "pointer": false
+              }
+            ]
+          }
+        ]
+      },
+      "Objecter::_send_op": {
+        "var_fields": [
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 1064,
+                "pointer": true
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 5,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 32,
+                "pointer": true
+              },
+              {
+                "offset": 1368,
+                "pointer": true
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 400,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 8,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 8,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 8,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 272,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 272,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 8,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 336,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 336,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 8,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 464,
+                "pointer": true
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 464,
+                "pointer": true
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 8,
+                "pointer": false
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
 }
