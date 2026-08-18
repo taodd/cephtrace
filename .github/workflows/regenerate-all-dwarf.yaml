@@ -118,17 +118,21 @@ jobs:
           import json
           import os
           import pathlib
+          import re
+          import shutil
           import subprocess
 
           files = json.loads(os.environ["FILES_JSON"])
-          version = os.environ["REF_VERSION"]
+          # The matrix "version" is the reference JSON's "version" field, i.e.
+          # the full RPM EVR such as "2:17.2.6-0.el8".  gen_dwarf_for_version.sh
+          # takes that as its <pkgver> argument, but its <version> argument is
+          # the upstream x.y.z ("17.2.6") that names the download.ceph.com repo
+          # and the container -- see the usage block in the script.
+          pkgver = os.environ["REF_VERSION"]
+          version = re.sub(r"^\d+:", "", pkgver).split("-")[0]
 
-          # Determine package version from existing reference JSON
-          pkgver = None
           tools = set()
           for path in files:
-              data = json.load(open(path, encoding="utf-8"))
-              pkgver = data.get("version", version)
               if "/osdtrace/" in path:
                   tools.add("osdtrace")
               if "/radostrace/" in path:
@@ -139,11 +143,12 @@ jobs:
           cmd = ["./tools/gen_dwarf_for_version.sh", "centos-stream", tools_arg, version, pkgver]
           subprocess.run(cmd, check=True)
 
+          # gen_dwarf_for_version.sh rewrote each reference in place with the
+          # tool's own `-j` output; stage those files verbatim.
           for path in files:
               output = pathlib.Path("out") / path
               output.parent.mkdir(parents=True, exist_ok=True)
-              data = json.load(open(path, encoding="utf-8"))
-              output.write_text(json.dumps(data, indent=4) + "\n")
+              shutil.copy2(path, output)
           PY
 
       - name: Regenerate Ubuntu/Debian references
@@ -164,8 +169,10 @@ jobs:
           distro = os.environ["REF_DISTRO"]
           version = os.environ["REF_VERSION"]
 
-          package_root = pathlib.Path("/tmp/package-root")
-          package_root.mkdir(exist_ok=True)
+          # Downloaded .deb/.ddeb files, unpacked with dpkg below so the
+          # tools' package-version detection (`dpkg -s`) sees the real version
+          # and the exported JSON needs no post-processing.
+          debs = []
 
           references = [json.load(open(path, encoding="utf-8")) for path in files]
           required_modules = {
@@ -273,7 +280,7 @@ jobs:
                   else:
                       raise subprocess.CalledProcessError(result.returncode, result.args)
 
-                  subprocess.run(["dpkg-deb", "-x", str(destination), str(package_root)], check=True)
+                  debs.append(destination)
 
           else: # debian
               package_for_module = {
@@ -303,13 +310,34 @@ jobs:
                       "--max-time", "3600", "-o", str(destination),
                       f"https://snapshot.debian.org/file/{match['hash']}"
                   ], check=True)
-                  subprocess.run(["dpkg-deb", "-x", str(destination), str(package_root)], check=True)
+                  debs.append(destination)
 
-          # Install extracted binaries, libraries, and debug info into system locations (/usr/)
-          subprocess.run(["sudo", "cp", "-rn", f"{package_root}/usr/.", "/usr/"], check=True)
+          # Unpack (not configure) the packages: files land in /usr and dpkg
+          # records the package version, without running postinst scripts or
+          # needing the runtime dependency closure on the runner.
+          subprocess.run(
+              ["sudo", "dpkg", "--unpack", "--force-depends", "--force-conflicts",
+               "--force-breaks", "--force-overwrite", *map(str, debs)],
+              check=True,
+          )
           subprocess.run(["sudo", "ldconfig"], check=True)
 
           for ref_path in files:
+              if "/radostrace/" in ref_path and version.startswith("15.2."):
+                  # radostrace does not support Ceph 15 (Octopus): its DWARF
+                  # probe set asks for members Octopus' librados lacks and
+                  # `radostrace -j` aborts (dwarf_parser.cc: failed to find
+                  # member location for m_holder).  Keep the committed
+                  # reference rather than take the whole version's job down.
+                  print(f"Skipping {ref_path}: radostrace does not support Ceph 15 ({version})")
+                  continue
+              if "_amd64v3" in ref_path:
+                  # amd64v3 references are captured from an x86-64-v3 rebuild of
+                  # the same package version; the archive binary fetched here is
+                  # the baseline build, so its PCs/build_id would be wrong for
+                  # that file.  Leave it alone rather than emit a bad reference.
+                  print(f"Skipping {ref_path}: amd64v3 references must be regenerated from a v3-built ceph-osd")
+                  continue
               reference = json.load(open(ref_path, encoding="utf-8"))
               output = pathlib.Path("out") / ref_path
               output.parent.mkdir(parents=True, exist_ok=True)
@@ -320,10 +348,16 @@ jobs:
                   command = ["./radostrace", "-j", str(output)]
 
               subprocess.run(command, check=True, timeout=1800)
+              # The tool's output is committed as-is; only verify it.
               generated = json.load(open(output, encoding="utf-8"))
-              generated["version"] = version
-              generated["arch"] = reference.get("arch", "amd64")
-              output.write_text(json.dumps(generated, indent=4) + "\n")
+              assert generated.get("version") == version, (
+                  f"{ref_path}: exported version {generated.get('version')!r} != {version!r} "
+                  "(package not registered with dpkg?)"
+              )
+              assert generated.get("arch") == reference.get("arch", "amd64"), (
+                  f"{ref_path}: exported arch {generated.get('arch')!r} != reference "
+                  f"{reference.get('arch', 'amd64')!r}"
+              )
 
               modules = {
                   key: value for key, value in reference.items()
@@ -346,10 +380,15 @@ jobs:
                   )
           PY
 
+      - name: Package DWARF artifacts
+        run: |
+          mkdir -p /tmp/dwarf-pkg
+          tar -czf /tmp/dwarf-pkg/dwarf.tar.gz -C out .
+
       - uses: actions/upload-artifact@v4
         with:
           name: archived-dwarf-${{ matrix.key }}
-          path: out/files/**/*.json
+          path: /tmp/dwarf-pkg/dwarf.tar.gz
           if-no-files-found: error
           retention-days: 3
 
@@ -358,6 +397,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Install build tools and python
         run: |
@@ -372,19 +413,10 @@ jobs:
 
       - name: Update repository JSON files from artifacts
         run: |
-          python3 - <<'PY'
-          import glob
-          import shutil
-          import os
-
-          for path in glob.glob("/tmp/downloaded-artifacts/**/*.json", recursive=True):
-              filename = os.path.basename(path)
-              # Search for target file in files/
-              matches = glob.glob(f"files/**/{filename}", recursive=True)
-              for target in matches:
-                  shutil.copy2(path, target)
-                  print(f"Updated {target}")
-          PY
+          for tarball in $(find /tmp/downloaded-artifacts -name "dwarf.tar.gz"); do
+            echo "Extracting $tarball"
+            tar -xzf "$tarball" -C .
+          done
 
       - name: Re-aggregate embedded DWARF header and verify build
         run: |
@@ -397,7 +429,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ -z "$(git status --porcelain files/ src/embedded_dwarf.h)" ]; then
+          if [ -z "$(git status --porcelain files/)" ]; then
             echo "No files modified, skipping PR creation."
             exit 0
           fi
@@ -406,7 +438,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -b "$BRANCH"
-          git add files/ src/embedded_dwarf.h
+          git add files/
           git commit -m "chore: regenerate all DWARF references"
           git push origin "$BRANCH"
 
