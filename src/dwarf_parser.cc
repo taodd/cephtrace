@@ -727,19 +727,24 @@ Dwarf_Die * DwarfParser::dwarf_attr_die(Dwarf_Die *die, unsigned int attr_flag, 
 }
 
 bool DwarfParser::find_class_member(Dwarf_Die *vardie, Dwarf_Die *typedie,
-                                    string member, Dwarf_Attribute *attr) {
-  // TODO deal with inheritance later
-
-  std::queue<Dwarf_Die> die_queue;
-  die_queue.push(*typedie);
+                                    string member, Dwarf_Attribute *attr,
+                                    Dwarf_Word *base_offset) {
+  // BFS through the class and its base classes. A member inherited from a
+  // base has its DW_AT_data_member_location relative to that base, so the
+  // base's own offset within the derived class is accumulated and returned
+  // via *base_offset.
+  std::queue<std::pair<Dwarf_Die, Dwarf_Word>> die_queue;
+  die_queue.push({*typedie, 0});
   bool found = false;
+  Dwarf_Word found_off = 0;
   while (!die_queue.empty()) {
+    Dwarf_Die cur = die_queue.front().first;
+    Dwarf_Word cur_off = die_queue.front().second;
+    die_queue.pop();
     Dwarf_Die die;
-    int r = dwarf_child(&die_queue.front(), &die);
-    if (r != 0) {
-      cerr << "the class " << dwarf_diename(typedie)
-           << " has no children, unexpected; skipping" << endl;
-      return false;
+    if (dwarf_child(&cur, &die) != 0) {
+      // declaration-only or empty class: nothing to search here
+      continue;
     }
     do {
       int tag = dwarf_tag(&die);
@@ -750,20 +755,38 @@ bool DwarfParser::find_class_member(Dwarf_Die *vardie, Dwarf_Die *typedie,
       const char *name = dwarf_diename(&die);
       if (tag == DW_TAG_inheritance) {
         Dwarf_Die inheritee;
-        if (dwarf_attr_die (&die, DW_AT_type, &inheritee))
-          die_queue.push(inheritee);
+        if (!dwarf_attr_die(&die, DW_AT_type, &inheritee))
+          continue;
+        // non-virtual base offset within the derived class (constant
+        // form); virtual bases use a location expression, unsupported
+        Dwarf_Word boff = 0;
+        Dwarf_Attribute battr_mem;
+        Dwarf_Attribute *battr = dwarf_attr_integrate(
+            &die, DW_AT_data_member_location, &battr_mem);
+        if (battr != NULL && dwarf_formudata(battr, &boff) != 0)
+          continue;
+        // the base class is often only a declaration in this CU (e.g.
+        // BlockDevice in KernelDevice.cc); resolve the definition
+        // through the global type cache
+        if (dwarf_hasattr(&inheritee, DW_AT_declaration)) {
+          Dwarf_Die *resolved = resolve_typedecl(&inheritee);
+          if (resolved == NULL)
+            continue;
+          inheritee = *resolved;
+        }
+        die_queue.push({inheritee, cur_off + boff});
       } else if (tag == DW_TAG_enumeration_type) {
         // TODO
       } else if (name == NULL) {
         // TODO
       } else if (name == member) {
         *vardie = die;
+        found_off = cur_off;
         found = true;
         break;
       }
 
     } while (dwarf_siblingof(&die, &die) == 0);
-    die_queue.pop();
     if (found)
       break;
   }
@@ -772,6 +795,8 @@ bool DwarfParser::find_class_member(Dwarf_Die *vardie, Dwarf_Die *typedie,
     cerr << "couldn't find member " << member << endl;
     return false;
   }
+  if (base_offset != NULL)
+    *base_offset = found_off;
   if (dwarf_hasattr_integrate(vardie, DW_AT_data_member_location)) {
     dwarf_attr_integrate(vardie, DW_AT_data_member_location, attr);
     return true;
@@ -857,7 +882,8 @@ bool DwarfParser::translate_fields(Dwarf_Die *vardie, Dwarf_Die *typedie,
           *typedie = *tmpdie;
         }
         Dwarf_Attribute attr;
-        if (!find_class_member(vardie, typedie, fields[i], &attr)) {
+        Dwarf_Word base_off = 0;
+        if (!find_class_member(vardie, typedie, fields[i], &attr, &base_off)) {
           clog << "failed to find member location for " << fields[i] << endl;
           return false;
         }
@@ -872,7 +898,9 @@ bool DwarfParser::translate_fields(Dwarf_Die *vardie, Dwarf_Die *typedie,
           clog << "failed to translate location of " << fields[i] << endl;
           return false;
         }
-        field.offset = varloc.offset;
+        // for a member inherited from a base class, add the base class
+        // offset within the derived class
+        field.offset = varloc.offset + (int)base_off;
         res.push_back(field);
         field = {0, false};
 
@@ -1002,7 +1030,16 @@ static int handle_function(Dwarf_Die *die, void *data) {
     Dwarf_Die vardie, typedie;
     VarLocation varloc;
     bool ok = dp->translate_param_location(die, varname, pc, vardie, varloc);
-    assert(ok);
+    if (!ok) {
+      // don't abort the whole tool over one unresolvable probe; drop the
+      // function so attach later skips it with the addr==0 warning
+      cerr << "Warning: failed to resolve location of variable '" << varname
+           << "' in " << fullname << ", skipping probes on this function"
+           << endl;
+      func2pc.erase(fullname);
+      func2vf.erase(fullname);
+      return 0;
+    }
     //printf("var %s location : register %d, offset %d, stack %d\n",
      //varname.c_str(), varloc.reg, varloc.offset, varloc.stack);
     vf[i].varloc = varloc;
@@ -1010,7 +1047,14 @@ static int handle_function(Dwarf_Die *die, void *data) {
     // translate fileds
     dp->dwarf_die_type(&vardie, &typedie);
     ok = dp->translate_fields(&vardie, &typedie, pc, arr[i], vf[i].fields);
-    assert(ok);
+    if (!ok) {
+      cerr << "Warning: failed to resolve member path from variable '"
+           << varname << "' in " << fullname
+           << ", skipping probes on this function" << endl;
+      func2pc.erase(fullname);
+      func2vf.erase(fullname);
+      return 0;
+    }
     for (int j = 1; j < (int)vf[i].fields.size(); ++j) {
        //printf("Field %s is at offset %d, defref %d\n", arr[i][j].c_str(),
        //vf[i].fields[j].offset, vf[i].fields[j].pointer);
