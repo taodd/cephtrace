@@ -310,6 +310,14 @@ jobs:
           subprocess.run(["sudo", "ldconfig"], check=True)
 
           for ref_path in files:
+              if "/radostrace/" in ref_path and version.startswith("15.2."):
+                  # radostrace does not support Ceph 15 (Octopus): its DWARF
+                  # probe set asks for members Octopus' librados lacks and
+                  # `radostrace -j` aborts (dwarf_parser.cc: failed to find
+                  # member location for m_holder).  Keep the committed
+                  # reference rather than take the whole version's job down.
+                  print(f"Skipping {ref_path}: radostrace does not support Ceph 15 ({version})")
+                  continue
               reference = json.load(open(ref_path, encoding="utf-8"))
               output = pathlib.Path("out") / ref_path
               output.parent.mkdir(parents=True, exist_ok=True)
