@@ -85,6 +85,7 @@ DwarfParser::probes_t rados_probes = {
 };
 
 volatile sig_atomic_t timeout_occurred = 0;
+volatile sig_atomic_t got_sigint = 0;
 
 // CSV Output
 bool export_csv = false;
@@ -124,11 +125,9 @@ void fill_map_hprobes(std::string mod_path, DwarfParser &dwarfparser, struct bpf
 }
 
 void signal_handler(int signum){
-  clog << "Caught signal " << signum << endl;
   if (signum == SIGINT) {
-      clog << "process killed" << endl;
+      got_sigint = 1;
   }
-  exit(signum);
 }
 
 void timeout_handler(int signum) {
@@ -232,10 +231,7 @@ int digitnum(int x) {
   return cnt;
 }
 
-static int handle_event(void *ctx, void *data, size_t size) {
-    (void)ctx;
-    (void)size;
-    struct client_op_v * op_v = (struct client_op_v *)data;
+static int print_event(const struct client_op_v *op_v, bool complete) {
     std::stringstream ss;
     ss << std::hex << op_v->m_seed;
     std::string pgid(ss.str());
@@ -335,7 +331,7 @@ static int handle_event(void *ctx, void *data, size_t size) {
         }
         // Print CSV Headers
         if (csv_fp && !csv_headers_printed) {
-            fprintf(csv_fp, "pid,client,tid,pool,pg,acting,WR,size,latency,object,ops,offset,length\n");
+          fprintf(csv_fp, "pid,client,tid,pool,pg,acting,WR,size,latency,Complete,object,ops,offset,length\n");
             csv_headers_printed = true;
         }
 
@@ -344,7 +340,7 @@ static int handle_event(void *ctx, void *data, size_t size) {
 
         if (csv_fp) {
             fprintf(csv_fp,
-               "%d,%lld,%lld,%lld,%s,%s,%s,%lld,%lld,%s,%s,%s,%s\n",
+             "%d,%lld,%lld,%lld,%s,%s,%s,%lld,%lld,%d,%s,%s,%s,%s\n",
                 op_v->pid,
                 (long long)op_v->cid,
                 (long long)op_v->tid,
@@ -354,6 +350,7 @@ static int handle_event(void *ctx, void *data, size_t size) {
                 wr_str.c_str(),
                 (long long)op_v->length,
                 (long long)latency_us,
+                complete ? 1 : 0,
                 csv_escape(op_v->object_name).c_str(),
                 csv_escape(ops_str).c_str(),
                 csv_escape(offset_field).c_str(),
@@ -377,7 +374,7 @@ static int handle_event(void *ctx, void *data, size_t size) {
         widths.latency = MAX(9, (int)std::to_string(latency_us).length() + 1);
         
         // Print header using calculated widths
-        printf("%*s%*s%*s%*s%*s %*s%*s%*s%*s%s\n",
+        printf("%*s%*s%*s%*s%*s %*s%*s%*s%*s%11s%s\n",
                widths.pid, "pid",
                widths.client, "client",
                widths.tid, "tid",
@@ -386,7 +383,7 @@ static int handle_event(void *ctx, void *data, size_t size) {
                widths.acting, "acting",
                widths.wr, "WR",
                widths.size, "size",
-               widths.latency, "latency",
+               widths.latency, "latency", "Complete",
                "     object[ops]");
         
         firsttime = false;
@@ -403,10 +400,10 @@ static int handle_event(void *ctx, void *data, size_t size) {
            widths.pg, pgid.c_str(),
            widths.acting, acting_str.c_str());
 
-    printf("%*s%*lld%*lld",
+        printf("%*s%*lld%*lld%11d",
            widths.wr, wr_str.c_str(),
            widths.size, op_v->length,
-           widths.latency, latency_us);
+          widths.latency, latency_us, complete ? 1 : 0);
 
     // Object name and operations (no fixed width needed)
     printf("     %s ", op_v->object_name);
@@ -420,6 +417,42 @@ static int handle_event(void *ctx, void *data, size_t size) {
 
     return 0;
 }
+
+  static int handle_event(void *ctx, void *data, size_t size) {
+    (void)ctx;
+    (void)size;
+    return print_event((const struct client_op_v *)data, true);
+  }
+
+  static int report_hung_ops(struct radostrace_bpf *skel) {
+    struct timespec now;
+    if (clock_gettime(CLOCK_BOOTTIME, &now) != 0) {
+      perror("clock_gettime(CLOCK_BOOTTIME)");
+      return -1;
+    }
+
+    __u64 now_ns = (__u64)now.tv_sec * 1000000000ULL + now.tv_nsec;
+    struct client_op_k current_key, next_key;
+    struct client_op_k *key_ptr = NULL;
+    struct client_op_v op;
+    int found = 0;
+
+    while (bpf_map__get_next_key(skel->maps.ops, key_ptr, &next_key,
+                   sizeof(next_key)) == 0) {
+      if (bpf_map__lookup_elem(skel->maps.ops, &next_key, sizeof(next_key),
+                   &op, sizeof(op), 0) == 0 && op.sent_stamp != 0) {
+        op.finish_stamp = now_ns;
+        print_event(&op, false);
+        found++;
+      }
+      current_key = next_key;
+      key_ptr = &current_key;
+    }
+
+    if (found > 0)
+      fprintf(stderr, "Total reported ops: %d\n", found);
+    return found;
+  }
 
 // One row of `--list` output: a client process that has libceph-common loaded.
 struct CephClientInfo {
@@ -911,18 +944,40 @@ int main(int argc, char **argv) {
 
   clog << "Started to poll from ring buffer" << endl;
 
-  while ((!timeout_occurred || timeout == -1) && (ret = ring_buffer__poll(rb, 1000)) >= 0) {
-      // Continue polling while timeout hasn't occurred or if unlimited execution time
+  ret = 0;
+  while (!got_sigint && !timeout_occurred &&
+         (ret = ring_buffer__poll(rb, 1000)) >= 0) {
+  }
+
+  if (ret == -EINTR && (got_sigint || timeout_occurred))
+    ret = 0;
+
+  if (ret < 0) {
+    cerr << "Error polling ring buffer: " << -ret << endl;
+    goto cleanup;
   }
 
   if (timeout_occurred) {
-      cerr << "Timeout occurred. Exiting." << endl;
+      cerr << "Timeout occurred. Reporting pending ops before exit." << endl;
+  } else if (got_sigint) {
+      cerr << "SIGINT received. Reporting pending ops before exit." << endl;
+  }
+
+  if (timeout_occurred || got_sigint) {
+    radostrace_bpf::detach(skel);
+    while ((ret = ring_buffer__poll(rb, 0)) > 0) {
+    }
+    if (ret < 0 && ret != -EINTR) {
+      cerr << "Error draining ring buffer: " << -ret << endl;
+      goto cleanup;
+    }
+    report_hung_ops(skel);
   }
 
 cleanup:
   clog << "Clean up the eBPF program" << endl;
   ring_buffer__free(rb);
   radostrace_bpf__destroy(skel);
-  return timeout_occurred ? -1 : -errno;
+  return ret < 0 ? 1 : 0;
 }
 

@@ -80,7 +80,6 @@ int uprobe_send_op(struct pt_regs *ctx) {
     return 0;
   }
   memset(val, 0, sizeof(struct client_op_v));
-  val->sent_stamp = bpf_ktime_get_boot_ns();
   val->tid = key.tid;
   val->cid = key.cid;
   val->rw = 0;
@@ -125,6 +124,7 @@ int uprobe_send_op(struct pt_regs *ctx) {
   if (read_hprobe_varfield(ctx, varid++, &M_start, sizeof(M_start)) == 0) {
     bpf_printk("uprobe_send_op got M_start %lld\n", M_start);
   } else {
+    bpf_map_delete_elem(&ops, &key);
     return 0;
   }
 
@@ -133,6 +133,7 @@ int uprobe_send_op(struct pt_regs *ctx) {
   if (read_hprobe_varfield(ctx, varid++, &m_finish, sizeof(m_finish)) == 0) {
     bpf_printk("uprobe_send_op got m_finish %lld\n", m_finish);
   } else {
+    bpf_map_delete_elem(&ops, &key);
     return 0;
   }
 
@@ -151,6 +152,7 @@ int uprobe_send_op(struct pt_regs *ctx) {
   if (read_hprobe_varfield(ctx, varid++, &m_start, sizeof(m_start)) == 0) {
     bpf_printk("uprobe_send_op got m_start %lld\n", m_start);
   } else {
+    bpf_map_delete_elem(&ops, &key);
     return 0;
   }
 
@@ -158,6 +160,7 @@ int uprobe_send_op(struct pt_regs *ctx) {
   if (read_hprobe_varfield(ctx, varid++, &val->ops_size, sizeof(val->ops_size)) == 0) {
     bpf_printk("uprobe_send_op got ops_size %d\n", val->ops_size);
   } else {
+    bpf_map_delete_elem(&ops, &key);
     return 0;
   }
 
@@ -201,6 +204,8 @@ int uprobe_send_op(struct pt_regs *ctx) {
     }
   }
 
+  val->sent_stamp = bpf_ktime_get_boot_ns();
+  val->pid = get_pid();
   return 0;
 }
 
@@ -228,10 +233,10 @@ int uprobe_finish_op(struct pt_regs *ctx) {
     return 0;
   }
   opv->finish_stamp = bpf_ktime_get_boot_ns();
-  opv->pid = get_pid();
   // submit to ringbuf
   struct client_op_v *e = bpf_ringbuf_reserve(&rb, sizeof(struct client_op_v), 0);
   if (NULL == e) {
+    bpf_map_delete_elem(&ops, &key);
     return 0;
   }
   *e = *opv;
