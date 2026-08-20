@@ -41,6 +41,10 @@ cleanup() {
     pkill -f radostrace || true
     pkill -f "rbd bench" || true
 
+    # The hung-op scenario freezes OSDs. Always restore them, including when a
+    # later assertion fails.
+    kill -CONT $(pgrep -f "ceph-osd") 2>/dev/null || true
+
     if [[ -e $OSDTRACE_LOG ]]; then
         info "OSD trace output:"
         cat $OSDTRACE_LOG
@@ -283,6 +287,55 @@ verify_osdtrace_targets_only "$OSDTRACE_ID_LOG" "$TARGET_OSD_ID"
 
 info "=== Step 12: Verify radostrace output ==="
 verify_radostrace_output "$RADOSTRACE_LOG" "$TEST_POOL_ID" "$MAX_OSD_ID" 50
+
+info "=== Step 13: Test hung op detection ==="
+HUNG_OP_LOG="/tmp/radostrace_hung.log"
+
+microceph.rados -p test_pool bench 120 write -O 4M --no-cleanup > /dev/null 2>&1 &
+BENCH_PID=$!
+sleep 1
+
+BENCH_RADOS_PID=""
+for i in $(seq 1 30); do
+    for pid in $(pgrep -f "rados" 2>/dev/null); do
+        if grep -q "librados" /proc/$pid/maps 2>/dev/null; then
+            BENCH_RADOS_PID=$pid
+            break 2
+        fi
+    done
+    sleep 0.5
+done
+
+if [[ -z $BENCH_RADOS_PID ]]; then
+    err "Could not find rados bench process with librados for hung op test"
+    kill $BENCH_PID 2>/dev/null || true
+    exit 1
+fi
+
+$PROJECT_ROOT/radostrace -p $BENCH_RADOS_PID -i $RADOS_DWARF --skip-version-check -t 12 \
+    >$HUNG_OP_LOG 2>&1 &
+RADOSTRACE_HUNG_PID=$!
+
+for i in $(seq 1 30); do
+    if grep -q "Started to poll" $HUNG_OP_LOG 2>/dev/null; then
+        break
+    fi
+    sleep 0.5
+done
+
+OSD_PIDS=$(pgrep -f "ceph-osd" | tr '\n' ' ')
+kill -STOP $OSD_PIDS 2>/dev/null || true
+wait $RADOSTRACE_HUNG_PID 2>/dev/null || true
+kill -CONT $OSD_PIDS 2>/dev/null || true
+kill $BENCH_PID 2>/dev/null || true
+wait $BENCH_PID 2>/dev/null || true
+
+if ! awk '$1 ~ /^[0-9]+$/ && NF >= 11 && $10 == "0" { found=1 } END { exit !found }' $HUNG_OP_LOG; then
+    err "Expected at least one incomplete op (Complete=0) not found in radostrace output"
+    exit 1
+fi
+
+rm -f $HUNG_OP_LOG
 
 info "=== Test Summary ==="
 info "✓ MicroCeph cluster deployed successfully"
