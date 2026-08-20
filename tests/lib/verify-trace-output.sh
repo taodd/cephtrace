@@ -135,7 +135,7 @@ _osdtrace_rows() {
 # Stream pipe-separated radostrace data rows to stdout, one per line:
 #   pid|client|tid|pool|pg|acting|wr|size|latency|object
 # Data rows start with a numeric PID (the traced process's PID).  Predicate
-# `$1 ~ /^[0-9]+$/ && NF >= 10` rejects the header line ("pid client … "),
+# `$1 ~ /^[0-9]+$/ && NF >= 11` rejects the header line ("pid client … "),
 # status messages, tool log noise, and — importantly — any truncated tail
 # record left behind when SIGKILL hits radostrace mid-printf (after the
 # latency field but before object_name).  Numeric coercion on $8/$9
@@ -152,10 +152,10 @@ _radostrace_rows() {
     # safe.  Cost: one good row per trace among thousands.
     awk '
         function flush_pending() { if (prev != "") { print prev; prev = "" } }
-        $1 ~ /^[0-9]+$/ && NF >= 10 {
+        $1 ~ /^[0-9]+$/ && NF >= 11 {
             flush_pending()
             prev = $1 "|" $2 "|" $3 "|" $4 "|" $5 "|" $6 "|" $7 "|" \
-                   ($8 + 0) "|" ($9 + 0) "|" $10
+                   ($8 + 0) "|" ($9 + 0) "|" $11
         }
         # END deliberately omitted: prev holds the last data row; not
         # flushing it here drops it.

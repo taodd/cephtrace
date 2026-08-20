@@ -94,7 +94,6 @@ int uprobe_send_op(struct pt_regs *ctx) {
   if (val == NULL) {
     return 0;
   }
-  val->sent_stamp = bpf_ktime_get_boot_ns();
   val->tid = key.tid;
   val->cid = key.cid;
 
@@ -173,6 +172,8 @@ int uprobe_send_op(struct pt_regs *ctx) {
     }
   }
 
+  val->sent_stamp = bpf_ktime_get_boot_ns();
+  val->pid = get_pid();
   return 0;
 }
 
@@ -194,7 +195,6 @@ int uprobe_finish_op(struct pt_regs *ctx) {
     return 0;
   }
   opv->finish_stamp = bpf_ktime_get_boot_ns();
-  opv->pid = get_pid();
   // submit to ringbuf
   struct client_op_v *e = bpf_ringbuf_reserve(&rb, sizeof(struct client_op_v), 0);
   if (NULL == e) {
