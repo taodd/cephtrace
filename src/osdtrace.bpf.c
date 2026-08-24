@@ -84,6 +84,8 @@ const volatile __u32 CEPH_OSD_OP_SIZE = 0;
 const volatile __u32 CEPH_OSD_OP_BUFFER_CARRIAGE_OFFSET = 0;
 const volatile __u32 CEPH_OSD_OP_CLS_CLASS_OFFSET = 0;
 const volatile __u32 CEPH_OSD_OP_CLS_METHOD_OFFSET = 0;
+const volatile __u64 LATENCY_THRESHOLD_NS = 0;
+const volatile __u64 BOOTSTAMP_NS = 0;
 
 static __always_inline void capture_decoded_osd_ops(
     struct op_v *vp, __u64 ops_start, __u64 ops_finish)
@@ -522,33 +524,64 @@ int uprobe_log_op_stats(struct pt_regs *ctx) {
 SEC("uprobe")
 int uprobe_log_op_stats_v2(struct pt_regs *ctx) {
   int varid = 90;
+  __u64 owner = 0;
+  __u64 tid = 0;
+
+  read_hprobe_varfield(ctx, varid++, &owner, sizeof(owner));
+  if (read_hprobe_varfield(ctx, varid++, &tid, sizeof(tid)) != 0) {
+    return 0;
+  }
+
+  __u32 pid = get_pid();
+  __u64 reply_stamp = bpf_ktime_get_boot_ns();
+  ++varid;
+  __u64 wb = PT_REGS_PARM3(ctx);
+  ++varid;
+  __u64 rb_bytes = PT_REGS_PARM4(ctx);
+
+  __u64 recv_stamp = 0;
+  if (read_hprobe_utime(ctx, varid++, &recv_stamp) != 0) {
+    return 0;
+  }
+
+  if (recv_stamp == 0) {
+    return 0;
+  }
+
+  // In-kernel Tail-Latency Filter:
+  // If a latency threshold was configured (-l <ms>), calculate latency in-kernel.
+  // recv_stamp is in realtime nsec; convert using BOOTSTAMP_NS offset.
+  if (LATENCY_THRESHOLD_NS > 0) {
+    __u64 op_lat_ns = 0;
+    if (recv_stamp > BOOTSTAMP_NS) {
+      __u64 recv_boot_ns = recv_stamp - BOOTSTAMP_NS;
+      if (reply_stamp > recv_boot_ns)
+        op_lat_ns = reply_stamp - recv_boot_ns;
+    }
+    if (op_lat_ns < LATENCY_THRESHOLD_NS) {
+      return 0; // Fast path: skip expensive ring buffer reserve & submission
+    }
+  }
+
+  __u16 op_type = 0;
+  if (read_hprobe_varfield(ctx, varid++, &op_type, sizeof(op_type)) != 0) {
+    return 0;
+  }
+
+  // Slow / matched operation: reserve ring buffer and populate event
   struct op_v *op = bpf_ringbuf_reserve(&rb, sizeof(struct op_v), 0);
   if (op == NULL)
     return 0;
   *op = zero_op_v;
 
-  read_hprobe_varfield(ctx, varid++, &op->owner, sizeof(op->owner));
-  if (read_hprobe_varfield(ctx, varid++, &op->tid, sizeof(op->tid)) != 0) {
-    bpf_ringbuf_discard(op, 0);
-    return 0;
-  }
-
-  op->pid = get_pid();
-  op->reply_stamp = bpf_ktime_get_boot_ns();
-  ++varid;
-  op->wb = PT_REGS_PARM3(ctx);
-  ++varid;
-  op->rb = PT_REGS_PARM4(ctx);
-
-  if (read_hprobe_utime(ctx, varid++, &op->recv_stamp) != 0) {
-    bpf_ringbuf_discard(op, 0);
-    return 0;
-  }
-
-  if (read_hprobe_varfield(ctx, varid++, &op->op_type, sizeof(op->op_type)) != 0) {
-    bpf_ringbuf_discard(op, 0);
-    return 0;
-  }
+  op->owner = owner;
+  op->tid = tid;
+  op->pid = pid;
+  op->reply_stamp = reply_stamp;
+  op->wb = wb;
+  op->rb = rb_bytes;
+  op->recv_stamp = recv_stamp;
+  op->op_type = op_type;
 
   bpf_ringbuf_submit(op, 0);
   return 0;
