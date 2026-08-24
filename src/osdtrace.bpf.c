@@ -521,7 +521,6 @@ int uprobe_log_op_stats(struct pt_regs *ctx) {
 
 SEC("uprobe")
 int uprobe_log_op_stats_v2(struct pt_regs *ctx) {
-  bpf_printk("Entered into uprobe_log_op_stats v2\n");
   int varid = 90;
   struct op_v *op = bpf_ringbuf_reserve(&rb, sizeof(struct op_v), 0);
   if (op == NULL)
@@ -551,8 +550,6 @@ int uprobe_log_op_stats_v2(struct pt_regs *ctx) {
     return 0;
   }
 
-  bpf_printk(" log_op_stats_v2 client %lld tid %lld recv_stamp %lld ", op->owner, op->tid, op->recv_stamp);
-  bpf_printk(" inb %lld outb %lld op type %lld\n",op->wb, op->rb, op->op_type);
   bpf_ringbuf_submit(op, 0);
   return 0;
 }
