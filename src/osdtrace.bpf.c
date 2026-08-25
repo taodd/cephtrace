@@ -548,9 +548,23 @@ int uprobe_log_op_stats_v2(struct pt_regs *ctx) {
 
   __u64 owner = 0;
   __u64 tid = 0;
-  read_hprobe_varfield(ctx, base_varid, &owner, sizeof(owner));
-  if (read_hprobe_varfield(ctx, base_varid + 1, &tid, sizeof(tid)) != 0) {
-    return 0;
+  struct VarField *vf_owner = bpf_map_lookup_elem(&hprobes, &base_varid);
+  if (vf_owner != NULL) {
+    __u64 v = fetch_register(ctx, vf_owner->varloc.reg);
+    __u64 owner_addr = fetch_var_member_addr(v, vf_owner);
+    if (owner_addr != 0) {
+      bpf_probe_read_user(&owner, sizeof(owner), (void *)owner_addr);
+      // tid is at offset +8 from owner in struct osd_reqid_t { entity_name_t name; uint64_t tid; }
+      bpf_probe_read_user(&tid, sizeof(tid), (void *)(owner_addr + sizeof(owner)));
+    }
+  }
+
+  if (tid == 0 && owner == 0) {
+    // Fallback in case of unexpected struct layout
+    int tid_varid = base_varid + 1;
+    if (read_hprobe_varfield(ctx, tid_varid, &tid, sizeof(tid)) != 0) {
+      return 0;
+    }
   }
 
   __u16 op_type = 0;
