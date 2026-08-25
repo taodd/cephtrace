@@ -20,6 +20,7 @@
 #include <dirent.h>
 #include <ctype.h>
 
+#include "bpf_ceph_types.h"
 #include "osdtrace.skel.h"
 
 extern "C" {
@@ -27,7 +28,6 @@ extern "C" {
 #include <unistd.h>
 }
 
-#include "bpf_ceph_types.h"
 #include "dwarf_parser.h"
 #include "version_utils.h"
 #include "utils.h"
@@ -1602,6 +1602,30 @@ static int run_tracer(DwarfParser &dwarfparser, const TraceTarget &target) {
     skel->rodata->LATENCY_THRESHOLD_NS = threshold * 1000000ull; // convert ms to ns
     clog << "Using in-kernel latency threshold: " << threshold << " ms ("
          << skel->rodata->LATENCY_THRESHOLD_NS << " ns)" << endl;
+  }
+
+  // Pre-calculate and cache single-mode member offsets in BPF rodata to bypass hprobes hash map
+  std::string target_basename = get_basename(target.osd_path);
+  auto &func2vf = dwarfparser.mod_func2vf[target_basename];
+  auto it_log_op = func2vf.find("PrimaryLogPG::log_op_stats");
+  if (it_log_op != func2vf.end() && it_log_op->second.size() >= 6) {
+    const auto &vfs = it_log_op->second;
+    // vfs[0]: owner ({op, px, reqid, name, _num}) -> reg, fields: [0, 392, 0, 8]
+    // vfs[1]: tid ({op, px, reqid, tid}) -> reg, fields: [0, 392, 16]
+    // vfs[4]: recv_stamp ({op, px, request, recv_stamp}) -> reg, fields: [0, 384, 200]
+    // vfs[5]: op_type ({op, px, request, ops, _M_impl, _M_start, op}) -> reg, fields: [0, 384, 24, 16]
+    if (vfs[4].fields.size() >= 3 && vfs[0].fields.size() >= 4 && vfs[1].fields.size() >= 3 && vfs[5].fields.size() >= 4) {
+      skel->rodata->SINGLE_OFFSETS.req_reg = vfs[4].varloc.reg;
+      skel->rodata->SINGLE_OFFSETS.req_msg_off = vfs[4].fields[1].offset;
+      skel->rodata->SINGLE_OFFSETS.req_reqid_off = vfs[0].fields[1].offset;
+      skel->rodata->SINGLE_OFFSETS.msg_stamp_sec_off = vfs[4].fields[2].offset;
+      skel->rodata->SINGLE_OFFSETS.msg_stamp_nsec_off = vfs[4].fields[2].offset + 4;
+      skel->rodata->SINGLE_OFFSETS.reqid_owner_off = vfs[0].fields[3].offset;
+      skel->rodata->SINGLE_OFFSETS.reqid_tid_off = vfs[1].fields[2].offset;
+      skel->rodata->SINGLE_OFFSETS.msg_op_type_off = vfs[5].fields[3].offset;
+      skel->rodata->SINGLE_OFFSETS.valid = 1;
+      clog << "Cached single-mode DWARF member offsets in BPF rodata (direct access enabled)" << endl;
+    }
   }
 
   int load_ret = osdtrace_bpf__load(skel.get());

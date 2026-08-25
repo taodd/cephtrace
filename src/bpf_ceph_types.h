@@ -240,6 +240,18 @@ struct VarField_Kernel {
 };
 #endif
 
+struct single_op_offsets {
+  __u32 req_reg;
+  __u32 req_msg_off;
+  __u32 req_reqid_off;
+  __u32 msg_stamp_sec_off;
+  __u32 msg_stamp_nsec_off;
+  __u32 reqid_owner_off;
+  __u32 reqid_tid_off;
+  __u32 msg_op_type_off;
+  __u32 valid;
+};
+
 
 /*
  * osd ops

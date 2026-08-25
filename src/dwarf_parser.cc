@@ -18,6 +18,7 @@
 #include <queue>
 #include <fstream>
 
+#include "bpf_ceph_types.h"
 #include "osdtrace.skel.h"
 extern "C" {
 #include <dwarf.h>

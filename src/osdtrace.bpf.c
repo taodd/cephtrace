@@ -87,6 +87,8 @@ const volatile __u32 CEPH_OSD_OP_CLS_METHOD_OFFSET = 0;
 const volatile __u64 LATENCY_THRESHOLD_NS = 0;
 const volatile __u64 BOOTSTAMP_NS = 0;
 
+const volatile struct single_op_offsets SINGLE_OFFSETS = {};
+
 static __always_inline void capture_decoded_osd_ops(
     struct op_v *vp, __u64 ops_start, __u64 ops_finish)
 {
@@ -525,9 +527,32 @@ SEC("uprobe")
 int uprobe_log_op_stats_v2(struct pt_regs *ctx) {
   int base_varid = 90;
   __u64 recv_stamp = 0;
-  if (read_hprobe_utime(ctx, base_varid + 4, &recv_stamp) != 0 || recv_stamp == 0) {
-    return 0;
+  __u64 req_addr = 0;
+  __u64 msg_addr = 0;
+
+  if (SINGLE_OFFSETS.valid) {
+    req_addr = fetch_register(ctx, SINGLE_OFFSETS.req_reg);
+    if (req_addr == 0)
+      return 0;
+
+    bpf_probe_read_user(&msg_addr, sizeof(msg_addr),
+                        (void *)(req_addr + SINGLE_OFFSETS.req_msg_off));
+    if (msg_addr == 0)
+      return 0;
+
+    struct utime_t stamp;
+    bpf_probe_read_user(&stamp.sec, sizeof(stamp.sec),
+                        (void *)(msg_addr + SINGLE_OFFSETS.msg_stamp_sec_off));
+    bpf_probe_read_user(&stamp.nsec, sizeof(stamp.nsec),
+                        (void *)(msg_addr + SINGLE_OFFSETS.msg_stamp_nsec_off));
+    recv_stamp = to_nsec(&stamp);
+  } else {
+    if (read_hprobe_utime(ctx, base_varid + 4, &recv_stamp) != 0)
+      return 0;
   }
+
+  if (recv_stamp == 0)
+    return 0;
 
   __u64 reply_stamp = bpf_ktime_get_boot_ns();
 
@@ -548,28 +573,47 @@ int uprobe_log_op_stats_v2(struct pt_regs *ctx) {
 
   __u64 owner = 0;
   __u64 tid = 0;
-  struct VarField *vf_owner = bpf_map_lookup_elem(&hprobes, &base_varid);
-  if (vf_owner != NULL) {
-    __u64 v = fetch_register(ctx, vf_owner->varloc.reg);
-    __u64 owner_addr = fetch_var_member_addr(v, vf_owner);
-    if (owner_addr != 0) {
-      bpf_probe_read_user(&owner, sizeof(owner), (void *)owner_addr);
-      // tid is at offset +8 from owner in struct osd_reqid_t { entity_name_t name; uint64_t tid; }
-      bpf_probe_read_user(&tid, sizeof(tid), (void *)(owner_addr + sizeof(owner)));
-    }
-  }
+  __u16 op_type = 0;
 
-  if (tid == 0 && owner == 0) {
-    // Fallback in case of unexpected struct layout
-    int tid_varid = base_varid + 1;
-    if (read_hprobe_varfield(ctx, tid_varid, &tid, sizeof(tid)) != 0) {
+  if (SINGLE_OFFSETS.valid) {
+    __u64 reqid_addr = 0;
+    bpf_probe_read_user(&reqid_addr, sizeof(reqid_addr),
+                        (void *)(req_addr + SINGLE_OFFSETS.req_reqid_off));
+    if (reqid_addr != 0) {
+      bpf_probe_read_user(&owner, sizeof(owner),
+                          (void *)(reqid_addr + SINGLE_OFFSETS.reqid_owner_off));
+      bpf_probe_read_user(&tid, sizeof(tid),
+                          (void *)(reqid_addr + SINGLE_OFFSETS.reqid_tid_off));
+    }
+
+    __u64 op_ptr = 0;
+    bpf_probe_read_user(&op_ptr, sizeof(op_ptr),
+                        (void *)(msg_addr + 24)); // &MOSDOp::ops vector pointer
+    if (op_ptr != 0) {
+      bpf_probe_read_user(&op_type, sizeof(op_type),
+                          (void *)(op_ptr + SINGLE_OFFSETS.msg_op_type_off));
+    }
+  } else {
+    struct VarField *vf_owner = bpf_map_lookup_elem(&hprobes, &base_varid);
+    if (vf_owner != NULL) {
+      __u64 v = fetch_register(ctx, vf_owner->varloc.reg);
+      __u64 owner_addr = fetch_var_member_addr(v, vf_owner);
+      if (owner_addr != 0) {
+        bpf_probe_read_user(&owner, sizeof(owner), (void *)owner_addr);
+        bpf_probe_read_user(&tid, sizeof(tid), (void *)(owner_addr + sizeof(owner)));
+      }
+    }
+
+    if (tid == 0 && owner == 0) {
+      int tid_varid = base_varid + 1;
+      if (read_hprobe_varfield(ctx, tid_varid, &tid, sizeof(tid)) != 0) {
+        return 0;
+      }
+    }
+
+    if (read_hprobe_varfield(ctx, base_varid + 5, &op_type, sizeof(op_type)) != 0) {
       return 0;
     }
-  }
-
-  __u16 op_type = 0;
-  if (read_hprobe_varfield(ctx, base_varid + 5, &op_type, sizeof(op_type)) != 0) {
-    return 0;
   }
 
   __u32 pid = get_pid();
