@@ -1596,6 +1596,14 @@ static int run_tracer(DwarfParser &dwarfparser, const TraceTarget &target) {
          << endl;
   }
 
+  bootstamp = get_bootstamp();
+  skel->rodata->BOOTSTAMP_NS = bootstamp;
+  if (threshold > 0) {
+    skel->rodata->LATENCY_THRESHOLD_NS = threshold * 1000000ull; // convert ms to ns
+    clog << "Using in-kernel latency threshold: " << threshold << " ms ("
+         << skel->rodata->LATENCY_THRESHOLD_NS << " ns)" << endl;
+  }
+
   int load_ret = osdtrace_bpf__load(skel.get());
   if (load_ret) {
     cerr << "Failed to load BPF skeleton: " << load_ret << endl;
