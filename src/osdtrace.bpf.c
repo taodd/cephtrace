@@ -523,30 +523,13 @@ int uprobe_log_op_stats(struct pt_regs *ctx) {
 
 SEC("uprobe")
 int uprobe_log_op_stats_v2(struct pt_regs *ctx) {
-  int varid = 90;
-  __u64 owner = 0;
-  __u64 tid = 0;
-
-  read_hprobe_varfield(ctx, varid++, &owner, sizeof(owner));
-  if (read_hprobe_varfield(ctx, varid++, &tid, sizeof(tid)) != 0) {
-    return 0;
-  }
-
-  __u32 pid = get_pid();
-  __u64 reply_stamp = bpf_ktime_get_boot_ns();
-  ++varid;
-  __u64 wb = PT_REGS_PARM3(ctx);
-  ++varid;
-  __u64 rb_bytes = PT_REGS_PARM4(ctx);
-
+  int base_varid = 90;
   __u64 recv_stamp = 0;
-  if (read_hprobe_utime(ctx, varid++, &recv_stamp) != 0) {
+  if (read_hprobe_utime(ctx, base_varid + 4, &recv_stamp) != 0 || recv_stamp == 0) {
     return 0;
   }
 
-  if (recv_stamp == 0) {
-    return 0;
-  }
+  __u64 reply_stamp = bpf_ktime_get_boot_ns();
 
   // In-kernel Tail-Latency Filter:
   // If a latency threshold was configured (-l <ms>), calculate latency in-kernel.
@@ -559,14 +542,25 @@ int uprobe_log_op_stats_v2(struct pt_regs *ctx) {
         op_lat_ns = reply_stamp - recv_boot_ns;
     }
     if (op_lat_ns < LATENCY_THRESHOLD_NS) {
-      return 0; // Fast path: skip expensive ring buffer reserve & submission
+      return 0; // Fast path: skip expensive DWARF pointer chasing and ring buffer reserve/submit
     }
   }
 
-  __u16 op_type = 0;
-  if (read_hprobe_varfield(ctx, varid++, &op_type, sizeof(op_type)) != 0) {
+  __u64 owner = 0;
+  __u64 tid = 0;
+  read_hprobe_varfield(ctx, base_varid, &owner, sizeof(owner));
+  if (read_hprobe_varfield(ctx, base_varid + 1, &tid, sizeof(tid)) != 0) {
     return 0;
   }
+
+  __u16 op_type = 0;
+  if (read_hprobe_varfield(ctx, base_varid + 5, &op_type, sizeof(op_type)) != 0) {
+    return 0;
+  }
+
+  __u32 pid = get_pid();
+  __u64 wb = PT_REGS_PARM3(ctx);
+  __u64 rb_bytes = PT_REGS_PARM4(ctx);
 
   // Slow / matched operation: reserve ring buffer and populate event
   struct op_v *op = bpf_ringbuf_reserve(&rb, sizeof(struct op_v), 0);
