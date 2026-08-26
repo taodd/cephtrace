@@ -63,6 +63,21 @@ static __always_inline int read_hprobe_varfield(struct pt_regs *ctx, int varid, 
   return -1;
 }
 
+// Like read_hprobe_varfield but silent when the varid is absent, for
+// optional fields that older DWARF JSON exports do not carry -- the
+// per-invocation bpf_printk would otherwise fire on every traced op.
+static __always_inline int read_hprobe_varfield_opt(struct pt_regs *ctx, int varid, void *dst, size_t size) {
+  struct VarField *vf = bpf_map_lookup_elem(&hprobes, &varid);
+  if (NULL == vf)
+    return -1;
+  __u64 v = fetch_register(ctx, vf->varloc.reg);
+  __u64 addr = fetch_var_member_addr(v, vf);
+  if (addr == 0)
+    return -1;
+  bpf_probe_read_user(dst, size, (void *)addr);
+  return 0;
+}
+
 static __always_inline int read_hprobe_utime(struct pt_regs *ctx, int varid, __u64 *nsec_dst) {
   struct VarField *vf = bpf_map_lookup_elem(&hprobes, &varid);
   if (NULL != vf) {
@@ -521,11 +536,19 @@ int uprobe_log_op_stats(struct pt_regs *ctx) {
   return 0;
 }
 
+// Varid layout for PrimaryLogPG::log_op_stats (base 90), in declaration
+// order of its varpath list in osdtrace.cc:
+//   +0 owner  +1 tid  +2 recv_stamp  +3 header.type
+//   +4 pg m_pool  +5 pg m_seed  +6 object-name len  +7 object-name data ptr
+//   +8 MOSDOp::ops _M_start  +9 _M_finish
+// Varids 4..9 may be absent when tracing with DWARF JSON exported before
+// they were added; their reads must degrade to zeroed fields, never drop
+// the event.
 SEC("uprobe")
 int uprobe_log_op_stats_v2(struct pt_regs *ctx) {
   int base_varid = 90;
   __u64 recv_stamp = 0;
-  if (read_hprobe_utime(ctx, base_varid + 4, &recv_stamp) != 0 || recv_stamp == 0) {
+  if (read_hprobe_utime(ctx, base_varid + 2, &recv_stamp) != 0 || recv_stamp == 0) {
     return 0;
   }
 
@@ -554,7 +577,7 @@ int uprobe_log_op_stats_v2(struct pt_regs *ctx) {
   }
 
   __u16 op_type = 0;
-  if (read_hprobe_varfield(ctx, base_varid + 5, &op_type, sizeof(op_type)) != 0) {
+  if (read_hprobe_varfield(ctx, base_varid + 3, &op_type, sizeof(op_type)) != 0) {
     return 0;
   }
 
@@ -576,6 +599,38 @@ int uprobe_log_op_stats_v2(struct pt_regs *ctx) {
   op->rb = rb_bytes;
   op->recv_stamp = recv_stamp;
   op->op_type = op_type;
+
+  // Optional detail fields (pg, object name, decoded osd ops).  These run
+  // only after the latency-threshold gate, so the -l fast path is
+  // unaffected.  The MOSDOp casts are only valid for client ops.
+  if (op_type == MSG_OSD_OP) {
+    read_hprobe_varfield_opt(ctx, base_varid + 4, &op->m_pool, sizeof(op->m_pool));
+    read_hprobe_varfield_opt(ctx, base_varid + 5, &op->m_seed, sizeof(op->m_seed));
+
+    __u64 name_len = 0;
+    __u64 str_addr = 0;
+    if (read_hprobe_varfield_opt(ctx, base_varid + 6, &name_len, sizeof(name_len)) == 0 &&
+        read_hprobe_varfield_opt(ctx, base_varid + 7, &str_addr, sizeof(str_addr)) == 0 &&
+        name_len > 0 && str_addr != 0) {
+      __u32 len = name_len;
+      if (len > OBJECT_NAME_LEN - 1)
+        len = OBJECT_NAME_LEN - 1;
+      bpf_probe_read_user(op->object_name, len & (OBJECT_NAME_LEN - 1),
+                          (void *)str_addr);
+    }
+
+    if (CEPH_OSD_OP_SIZE != 0) {
+      __u64 ops_start = 0;
+      if (read_hprobe_varfield_opt(ctx, base_varid + 8, &ops_start,
+                                   sizeof(ops_start)) == 0 &&
+          ops_start != 0) {
+        __u64 ops_finish = 0;
+        if (read_hprobe_varfield_opt(ctx, base_varid + 9, &ops_finish,
+                                     sizeof(ops_finish)) == 0)
+          capture_decoded_osd_ops(op, ops_start, ops_finish);
+      }
+    }
+  }
 
   bpf_ringbuf_submit(op, 0);
   return 0;
