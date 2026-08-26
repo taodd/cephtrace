@@ -85,7 +85,8 @@ std::map<std::string, int> func_progid = {
     {"ReplicatedBackend::repop_commit", 17},
     {"OpRequest::mark_flag_point", 18},
     {"BlueStore::log_latency_fn", 19},
-    {"BlueStore::_txc_add_transaction", 20}
+    {"BlueStore::_txc_add_transaction", 20},
+    {"ReplicatedBackend::repop_commit_v2", 21}
 };
 
 DwarfParser::probes_t osd_probes = {
@@ -201,6 +202,10 @@ DwarfParser::probes_t osd_probes = {
     {"ECBackend::submit_transaction",
      {{"reqid", "name", "_num"}, {"reqid", "tid"}}},
 
+    // List order is ABI: varids 170..177 in declaration order, hardcoded in
+    // uprobe_repop_commit{,_v2}.  The trailing three entries (recv_stamp and
+    // the pg id via cast:MOSDRepOp) exist for the single-mode v2 program;
+    // full mode's v1 reads only the first five.
     {"ReplicatedBackend::repop_commit",
      {{"rm", "_M_ptr", "op", "px", "reqid", "name", "_num"},
       {"rm", "_M_ptr", "op", "px", "reqid", "tid"},
@@ -208,7 +213,12 @@ DwarfParser::probes_t osd_probes = {
       {"rm", "_M_ptr", "op", "px", "request", "cast:MOSDRepOp",
        "poid", "oid", "name", "_M_string_length"},
       {"rm", "_M_ptr", "op", "px", "request", "cast:MOSDRepOp",
-       "poid", "oid", "name", "_M_dataplus", "_M_p"}}},
+       "poid", "oid", "name", "_M_dataplus", "_M_p"},
+      {"rm", "_M_ptr", "op", "px", "request", "recv_stamp"},
+      {"rm", "_M_ptr", "op", "px", "request", "cast:MOSDRepOp",
+       "pgid", "pgid", "m_pool"},
+      {"rm", "_M_ptr", "op", "px", "request", "cast:MOSDRepOp",
+       "pgid", "pgid", "m_seed"}}},
 
     {"OpRequest::mark_flag_point",
      {{"flag"},
@@ -418,6 +428,11 @@ void handle_single(struct op_v *val, int osd_id) {
     return ;
   }
   print_single_op(val, osd_id);
+  // The histograms measure client-visible op latency; replica subops would
+  // both skew them and count each client write once per replica, so they get
+  // per-op lines only.
+  if (val->op_type == MSG_OSD_REPOP)
+    return;
   __u64 op_lat = (val->reply_stamp - (val->recv_stamp - bootstamp));
   __u64 wb = val->wb;
   __u64 rb = val->rb;
@@ -616,22 +631,39 @@ static bool detail_ops_indicate_write(const osd_op_t &op) {
   return false;
 }
 
-// Single-mode per-op line.  Only fields the one log_op_stats probe supplies;
-// the full-mode stage latencies (queue/osd/bluestore/peers) are omitted
-// rather than printed as zeros.
+// Single-mode per-op line.  Only fields the lightweight single-mode probes
+// supply; the full-mode stage latencies (queue/osd/bluestore/peers) are
+// omitted rather than printed as zeros.
 void print_single_op(struct op_v *val, int osd_id) {
   osd_op_t op = osd_op_t();
   fill_op_identity(op, val);
-  // Fall back to the payload heuristic when detail ops are unavailable
-  // (DWARF JSON exported before the pg/object/ops varpaths existed).
-  op.is_write = op.detail_ops.empty() ? (op.wb > 0)
-                                      : detail_ops_indicate_write(op);
   op.op_lat = (val->reply_stamp - (val->recv_stamp - bootstamp)) / 1000;
 
   std::stringstream ss;
   ss << std::hex << op.pg.m_seed;
   std::string pgid(ss.str());
   std::string object_name = format_object_name(op.object_name);
+
+  // Replica subop write (from uprobe_repop_commit_v2).  A repop carries a
+  // serialized ObjectStore transaction, not a decoded OSDOp vector, so there
+  // is no osd_ops field; decoding it would need the full-mode
+  // _txc_add_transaction probe.
+  if (op.type == MSG_OSD_REPOP) {
+    printf("osd %d pg %lld.%s subop_w "
+           "size %d client %lld tid %lld "
+           "object %s "
+           "subop_lat %lld\n",
+           osd_id, op.pg.m_pool, pgid.c_str(),
+           op.wb, op.client_id, op.req_id,
+           object_name.c_str(),
+           op.op_lat);
+    return;
+  }
+
+  // Fall back to the payload heuristic when detail ops are unavailable
+  // (DWARF JSON exported before the pg/object/ops varpaths existed).
+  op.is_write = op.detail_ops.empty() ? (op.wb > 0)
+                                      : detail_ops_indicate_write(op);
   std::string detail_ops = format_detail_ops(op, false);
 
   printf("osd %d pg %lld.%s %s "
@@ -1122,7 +1154,7 @@ int parse_args(int argc, char **argv) {
       case '?':
       case 'h':
         std::cout << "Usage: " << argv[0] << " [-s] [-l <milliseconds>] [-b] [-j] [-i <filename>] [-t <seconds>] [-a] [-p <pid1,pid2,...>] [--id <osd-id1,osd-id2,...>] [--skip-version-check] [--list] [--list-embedded]\n";
-        std::cout << "  -s                        Set probe mode to Single OP (logs PrimaryLogPG::log_op_stats only)\n";
+        std::cout << "  -s                        Set probe mode to Single OP (low overhead: per-op lines for client ops and replica subop writes)\n";
         std::cout << "  -l <milliseconds>         Set operation latency threshold to capture\n";
         std::cout << "  -b                        Set probe mode to Bluestore\n";
         std::cout << "  -j                        Export DWARF info to JSON file\n";
@@ -1603,6 +1635,7 @@ struct AttachEntry {
 
 static const AttachEntry ATTACH_LIST[] = {
     {"PrimaryLogPG::log_op_stats", OP_SINGLE_PROBE, /*exact=*/true, 2},
+    {"ReplicatedBackend::repop_commit", OP_SINGLE_PROBE, /*exact=*/true, 2},
     {"OSD::dequeue_op", OP_FULL_PROBE, false, 0},
     {"PrimaryLogPG::execute_ctx", OP_FULL_PROBE, false, 0},
     {"ReplicatedBackend::submit_transaction", OP_FULL_PROBE, false, 0},
