@@ -33,7 +33,10 @@ OPTIONS
 
 -s
 
-   Single OP probe mode: log PrimaryLogPG::log_op_stats only (lower overhead).
+   Single OP probe mode (lower overhead): one lightweight probe per event
+   prints a per-op line for client ops (PrimaryLogPG::log_op_stats) and for
+   replica subop writes (ReplicatedBackend::repop_commit), plus exit-time
+   latency histograms for the client ops.
    The default mode is full tracing with the complete latency breakdown.
 
 -b

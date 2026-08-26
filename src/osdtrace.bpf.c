@@ -1048,3 +1048,82 @@ int uprobe_txc_add_transaction(struct pt_regs *ctx)
 
   return 0;
 }
+
+// Single-mode replica subop (MSG_OSD_REPOP) tracing.  Standalone like
+// uprobe_log_op_stats_v2: no map state, latency computed in-kernel from the
+// message's recv_stamp, subject to the same LATENCY_THRESHOLD_NS gate.
+// repop_commit runs on the replica right before the MOSDRepOpReply is sent
+// and only ever handles MSG_OSD_REPOP, so no message-type filter is needed.
+//
+// Varid layout for ReplicatedBackend::repop_commit (base 170), declaration
+// order of its varpath list in osdtrace.cc:
+//   +0 owner  +1 tid  +2 request data._len  +3 poid-name len  +4 poid-name ptr
+//   +5 recv_stamp  +6 pg m_pool  +7 pg m_seed
+// Varids 5..7 may be absent when tracing with DWARF JSON exported before they
+// were added; +5 aborts the event (no latency without it), +6/+7 degrade to
+// zeroed fields.
+//
+// This program must stay the last SEC("uprobe") in the file: func_progid
+// indices in osdtrace.cc are positional in skeleton declaration order.
+SEC("uprobe")
+int uprobe_repop_commit_v2(struct pt_regs *ctx) {
+  int base_varid = 170;
+  __u64 recv_stamp = 0;
+  if (read_hprobe_utime(ctx, base_varid + 5, &recv_stamp) != 0 || recv_stamp == 0)
+    return 0;
+
+  __u64 reply_stamp = bpf_ktime_get_boot_ns();
+
+  if (LATENCY_THRESHOLD_NS > 0) {
+    __u64 op_lat_ns = 0;
+    if (recv_stamp > BOOTSTAMP_NS) {
+      __u64 recv_boot_ns = recv_stamp - BOOTSTAMP_NS;
+      if (reply_stamp > recv_boot_ns)
+        op_lat_ns = reply_stamp - recv_boot_ns;
+    }
+    if (op_lat_ns < LATENCY_THRESHOLD_NS)
+      return 0;
+  }
+
+  __u64 owner = 0;
+  __u64 tid = 0;
+  read_hprobe_varfield(ctx, base_varid, &owner, sizeof(owner));
+  if (read_hprobe_varfield(ctx, base_varid + 1, &tid, sizeof(tid)) != 0)
+    return 0;
+
+  // bufferlist::_len is a 32-bit unsigned; read exactly 4 bytes.
+  __u32 len = 0;
+  if (read_hprobe_varfield(ctx, base_varid + 2, &len, sizeof(len)) != 0)
+    return 0;
+
+  struct op_v *op = bpf_ringbuf_reserve(&rb, sizeof(struct op_v), 0);
+  if (op == NULL)
+    return 0;
+  *op = zero_op_v;
+
+  op->owner = owner;
+  op->tid = tid;
+  op->pid = get_pid();
+  op->reply_stamp = reply_stamp;
+  op->recv_stamp = recv_stamp;
+  op->op_type = MSG_OSD_REPOP;
+  op->wb = len;
+
+  read_hprobe_varfield_opt(ctx, base_varid + 6, &op->m_pool, sizeof(op->m_pool));
+  read_hprobe_varfield_opt(ctx, base_varid + 7, &op->m_seed, sizeof(op->m_seed));
+
+  __u64 name_len = 0;
+  __u64 str_addr = 0;
+  if (read_hprobe_varfield_opt(ctx, base_varid + 3, &name_len, sizeof(name_len)) == 0 &&
+      read_hprobe_varfield_opt(ctx, base_varid + 4, &str_addr, sizeof(str_addr)) == 0 &&
+      name_len > 0 && str_addr != 0) {
+    __u32 nlen = name_len;
+    if (nlen > OBJECT_NAME_LEN - 1)
+      nlen = OBJECT_NAME_LEN - 1;
+    bpf_probe_read_user(op->object_name, nlen & (OBJECT_NAME_LEN - 1),
+                        (void *)str_addr);
+  }
+
+  bpf_ringbuf_submit(op, 0);
+  return 0;
+}
