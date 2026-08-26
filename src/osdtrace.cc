@@ -146,14 +146,26 @@ DwarfParser::probes_t osd_probes = {
 
     {"BlueStore::_txc_apply_kv", {{"txc", "state"}}},
 
+    // List order is ABI: varids 90..99 in declaration order, hardcoded in
+    // uprobe_log_op_stats{,_v2}.  inb/outb are intentionally absent -- both
+    // programs read them from PT_REGS_PARM3/4.  The full varid budget of 10
+    // is in use; adding an entry requires renumbering func_id.
+    // The cast:MOSDOp members (hobj/pgid/ops) are declared directly on
+    // MOSDOp -- the only case cast: resolves reliably -- and are only valid
+    // for client MSG_OSD_OP requests; the v2 program gates on header.type.
+    // (this->pg_id would be cheaper but find_class_member fails to resolve
+    // it through PrimaryLogPG's inheritance chain.)
     {"PrimaryLogPG::log_op_stats",
      {{"op", "reqid", "name", "_num"},
       {"op", "reqid", "tid"},
-      {"inb"},
-      {"outb"},
       {"op", "request", "recv_stamp"},
-      //{"op", "request", "throttle_stamp"},
-      {"op", "request", "header", "type"}}},
+      {"op", "request", "header", "type"},
+      {"op", "request", "cast:MOSDOp", "pgid", "pgid", "m_pool"},
+      {"op", "request", "cast:MOSDOp", "pgid", "pgid", "m_seed"},
+      {"op", "request", "cast:MOSDOp", "hobj", "oid", "name", "_M_string_length"},
+      {"op", "request", "cast:MOSDOp", "hobj", "oid", "name", "_M_dataplus", "_M_p"},
+      {"op", "request", "cast:MOSDOp", "ops", "_M_impl", "_M_start"},
+      {"op", "request", "cast:MOSDOp", "ops", "_M_impl", "_M_finish"}}},
 
     {"ReplicatedBackend::generate_subop",
      {{"reqid", "name", "_num"},
@@ -390,6 +402,8 @@ int index(int k) {
 	return min(10, b - 2); 
 }
 
+void print_single_op(struct op_v *val, int osd_id);
+
 void handle_single(struct op_v *val, int osd_id) {
   auto &wvecs = osd_wsrl[osd_id];
   if(wvecs.empty()) {
@@ -403,7 +417,8 @@ void handle_single(struct op_v *val, int osd_id) {
   if (val->recv_stamp == 0) {//TODO weird bug, occationaly, 1/10000 of the ops could have recv_stamp==0
     return ;
   }
-  __u64 op_lat = (val->reply_stamp - (val->recv_stamp - bootstamp)); 
+  print_single_op(val, osd_id);
+  __u64 op_lat = (val->reply_stamp - (val->recv_stamp - bootstamp));
   __u64 wb = val->wb;
   __u64 rb = val->rb;
   int k, idx;
@@ -566,6 +581,72 @@ std::string format_detail_ops(const osd_op_t& op, bool transaction_ops) {
   return out.str();
 }
 
+// Fields every op event carries regardless of probe mode; shared between
+// generate_op (full mode) and print_single_op (single mode).
+static void fill_op_identity(osd_op_t &op, const op_v *val) {
+  op.type = val->op_type;
+  op.wb = val->wb;
+  op.rb = val->rb;
+  op.client_id = val->owner;
+  op.req_id = val->tid;
+  op.pg.m_pool = val->m_pool;
+  op.pg.m_seed = val->m_seed;
+  op.object_name.assign(val->object_name,
+                        strnlen(val->object_name, OBJECT_NAME_LEN));
+  op.detail_ops_total = val->detail_ops_total;
+  op.detail_ops_unavailable = val->detail_ops_unavailable != 0;
+  for (__u32 i = 0;
+       i < val->detail_ops_captured && i < MAX_DETAIL_OPS;
+       ++i) {
+    op.detail_ops.push_back(val->detail_ops[i]);
+    op.cls_ops[i] = val->cls_ops[i];
+  }
+}
+
+// Classify by the decoded opcodes' mode bits.  More reliable than wb > 0:
+// an omap-only class method (rgw.bucket_prepare_op, ...) is a write with no
+// payload.  CACHE-mode ops mutate object state, so they count as writes.
+static bool detail_ops_indicate_write(const osd_op_t &op) {
+  for (__u32 opcode : op.detail_ops) {
+    __u32 opmode = opcode & CEPH_OSD_OP_MODE;
+    if (opmode == CEPH_OSD_OP_MODE_WR || opmode == CEPH_OSD_OP_MODE_RMW ||
+        opmode == CEPH_OSD_OP_MODE_CACHE)
+      return true;
+  }
+  return false;
+}
+
+// Single-mode per-op line.  Only fields the one log_op_stats probe supplies;
+// the full-mode stage latencies (queue/osd/bluestore/peers) are omitted
+// rather than printed as zeros.
+void print_single_op(struct op_v *val, int osd_id) {
+  osd_op_t op = osd_op_t();
+  fill_op_identity(op, val);
+  // Fall back to the payload heuristic when detail ops are unavailable
+  // (DWARF JSON exported before the pg/object/ops varpaths existed).
+  op.is_write = op.detail_ops.empty() ? (op.wb > 0)
+                                      : detail_ops_indicate_write(op);
+  op.op_lat = (val->reply_stamp - (val->recv_stamp - bootstamp)) / 1000;
+
+  std::stringstream ss;
+  ss << std::hex << op.pg.m_seed;
+  std::string pgid(ss.str());
+  std::string object_name = format_object_name(op.object_name);
+  std::string detail_ops = format_detail_ops(op, false);
+
+  printf("osd %d pg %lld.%s %s "
+         "size %d client %lld tid %lld "
+         "object %s osd_ops %s "
+         "op_lat %lld\n",
+         osd_id, op.pg.m_pool, pgid.c_str(),
+         op.is_write ? "op_w" : "op_r",
+         op.is_write ? op.wb : op.rb,
+         op.client_id, op.req_id,
+         object_name.c_str(),
+         detail_ops.c_str(),
+         op.op_lat);
+}
+
 void print_op_r(osd_op_t &op, int osd_id) {
   std::stringstream ss;
   ss << std::hex << op.pg.m_seed;
@@ -659,10 +740,7 @@ void timeout_handler(int signum) {
 osd_op_t generate_op(op_v *val) {
   osd_op_t op = osd_op_t();
 
-  op.type = val->op_type;
-
-  op.wb = val->wb;
-  op.rb = val->rb;
+  fill_op_identity(op, val);
 
   // wb is the request payload size reported by log_op_stats, not a write
   // indicator: a class method that only touches omap (rgw.bucket_prepare_op,
@@ -673,23 +751,6 @@ osd_op_t generate_op(op_v *val) {
   // submit_transaction probe could not be attached.
   op.is_write = val->op_type == MSG_OSD_REPOP ||
                 val->submit_transaction_stamp != 0 || val->wb > 0;
-
-  op.client_id = val->owner;
-  op.req_id = val->tid;
-
-  op.pg.m_pool = val->m_pool;
-  op.pg.m_seed = val->m_seed;
-
-  op.object_name.assign(val->object_name,
-                        strnlen(val->object_name, OBJECT_NAME_LEN));
-  op.detail_ops_total = val->detail_ops_total;
-  op.detail_ops_unavailable = val->detail_ops_unavailable != 0;
-  for (__u32 i = 0;
-       i < val->detail_ops_captured && i < MAX_DETAIL_OPS;
-       ++i) {
-    op.detail_ops.push_back(val->detail_ops[i]);
-    op.cls_ops[i] = val->cls_ops[i];
-  }
 
   __u64 recv_stamp = val->recv_stamp;
   if (val->throttle_stamp < val->recv_stamp) { 
@@ -1090,6 +1151,13 @@ void fill_map_hprobes(std::string mod_path, DwarfParser &dwarfparser, struct bpf
   for (auto x : func2vf) {
     std::string funcname = x.first;
     int key_idx = func_id[funcname];
+    // func_id bases are spaced 10 apart; an 11th varpath would silently
+    // overwrite the next function's first varid.
+    if (x.second.size() > 10) {
+      cerr << "fill_map_hprobes: " << funcname << " has " << x.second.size()
+           << " varpaths, exceeding the varid budget of 10" << endl;
+      exit(1);
+    }
     for (auto vf : x.second) {
       struct VarField_Kernel vfk;
       vfk.varloc = vf.varloc;
@@ -1098,6 +1166,11 @@ void fill_map_hprobes(std::string mod_path, DwarfParser &dwarfparser, struct bpf
            << vfk.varloc.reg << " offset " << vfk.varloc.offset << " stack "
            << vfk.varloc.stack << endl;
       vfk.size = vf.fields.size();
+      if (vfk.size > (int)(sizeof(vfk.fields) / sizeof(vfk.fields[0]))) {
+        cerr << "fill_map_hprobes: " << funcname << " varpath has " << vfk.size
+             << " fields, exceeding VarField_Kernel capacity" << endl;
+        exit(1);
+      }
       for (int i = 0; i < vfk.size; ++i) {
         vfk.fields[i] = vf.fields[i];
       }

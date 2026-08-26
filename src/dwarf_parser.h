@@ -78,6 +78,9 @@ class DwarfParser {
   bool has_loclist();
   Dwarf_Die *resolve_typedecl(Dwarf_Die *);
   Dwarf_Die *resolve_type_name(const std::string&);
+  // Storage for resolve_type_name's result: the cached DIE is stripped of
+  // typedef/cv wrappers before being returned, so it cannot alias the cache.
+  Dwarf_Die resolved_cast_type;
   void request_type_size(const std::string&);
   int get_type_size(const std::string&, const std::string&) const;
   // Byte offset of a (possibly nested) member within a type, e.g.

@@ -105,6 +105,13 @@ void fill_map_hprobes(std::string mod_path, DwarfParser &dwarfparser, struct bpf
   for (auto x : func2vf) {
     std::string funcname = x.first;
     int key_idx = func_id[funcname];
+    // func_id bases are spaced 10 apart; an 11th varpath would silently
+    // overwrite the next function's first varid.
+    if (x.second.size() > 10) {
+      cerr << "fill_map_hprobes: " << funcname << " has " << x.second.size()
+           << " varpaths, exceeding the varid budget of 10" << endl;
+      exit(1);
+    }
     for (auto vf : x.second) {
       struct VarField_Kernel vfk;
       vfk.varloc = vf.varloc;
@@ -113,6 +120,11 @@ void fill_map_hprobes(std::string mod_path, DwarfParser &dwarfparser, struct bpf
            << vfk.varloc.reg << " offset " << vfk.varloc.offset << " stack "
            << vfk.varloc.stack << endl;
       vfk.size = vf.fields.size();
+      if (vfk.size > (int)(sizeof(vfk.fields) / sizeof(vfk.fields[0]))) {
+        cerr << "fill_map_hprobes: " << funcname << " varpath has " << vfk.size
+             << " fields, exceeding VarField_Kernel capacity" << endl;
+        exit(1);
+      }
       for (int i = 0; i < vfk.size; ++i) {
         vfk.fields[i] = vf.fields[i];
       }

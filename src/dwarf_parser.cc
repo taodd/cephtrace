@@ -101,19 +101,45 @@ Dwarf_Die *DwarfParser::resolve_typedecl(Dwarf_Die *type) {
   return NULL;
 }
 
+static void strip_type_wrappers(DwarfParser *dp, Dwarf_Die *die);
+
+// Resolve a type name for a cast: varpath token.  A candidate hit may be a
+// typedef (e.g. `using MOSDOp = _mosdop::MOSDOp<std::vector<OSDOp>>` -- the
+// class itself lives in a namespace the type cache does not descend into),
+// and in a given CU the typedef may lead to a declaration-only DIE.  Strip
+// wrappers and keep scanning CUs until a complete definition turns up;
+// fall back to the first (incomplete) hit only if no CU has the definition.
 Dwarf_Die *DwarfParser::resolve_type_name(const std::string& name) {
   const std::string candidates[] = {
       name, "struct " + name, "union " + name, "enum " + name};
 
+  bool have_fallback = false;
+  Dwarf_Die fallback;
   for (auto &module : global_type_cache) {
     for (auto &cu : module.second) {
       for (const auto& candidate : candidates) {
         auto found = cu.second.find(candidate);
-        if (found != cu.second.end()) {
-          return &found->second;
+        if (found == cu.second.end())
+          continue;
+        Dwarf_Die stripped = found->second;
+        strip_type_wrappers(this, &stripped);
+        if (!dwarf_hasattr(&stripped, DW_AT_declaration)) {
+          resolved_cast_type = stripped;
+          return &resolved_cast_type;
+        }
+        if (!have_fallback) {
+          fallback = stripped;
+          have_fallback = true;
         }
       }
     }
+  }
+
+  if (have_fallback) {
+    // Declaration-only everywhere; return it and let the caller's
+    // resolve_typedecl path report the failure if it cannot complete it.
+    resolved_cast_type = fallback;
+    return &resolved_cast_type;
   }
 
   cerr << "Couldn't resolve type " << name << endl;
