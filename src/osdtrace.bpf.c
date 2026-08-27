@@ -39,7 +39,7 @@ struct {
 struct {
   __uint(type, BPF_MAP_TYPE_RINGBUF);
   __uint(max_entries, 256 * 1024);
-} rb SEC(".maps");
+} rb SEC(".maps"); // all submits use BPF_RB_NO_WAKEUP; userspace drains periodically
 
 struct {
   __uint(type, BPF_MAP_TYPE_HASH);
@@ -510,7 +510,7 @@ int uprobe_log_op_stats(struct pt_regs *ctx) {
       return 0;
     }
     *e = *vp;
-    bpf_ringbuf_submit(e, 0);
+    bpf_ringbuf_submit(e, BPF_RB_NO_WAKEUP);
   } else {
     bpf_printk(
         "uprobe_log_op_stats, no previous op info, owner %lld, tid %lld\n",
@@ -577,7 +577,7 @@ int uprobe_log_op_stats_v2(struct pt_regs *ctx) {
   op->recv_stamp = recv_stamp;
   op->op_type = op_type;
 
-  bpf_ringbuf_submit(op, 0);
+  bpf_ringbuf_submit(op, BPF_RB_NO_WAKEUP);
   return 0;
 }
 
@@ -704,7 +704,7 @@ int uprobe_log_latency(struct pt_regs *ctx)
     return 0;
   }
   *e = bsl;
-  bpf_ringbuf_submit(e, 0);
+  bpf_ringbuf_submit(e, BPF_RB_NO_WAKEUP);
 
   return 0;
 }
@@ -737,7 +737,7 @@ int uprobe_log_subop_stats(struct pt_regs *ctx)
     return 0;
   }
   *e = *vp;
-  bpf_ringbuf_submit(e, 0);
+  bpf_ringbuf_submit(e, BPF_RB_NO_WAKEUP);
 
   bpf_map_delete_elem(&ops, &key);
   return 0;
@@ -846,7 +846,7 @@ int uprobe_repop_commit(struct pt_regs *ctx)
     return 0;
   }
   *e = *vp;
-  bpf_ringbuf_submit(e, 0);
+  bpf_ringbuf_submit(e, BPF_RB_NO_WAKEUP);
 
   bpf_map_delete_elem(&ops, &key);
   return 0;
@@ -908,7 +908,7 @@ int uprobe_log_latency_fn(struct pt_regs *ctx)
   }
 
   *e = bsl;
-  bpf_ringbuf_submit(e, 0);
+  bpf_ringbuf_submit(e, BPF_RB_NO_WAKEUP);
 
   return 0;
 }

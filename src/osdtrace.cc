@@ -222,6 +222,9 @@ enum probe_mode_e {
 int probe_mode = OP_FULL_PROBE;
 
 static __u64 bootstamp = 0;
+// How often userspace drains the BPF ring buffer.  Events are submitted with
+// BPF_RB_NO_WAKEUP so the tracer, not the traced OSD, pays for delivery.
+static const unsigned RINGBUF_DRAIN_INTERVAL_MS = 10;
 
 __u64 threshold = 0; //in millisecond
 int timeout = -1; //in seconds
@@ -1650,15 +1653,24 @@ static int run_tracer(DwarfParser &dwarfparser, const TraceTarget &target) {
 
   clog << "Started to poll from ring buffer" << endl;
 
+  // BPF programs submit events with BPF_RB_NO_WAKEUP, so the kernel never
+  // sends a wakeup (irq_work / IPI) from inside the uprobe.  Instead we drain
+  // the ring buffer ourselves at a fixed interval.  Output latency is bounded
+  // by RINGBUF_DRAIN_INTERVAL_MS, which is irrelevant for a latency tracer.
   int ret = 0;
-  while ((!timeout_occurred || timeout == -1) && (ret = ring_buffer__poll(rb.get(), 1000)) >= 0) {
-    // Continue polling while timeout hasn't occurred or if unlimited execution time
+  while (!timeout_occurred || timeout == -1) {
+    ret = ring_buffer__consume(rb.get());
+    if (ret < 0)
+      break;
+    usleep(RINGBUF_DRAIN_INTERVAL_MS * 1000);
   }
+  if (ret >= 0)
+    ring_buffer__consume(rb.get()); // final drain
 
   if (timeout_occurred)
     cerr << "Timeout occurred. Exiting." << endl;
   else
-    cerr << "Ring buffer poll failed: " << ret << endl;
+    cerr << "Ring buffer consume failed: " << ret << endl;
 
   clog << "Clean up the eBPF program" << endl;
   return timeout_occurred ? -1 : -errno;
