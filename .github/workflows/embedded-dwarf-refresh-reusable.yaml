@@ -198,7 +198,7 @@ jobs:
             sudo apt-get install -y g++ clang libelf-dev libc6-dev-i386 libdw-dev python3
 
       - name: Pull in the freshly generated JSONs
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: generated-jsons
           path: /tmp/gen
@@ -272,7 +272,7 @@ jobs:
           fetch-depth: 0
 
       - name: Download generated JSONs + manifest
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: generated-jsons
           path: /tmp/gen
@@ -283,7 +283,7 @@ jobs:
             tar -xzf /tmp/gen/generated-jsons.tar.gz -C /tmp/gen-extract
 
       - name: Download verification results
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: verify-result-*
           path: /tmp/verify
