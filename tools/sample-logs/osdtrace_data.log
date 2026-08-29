@@ -1,0 +1,11 @@
+osd 0 pg 2.1d op_r size 24 client 14164 tid 1 throttle_lat 2 recv_lat 12 dispatch_lat 20 queue_lat 84 osd_lat 69 bluestore_lat 33 op_lat 220
+osd 0 pg 2.d op_r size 4096 client 14164 tid 2 throttle_lat 2 recv_lat 13 dispatch_lat 19 queue_lat 105 osd_lat 133 bluestore_lat 510 op_lat 782
+osd 0 pg 2.a op_r size 4096 client 14164 tid 5 throttle_lat 0 recv_lat 4 dispatch_lat 4 queue_lat 350 osd_lat 87 bluestore_lat 224 op_lat 670
+osd 0 pg 2.1d op_r size 4096 client 14164 tid 3 throttle_lat 1 recv_lat 52 dispatch_lat 6 queue_lat 118 osd_lat 87 bluestore_lat 826 op_lat 1091
+osd 0 pg 2.d op_w size 4096 client 14160 tid 1 throttle_lat 2 recv_lat 14 dispatch_lat 39 queue_lat 176 osd_lat 304 peers [(-1, 0), (-1, 0)] bluestore_lat 4363 (prepare 132 aio_wait 0 (aio_size 0) seq_wait 13 kv_commit 4217) op_lat 4975
+osd 0 pg 2.1d op_w size 4096 client 14160 tid 2 throttle_lat 0 recv_lat 21 dispatch_lat 6 queue_lat 141 osd_lat 230 peers [(-1, 0), (-1, 0)] bluestore_lat 4342 (prepare 87 aio_wait 0 (aio_size 0) seq_wait 12 kv_commit 4241) op_lat 4862
+osd 0 pg 2.1b op_w size 4096 client 14160 tid 3 throttle_lat 0 recv_lat 9 dispatch_lat 5 queue_lat 412 osd_lat 121 peers [(-1, 0), (-1, 0)] bluestore_lat 8309 (prepare 79 aio_wait 0 (aio_size 0) seq_wait 14 kv_commit 8214) op_lat 9012
+osd 0 pg 2.a op_w size 4096 client 14160 tid 4 throttle_lat 0 recv_lat 8 dispatch_lat 5 queue_lat 229 osd_lat 126 peers [(-1, 0), (-1, 0)] bluestore_lat 8207 (prepare 76 aio_wait 0 (aio_size 0) seq_wait 14 kv_commit 8116) op_lat 8659
+osd 2 pg 4.a subop_w size 4461 client 34161 tid 14 throttle_lat 2 recv_lat 53 dispatch_lat 38 queue_lat 389 osd_lat 116 bluestore_lat 8041 (prepare 107 aio_wait 0 (aio_size 0) seq_wait 19 kv_commit 7914) subop_lat 8714
+osd 2 pg 4.c subop_w size 4460 client 34161 tid 2 throttle_lat 1 recv_lat 24 dispatch_lat 7 queue_lat 321 osd_lat 106 bluestore_lat 8214 (prepare 253 aio_wait 0 (aio_size 0) seq_wait 21 kv_commit 7940) subop_lat 8822
+osd 2 pg 4.c subop_w size 4461 client 34161 tid 11 throttle_lat 1 recv_lat 15 dispatch_lat 12 queue_lat 79 osd_lat 136 bluestore_lat 7499 (prepare 389 aio_wait 0 (aio_size 0) seq_wait 20 kv_commit 7089) subop_lat 8619
