@@ -382,7 +382,7 @@ jobs:
 
       - name: Open pull request
         if: steps.assemble.outputs.copied != '0'
-        uses: peter-evans/create-pull-request@v6
+        uses: peter-evans/create-pull-request@v8
         with:
           branch: "${{ inputs.new_only && format('chore/refresh-embedded-dwarf-{0}', github.run_id) || format('chore/backfill-embedded-dwarf-{0}', github.run_id) }}"
           delete-branch: true
