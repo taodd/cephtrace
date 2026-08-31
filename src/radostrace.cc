@@ -510,6 +510,9 @@ std::vector<CephClientInfo> discover_ceph_clients() {
 
 
 int timeout = -1;
+// How often userspace drains the BPF ring buffer.  Events are submitted with
+// BPF_RB_NO_WAKEUP so the tracer, not the traced client, pays for delivery.
+static const unsigned RINGBUF_DRAIN_INTERVAL_MS = 10;
 bool export_json = false;
 bool import_json = false;
 bool skip_version_check = false;
@@ -911,9 +914,20 @@ int main(int argc, char **argv) {
 
   clog << "Started to poll from ring buffer" << endl;
 
-  while ((!timeout_occurred || timeout == -1) && (ret = ring_buffer__poll(rb, 1000)) >= 0) {
-      // Continue polling while timeout hasn't occurred or if unlimited execution time
+  // BPF programs submit events with BPF_RB_NO_WAKEUP, so the kernel never
+  // sends a wakeup (irq_work / IPI) from inside the uprobe.  Instead we drain
+  // the ring buffer ourselves, sleeping only when a drain found it empty so
+  // that a burst larger than the ring can be consumed without dropping
+  // events.  Output latency is bounded by RINGBUF_DRAIN_INTERVAL_MS.
+  while (!timeout_occurred || timeout == -1) {
+    ret = ring_buffer__consume(rb);
+    if (ret < 0)
+      break;
+    if (ret == 0)
+      usleep(RINGBUF_DRAIN_INTERVAL_MS * 1000);
   }
+  if (ret >= 0)
+    ring_buffer__consume(rb); // final drain
 
   if (timeout_occurred) {
       cerr << "Timeout occurred. Exiting." << endl;
