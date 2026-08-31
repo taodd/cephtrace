@@ -507,6 +507,7 @@ int uprobe_log_op_stats(struct pt_regs *ctx) {
     vp->rb = PT_REGS_PARM4(ctx);
     struct op_v *e = bpf_ringbuf_reserve(&rb, sizeof(struct op_v), 0);
     if (NULL == e) {
+      bpf_map_delete_elem(&ops, &key);
       return 0;
     }
     *e = *vp;
@@ -734,6 +735,7 @@ int uprobe_log_subop_stats(struct pt_regs *ctx)
 
   struct op_v *e = bpf_ringbuf_reserve(&rb, sizeof(struct op_v), 0);
   if (NULL == e) {
+    bpf_map_delete_elem(&ops, &key);
     return 0;
   }
   *e = *vp;
@@ -843,6 +845,7 @@ int uprobe_repop_commit(struct pt_regs *ctx)
 
   struct op_v *e = bpf_ringbuf_reserve(&rb, sizeof(struct op_v), 0);
   if (NULL == e) {
+    bpf_map_delete_elem(&ops, &key);
     return 0;
   }
   *e = *vp;
