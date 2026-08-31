@@ -42,6 +42,13 @@ struct {
 } rb SEC(".maps"); // all submits use BPF_RB_NO_WAKEUP; userspace drains periodically
 
 struct {
+  __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+  __type(key, __u32);
+  __type(value, __u64);
+  __uint(max_entries, 1);
+} rb_drops SEC(".maps"); // events lost to a full ring buffer; reported by userspace at exit
+
+struct {
   __uint(type, BPF_MAP_TYPE_HASH);
   __type(key, int);
   __type(value, struct VarField);
@@ -50,6 +57,13 @@ struct {
 
 // struct op_v no longer fits on the BPF stack after adding object_name.
 static struct op_v zero_op_v = {};
+
+static __always_inline void count_rb_drop(void) {
+  __u32 zero = 0;
+  __u64 *cnt = bpf_map_lookup_elem(&rb_drops, &zero);
+  if (NULL != cnt)
+    (*cnt)++;
+}
 
 static __always_inline int read_hprobe_varfield(struct pt_regs *ctx, int varid, void *dst, size_t size) {
   struct VarField *vf = bpf_map_lookup_elem(&hprobes, &varid);
@@ -507,6 +521,7 @@ int uprobe_log_op_stats(struct pt_regs *ctx) {
     vp->rb = PT_REGS_PARM4(ctx);
     struct op_v *e = bpf_ringbuf_reserve(&rb, sizeof(struct op_v), 0);
     if (NULL == e) {
+      count_rb_drop();
       bpf_map_delete_elem(&ops, &key);
       return 0;
     }
@@ -565,8 +580,10 @@ int uprobe_log_op_stats_v2(struct pt_regs *ctx) {
 
   // Slow / matched operation: reserve ring buffer and populate event
   struct op_v *op = bpf_ringbuf_reserve(&rb, sizeof(struct op_v), 0);
-  if (op == NULL)
+  if (op == NULL) {
+    count_rb_drop();
     return 0;
+  }
   *op = zero_op_v;
 
   op->owner = owner;
@@ -702,6 +719,7 @@ int uprobe_log_latency(struct pt_regs *ctx)
 
   struct bluestore_lat_v *e = bpf_ringbuf_reserve(&rb, sizeof(struct bluestore_lat_v), 0);
   if (NULL == e) {
+    count_rb_drop();
     return 0;
   }
   *e = bsl;
@@ -735,6 +753,7 @@ int uprobe_log_subop_stats(struct pt_regs *ctx)
 
   struct op_v *e = bpf_ringbuf_reserve(&rb, sizeof(struct op_v), 0);
   if (NULL == e) {
+    count_rb_drop();
     bpf_map_delete_elem(&ops, &key);
     return 0;
   }
@@ -845,6 +864,7 @@ int uprobe_repop_commit(struct pt_regs *ctx)
 
   struct op_v *e = bpf_ringbuf_reserve(&rb, sizeof(struct op_v), 0);
   if (NULL == e) {
+    count_rb_drop();
     bpf_map_delete_elem(&ops, &key);
     return 0;
   }
@@ -907,6 +927,7 @@ int uprobe_log_latency_fn(struct pt_regs *ctx)
 
   struct bluestore_lat_v *e = bpf_ringbuf_reserve(&rb, sizeof(struct bluestore_lat_v), 0);
   if (NULL == e) {
+    count_rb_drop();
     return 0;
   }
 

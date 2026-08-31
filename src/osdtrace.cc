@@ -1,3 +1,4 @@
+#include <bpf/bpf.h>
 #include <bpf/libbpf.h>
 #include <errno.h>
 #include <getopt.h>
@@ -225,6 +226,8 @@ static __u64 bootstamp = 0;
 // How often userspace drains the BPF ring buffer.  Events are submitted with
 // BPF_RB_NO_WAKEUP so the tracer, not the traced OSD, pays for delivery.
 static const unsigned RINGBUF_DRAIN_INTERVAL_MS = 10;
+
+static int rb_drops_fd = -1;
 
 __u64 threshold = 0; //in millisecond
 int timeout = -1; //in seconds
@@ -645,10 +648,28 @@ void print_op_w(osd_op_t &op, int osd_id) {
   print_delayed_info(op);
 }
 
+// Events dropped because bpf_ringbuf_reserve() found the ring full are
+// counted per-CPU by the BPF programs; without this report they would
+// silently bias the output during exactly the load spikes being traced.
+void report_ringbuf_drops() {
+  if (rb_drops_fd < 0) return;
+  int ncpus = libbpf_num_possible_cpus();
+  if (ncpus <= 0) return;
+  std::vector<__u64> vals(ncpus, 0);
+  __u32 zero = 0;
+  if (bpf_map_lookup_elem(rb_drops_fd, &zero, vals.data()) != 0) return;
+  __u64 total = 0;
+  for (auto v : vals) total += v;
+  if (total > 0)
+    cerr << "Warning: " << total
+         << " events were dropped because the ring buffer was full" << endl;
+}
+
 void signal_handler(int signum){
   clog << "Caught signal " << signum << endl;
   if (signum == SIGINT) {
       print_all_srl();
+      report_ringbuf_drops();
   }
   exit(signum);
 }
@@ -1614,6 +1635,7 @@ static int run_tracer(DwarfParser &dwarfparser, const TraceTarget &target) {
   }
 
   fill_map_hprobes(target.osd_path, dwarfparser, skel->maps.hprobes);
+  rb_drops_fd = bpf_map__fd(skel->maps.rb_drops);
 
   clog << "BPF prog loaded" << endl;
 
@@ -1674,6 +1696,8 @@ static int run_tracer(DwarfParser &dwarfparser, const TraceTarget &target) {
     cerr << "Timeout occurred. Exiting." << endl;
   else
     cerr << "Ring buffer consume failed: " << ret << endl;
+
+  report_ringbuf_drops();
 
   clog << "Clean up the eBPF program" << endl;
   return timeout_occurred ? -1 : -errno;
