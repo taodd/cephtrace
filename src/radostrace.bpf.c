@@ -232,6 +232,7 @@ int uprobe_finish_op(struct pt_regs *ctx) {
   // submit to ringbuf
   struct client_op_v *e = bpf_ringbuf_reserve(&rb, sizeof(struct client_op_v), 0);
   if (NULL == e) {
+    bpf_map_delete_elem(&ops, &key);
     return 0;
   }
   *e = *opv;
