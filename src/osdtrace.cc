@@ -1,3 +1,4 @@
+#include <bpf/bpf.h>
 #include <bpf/libbpf.h>
 #include <errno.h>
 #include <getopt.h>
@@ -222,6 +223,11 @@ enum probe_mode_e {
 int probe_mode = OP_FULL_PROBE;
 
 static __u64 bootstamp = 0;
+// How often userspace drains the BPF ring buffer.  Events are submitted with
+// BPF_RB_NO_WAKEUP so the tracer, not the traced OSD, pays for delivery.
+static const unsigned RINGBUF_DRAIN_INTERVAL_MS = 10;
+
+static int rb_drops_fd = -1;
 
 __u64 threshold = 0; //in millisecond
 int timeout = -1; //in seconds
@@ -642,10 +648,28 @@ void print_op_w(osd_op_t &op, int osd_id) {
   print_delayed_info(op);
 }
 
+// Events dropped because bpf_ringbuf_reserve() found the ring full are
+// counted per-CPU by the BPF programs; without this report they would
+// silently bias the output during exactly the load spikes being traced.
+void report_ringbuf_drops() {
+  if (rb_drops_fd < 0) return;
+  int ncpus = libbpf_num_possible_cpus();
+  if (ncpus <= 0) return;
+  std::vector<__u64> vals(ncpus, 0);
+  __u32 zero = 0;
+  if (bpf_map_lookup_elem(rb_drops_fd, &zero, vals.data()) != 0) return;
+  __u64 total = 0;
+  for (auto v : vals) total += v;
+  if (total > 0)
+    cerr << "Warning: " << total
+         << " events were dropped because the ring buffer was full" << endl;
+}
+
 void signal_handler(int signum){
   clog << "Caught signal " << signum << endl;
   if (signum == SIGINT) {
       print_all_srl();
+      report_ringbuf_drops();
   }
   exit(signum);
 }
@@ -1611,6 +1635,7 @@ static int run_tracer(DwarfParser &dwarfparser, const TraceTarget &target) {
   }
 
   fill_map_hprobes(target.osd_path, dwarfparser, skel->maps.hprobes);
+  rb_drops_fd = bpf_map__fd(skel->maps.rb_drops);
 
   clog << "BPF prog loaded" << endl;
 
@@ -1650,15 +1675,29 @@ static int run_tracer(DwarfParser &dwarfparser, const TraceTarget &target) {
 
   clog << "Started to poll from ring buffer" << endl;
 
+  // BPF programs submit events with BPF_RB_NO_WAKEUP, so the kernel never
+  // sends a wakeup (irq_work / IPI) from inside the uprobe.  Instead we drain
+  // the ring buffer ourselves, sleeping only when a drain found it empty so
+  // that a burst larger than the ring can be consumed without dropping
+  // events.  Output latency is bounded by RINGBUF_DRAIN_INTERVAL_MS, which is
+  // irrelevant for a latency tracer.
   int ret = 0;
-  while ((!timeout_occurred || timeout == -1) && (ret = ring_buffer__poll(rb.get(), 1000)) >= 0) {
-    // Continue polling while timeout hasn't occurred or if unlimited execution time
+  while (!timeout_occurred || timeout == -1) {
+    ret = ring_buffer__consume(rb.get());
+    if (ret < 0)
+      break;
+    if (ret == 0)
+      usleep(RINGBUF_DRAIN_INTERVAL_MS * 1000);
   }
+  if (ret >= 0)
+    ring_buffer__consume(rb.get()); // final drain
 
   if (timeout_occurred)
     cerr << "Timeout occurred. Exiting." << endl;
   else
-    cerr << "Ring buffer poll failed: " << ret << endl;
+    cerr << "Ring buffer consume failed: " << ret << endl;
+
+  report_ringbuf_drops();
 
   clog << "Clean up the eBPF program" << endl;
   return timeout_occurred ? -1 : -errno;
