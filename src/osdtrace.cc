@@ -1655,14 +1655,17 @@ static int run_tracer(DwarfParser &dwarfparser, const TraceTarget &target) {
 
   // BPF programs submit events with BPF_RB_NO_WAKEUP, so the kernel never
   // sends a wakeup (irq_work / IPI) from inside the uprobe.  Instead we drain
-  // the ring buffer ourselves at a fixed interval.  Output latency is bounded
-  // by RINGBUF_DRAIN_INTERVAL_MS, which is irrelevant for a latency tracer.
+  // the ring buffer ourselves, sleeping only when a drain found it empty so
+  // that a burst larger than the ring can be consumed without dropping
+  // events.  Output latency is bounded by RINGBUF_DRAIN_INTERVAL_MS, which is
+  // irrelevant for a latency tracer.
   int ret = 0;
   while (!timeout_occurred || timeout == -1) {
     ret = ring_buffer__consume(rb.get());
     if (ret < 0)
       break;
-    usleep(RINGBUF_DRAIN_INTERVAL_MS * 1000);
+    if (ret == 0)
+      usleep(RINGBUF_DRAIN_INTERVAL_MS * 1000);
   }
   if (ret >= 0)
     ring_buffer__consume(rb.get()); // final drain
