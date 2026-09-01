@@ -20,7 +20,7 @@ struct {
 struct {
   __uint(type, BPF_MAP_TYPE_RINGBUF);
   __uint(max_entries, 256 * 1024);
-} rb SEC(".maps");
+} rb SEC(".maps"); // all submits use BPF_RB_NO_WAKEUP; userspace drains periodically
 
 struct {
   __uint(type, BPF_MAP_TYPE_HASH);
@@ -232,10 +232,11 @@ int uprobe_finish_op(struct pt_regs *ctx) {
   // submit to ringbuf
   struct client_op_v *e = bpf_ringbuf_reserve(&rb, sizeof(struct client_op_v), 0);
   if (NULL == e) {
+    bpf_map_delete_elem(&ops, &key);
     return 0;
   }
   *e = *opv;
-  bpf_ringbuf_submit(e, 0);
+  bpf_ringbuf_submit(e, BPF_RB_NO_WAKEUP);
 
   bpf_map_delete_elem(&ops, &key);
   
