@@ -22,13 +22,6 @@ struct {
   __uint(max_entries, 256 * 1024);
 } rb SEC(".maps"); // all submits use BPF_RB_NO_WAKEUP; userspace drains periodically
 
-struct {
-  __uint(type, BPF_MAP_TYPE_HASH);
-  __type(key, int);
-  __type(value, struct VarField);
-  __uint(max_entries, 8192);
-} hprobes SEC(".maps");
-
 /* Global variables for struct offsets - set by userspace before loading */
 const volatile __u32 CEPH_OSD_OP_SIZE = 0;
 const volatile __u32 CEPH_OSD_OP_EXTENT_OFFSET_OFFSET = 0;
@@ -39,102 +32,89 @@ const volatile __u32 CEPH_OSD_OP_BUFFER_CARRIAGE_OFFSET = 0;
 const volatile __u32 CEPH_OSD_OP_BUFFER_RAW_OFFSET = 0;
 const volatile __u32 CEPH_OSD_OP_BUFFER_DATA_OFFSET = 0;
 
+/* Every variable read at either probe is rooted at the Op* (or this->monc)
+ * and its DWARF member chain is offset-only, so userspace collapses each
+ * chain to a single precomputed offset at load time.  Each program fetches
+ * its root registers once and does one bpf_probe_read_user per member -- no
+ * per-var map lookup and no chain walking on the hot path.  Member offsets
+ * are struct properties shared by both probes; only the registers holding
+ * op/this differ per probe site. */
+const volatile __u32 SEND_OP_REG = 0;
+const volatile __u32 SEND_THIS_REG = 0;
+const volatile __u32 FIN_OP_REG = 0;
+const volatile __u32 FIN_THIS_REG = 0;
+const volatile __s64 OFF_TID = 0;
+const volatile __s64 OFF_MONC = 0;        /* this + OFF_MONC -> MonClient* */
+const volatile __s64 OFF_GLOBAL_ID = 0;   /* monc + OFF_GLOBAL_ID */
+const volatile __s64 OFF_TARGET_OSD = 0;
+const volatile __s64 OFF_NAME_LEN = 0;
+const volatile __s64 OFF_NAME_PTR = 0;
+const volatile __s64 OFF_FLAGS = 0;
+const volatile __s64 OFF_POOL = 0;
+const volatile __s64 OFF_SEED = 0;
+const volatile __s64 OFF_ACTING_START = 0;
+const volatile __s64 OFF_ACTING_FINISH = 0;
+const volatile __s64 OFF_OPS_START = 0;
+const volatile __s64 OFF_OPS_SIZE = 0;
+
 static struct client_op_v zero_val = {};
 
 void initialize_value(struct client_op_k key) {
   bpf_map_update_elem(&ops, &key, &zero_val, 0);
 }
 
-static __always_inline int read_hprobe_varfield(struct pt_regs *ctx, int varid, void *dst, size_t size) {
-  struct VarField *vf = bpf_map_lookup_elem(&hprobes, &varid);
-  if (NULL != vf) {
-    __u64 v = fetch_register(ctx, vf->varloc.reg);
-    __u64 addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(dst, size, (void *)addr);
-    return 0;
-  }
-  bpf_printk("got NULL vf at varid %d\n", varid);
-  return -1;
+#define READ_OP(dst, off) \
+  bpf_probe_read_user(&(dst), sizeof(dst), (void *)(op + (off)))
+
+static __always_inline __u64 read_cid(struct pt_regs *ctx, __u32 this_reg) {
+  // this->monc->global_id: the one chain with an intermediate pointer
+  __u64 self = fetch_register(ctx, this_reg);
+  __u64 monc = 0;
+  __u64 cid = 0;
+  if (self != 0)
+    bpf_probe_read_user(&monc, sizeof(monc), (void *)(self + OFF_MONC));
+  if (monc != 0)
+    bpf_probe_read_user(&cid, sizeof(cid), (void *)(monc + OFF_GLOBAL_ID));
+  return cid;
 }
 
 SEC("uprobe")
 int uprobe_send_op(struct pt_regs *ctx) {
-  bpf_printk("Entered uprobe_send_op\n");
-  int varid = 0;
+  __u64 op = fetch_register(ctx, SEND_OP_REG);
+  if (op == 0)
+    return 0;
+
   struct client_op_k key;
   memset(&key, 0, sizeof(key));
-
-  // read tid
-  if (read_hprobe_varfield(ctx, varid++, &key.tid, sizeof(key.tid)) == 0) {
-    bpf_printk("uprobe_send_op got tid %lld\n", key.tid);
-  }
-
-  // read client id
-  if (read_hprobe_varfield(ctx, varid++, &key.cid, sizeof(key.cid)) == 0) {
-    bpf_printk("uprobe_send_op got client id %lld\n", key.cid);
-  }
+  READ_OP(key.tid, OFF_TID);
+  key.cid = read_cid(ctx, SEND_THIS_REG);
 
   initialize_value(key);
   struct client_op_v *val = bpf_map_lookup_elem(&ops, &key);
   if (val == NULL) {
     return 0;
   }
-  memset(val, 0, sizeof(struct client_op_v));
   val->sent_stamp = bpf_ktime_get_boot_ns();
   val->tid = key.tid;
   val->cid = key.cid;
-  val->rw = 0;
 
-  // read osd id
-  if (read_hprobe_varfield(ctx, varid++, &val->target_osd, sizeof(val->target_osd)) == 0) {
-    bpf_printk("uprobe_send_op got osd id %lld\n", val->target_osd);
-  }
+  READ_OP(val->target_osd, OFF_TARGET_OSD);
+  READ_OP(val->rw, OFF_FLAGS);
+  READ_OP(val->m_pool, OFF_POOL);
+  READ_OP(val->m_seed, OFF_SEED);
 
-  // read name length
   int name_len = 0;
-  if (read_hprobe_varfield(ctx, varid++, &name_len, sizeof(name_len)) == 0) {
-    bpf_printk("uprobe_send_op got name length %d\n", name_len);
-  }
-
-  // read name
   __u64 name_base = 0;
-  if (read_hprobe_varfield(ctx, varid++, &name_base, sizeof(name_base)) == 0) {
-    bpf_printk("uprobe_send_op got name base addr %lld\n", name_base);
-  }
-
+  READ_OP(name_len, OFF_NAME_LEN);
+  READ_OP(name_base, OFF_NAME_PTR);
   name_len &= 127;
   bpf_probe_read_user(val->object_name, name_len, (void *)name_base);
 
-  // read op flags
-  if (read_hprobe_varfield(ctx, varid++, &val->rw, sizeof(val->rw)) == 0) {
-    bpf_printk("uprobe_send_op got flags %d\n", val->rw);
-  }
-
-  // read m_pool
-  if (read_hprobe_varfield(ctx, varid++, &val->m_pool, sizeof(val->m_pool)) == 0) {
-    bpf_printk("uprobe_send_op got m_pool %d\n", val->m_pool);
-  }
-  
-  // read m_seed
-  if (read_hprobe_varfield(ctx, varid++, &val->m_seed, sizeof(val->m_seed)) == 0) {
-    bpf_printk("uprobe_send_op got m_seed %d\n", val->m_seed);
-  }
-  
-  // read acting _M_start
+  // acting vector bounds; zeros just fill the slots with -1 below
   __u64 M_start = 0;
-  if (read_hprobe_varfield(ctx, varid++, &M_start, sizeof(M_start)) == 0) {
-    bpf_printk("uprobe_send_op got M_start %lld\n", M_start);
-  } else {
-    return 0;
-  }
-
-  // read acting _M_finish
   __u64 m_finish = 0;
-  if (read_hprobe_varfield(ctx, varid++, &m_finish, sizeof(m_finish)) == 0) {
-    bpf_printk("uprobe_send_op got m_finish %lld\n", m_finish);
-  } else {
-    return 0;
-  }
+  READ_OP(M_start, OFF_ACTING_START);
+  READ_OP(m_finish, OFF_ACTING_FINISH);
 
   for (int i = 0 ; i < MAX_ACTING; ++i) {
     val->acting[i] = -1;
@@ -146,20 +126,12 @@ int uprobe_send_op(struct pt_regs *ctx) {
     }
   }
 
-  //read op->ops->m_holder->m_start
+  // ops vector; a zero start pointer skips the decode loop
   __u64 m_start = 0;
-  if (read_hprobe_varfield(ctx, varid++, &m_start, sizeof(m_start)) == 0) {
-    bpf_printk("uprobe_send_op got m_start %lld\n", m_start);
-  } else {
-    return 0;
-  }
-
-  //read op->ops->m_holder->m_size
-  if (read_hprobe_varfield(ctx, varid++, &val->ops_size, sizeof(val->ops_size)) == 0) {
-    bpf_printk("uprobe_send_op got ops_size %d\n", val->ops_size);
-  } else {
-    return 0;
-  }
+  READ_OP(m_start, OFF_OPS_START);
+  READ_OP(val->ops_size, OFF_OPS_SIZE);
+  if (m_start == 0)
+    val->ops_size = 0;
 
   // Keep ops_size as the true op count so userspace can report what was
   // dropped; only the capture loop is bounded by the array size.
@@ -206,20 +178,14 @@ int uprobe_send_op(struct pt_regs *ctx) {
 
 SEC("uprobe")
 int uprobe_finish_op(struct pt_regs *ctx) {
-  bpf_printk("Entered uprobe_finish_op\n");
-  int varid = 20;
+  __u64 op = fetch_register(ctx, FIN_OP_REG);
+  if (op == 0)
+    return 0;
+
   struct client_op_k key;
   memset(&key, 0, sizeof(key));
-
-  // read tid
-  if (read_hprobe_varfield(ctx, varid++, &key.tid, sizeof(key.tid)) == 0) {
-    bpf_printk("uprobe_finish_op got tid %lld\n", key.tid);
-  }
-
-  // read client id
-  if (read_hprobe_varfield(ctx, varid++, &key.cid, sizeof(key.cid)) == 0) {
-    bpf_printk("uprobe_finish_op got client id %lld\n", key.cid);
-  }
+  READ_OP(key.tid, OFF_TID);
+  key.cid = read_cid(ctx, FIN_THIS_REG);
 
   struct client_op_v *opv = bpf_map_lookup_elem(&ops, &key);
 

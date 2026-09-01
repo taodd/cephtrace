@@ -99,30 +99,6 @@ const char * ceph_osd_op_str(int opc) {
     return op_str;
 }
 
-void fill_map_hprobes(std::string mod_path, DwarfParser &dwarfparser, struct bpf_map *hprobes) {
-  std::string mod_basename = get_basename(mod_path);
-  auto &func2vf = dwarfparser.mod_func2vf[mod_basename];
-  for (auto x : func2vf) {
-    std::string funcname = x.first;
-    int key_idx = func_id[funcname];
-    for (auto vf : x.second) {
-      struct VarField_Kernel vfk;
-      vfk.varloc = vf.varloc;
-      clog << "fill_map_hprobes: "
-           << "function " << funcname << " var location : register "
-           << vfk.varloc.reg << " offset " << vfk.varloc.offset << " stack "
-           << vfk.varloc.stack << endl;
-      vfk.size = vf.fields.size();
-      for (int i = 0; i < vfk.size; ++i) {
-        vfk.fields[i] = vf.fields[i];
-      }
-      bpf_map__update_elem(hprobes, &key_idx, sizeof(key_idx), &vfk,
-                           sizeof(vfk), 0);
-      ++key_idx;
-    }
-  }
-}
-
 void signal_handler(int signum){
   clog << "Caught signal " << signum << endl;
   if (signum == SIGINT) {
@@ -863,24 +839,101 @@ int main(int argc, char **argv) {
   clog << "  CEPH_OSD_OP_CLS_METHOD_OFFSET: " << skel->rodata->CEPH_OSD_OP_CLS_METHOD_OFFSET << endl;
   clog << "  CEPH_OSD_OP_BUFFER_CARRIAGE_OFFSET: " << skel->rodata->CEPH_OSD_OP_BUFFER_CARRIAGE_OFFSET << endl;
 
+  // Collapse each probed varpath to a single load-time offset.  All the
+  // op-rooted chains are offset-only; only this->monc->global_id has an
+  // intermediate pointer.  Member offsets are struct properties shared by
+  // both probes, so they come from the _send_op list; the two probe sites
+  // contribute their own root registers.  Take the VarFields from whichever
+  // library carries the DWARF info -- in squid the symbol is duplicated
+  // across all three with identical layouts, in tentacle only
+  // libceph-common has it.
+  std::vector<std::string> rados_lib_paths = {
+      librados_path, librbd_path, libceph_common_path};
+  {
+    const std::vector<VarField> *send_vfs = nullptr;
+    const std::vector<VarField> *fin_vfs = nullptr;
+    for (const auto &p : rados_lib_paths) {
+      auto &f2vf = dwarfparser.mod_func2vf[get_basename(p)];
+      auto its = f2vf.find("Objecter::_send_op");
+      auto itf = f2vf.find("Objecter::_finish_op");
+      if (its != f2vf.end() && its->second.size() == 12 &&
+          itf != f2vf.end() && itf->second.size() >= 2) {
+        send_vfs = &its->second;
+        fin_vfs = &itf->second;
+        break;
+      }
+    }
+    if (!send_vfs) {
+      cerr << "DWARF data lacks the Objecter::_send_op/_finish_op variables; "
+              "regenerate it with -j against a build with debug symbols" << endl;
+      radostrace_bpf__destroy(skel);
+      return 1;
+    }
+    // vf.fields[0] stands for the variable itself; the walk consumes
+    // fields[1..].  A chain is collapsible when the root is in a register
+    // and no member level needs a dereference.
+    auto flat_off = [](const VarField &vf, long long &off) -> bool {
+      if (vf.varloc.stack) return false;
+      off = 0;
+      for (size_t i = 1; i < vf.fields.size(); ++i) {
+        if (vf.fields[i].pointer && i >= 2) return false;
+        off += vf.fields[i].offset;
+      }
+      return true;
+    };
+    long long off[12];
+    bool ok = true;
+    for (int i = 0; i < 12; ++i) {
+      if (i == 1) continue; // global_id handled below
+      ok = ok && flat_off((*send_vfs)[i], off[i]);
+    }
+    // this->monc->global_id: fields[1] = monc member, fields[2] = deref +
+    // global_id offset
+    const VarField &gid = (*send_vfs)[1];
+    ok = ok && !gid.varloc.stack && gid.fields.size() == 3 &&
+         gid.fields[2].pointer;
+    for (int i = 2; i < 12 && ok; ++i)
+      ok = ok && (*send_vfs)[i].varloc.reg == (*send_vfs)[0].varloc.reg;
+    // finish side: tid must collapse to the same member offset
+    long long fin_tid_off = -1;
+    const VarField &fgid = (*fin_vfs)[1];
+    ok = ok && flat_off((*fin_vfs)[0], fin_tid_off) && fin_tid_off == off[0];
+    ok = ok && !fgid.varloc.stack && fgid.fields.size() == 3 &&
+         fgid.fields[2].pointer && fgid.fields[1].offset == gid.fields[1].offset;
+    if (!ok) {
+      cerr << "Objecter probe variable layout is not offset-collapsible "
+              "with this build's DWARF; cannot continue" << endl;
+      radostrace_bpf__destroy(skel);
+      return 1;
+    }
+    skel->rodata->SEND_OP_REG = (*send_vfs)[0].varloc.reg;
+    skel->rodata->SEND_THIS_REG = gid.varloc.reg;
+    skel->rodata->FIN_OP_REG = (*fin_vfs)[0].varloc.reg;
+    skel->rodata->FIN_THIS_REG = fgid.varloc.reg;
+    skel->rodata->OFF_TID = off[0];
+    skel->rodata->OFF_MONC = gid.fields[1].offset;
+    skel->rodata->OFF_GLOBAL_ID = gid.fields[2].offset;
+    skel->rodata->OFF_TARGET_OSD = off[2];
+    skel->rodata->OFF_NAME_LEN = off[3];
+    skel->rodata->OFF_NAME_PTR = off[4];
+    skel->rodata->OFF_FLAGS = off[5];
+    skel->rodata->OFF_POOL = off[6];
+    skel->rodata->OFF_SEED = off[7];
+    skel->rodata->OFF_ACTING_START = off[8];
+    skel->rodata->OFF_ACTING_FINISH = off[9];
+    skel->rodata->OFF_OPS_START = off[10];
+    skel->rodata->OFF_OPS_SIZE = off[11];
+    clog << "Collapsed varpaths: send op reg " << skel->rodata->SEND_OP_REG
+         << ", finish op reg " << skel->rodata->FIN_OP_REG
+         << ", tid+" << off[0] << " osd+" << off[2] << endl;
+  }
+
   /* Now load the BPF program with the configured globals */
   ret = radostrace_bpf__load(skel);
   if (ret) {
     cerr << "Failed to load BPF skeleton: " << ret << endl;
     radostrace_bpf__destroy(skel);
     return 1;
-  }
-
-  // Populate the per-function hprobes map from whichever library carries
-  // the DWARF info.  In squid the Objecter symbol is statically duplicated
-  // across all three libraries (same source, same compiler -> identical
-  // varloc/fields), so later writes are no-ops; in tentacle the data only
-  // lives in libceph-common.so.2.  fill_map_hprobes is a no-op for any
-  // path whose mod_func2vf entry is empty.
-  std::vector<std::string> rados_lib_paths = {
-      librados_path, librbd_path, libceph_common_path};
-  for (const auto& p : rados_lib_paths) {
-    fill_map_hprobes(p, dwarfparser, skel->maps.hprobes);
   }
 
   clog << "BPF prog loaded" << endl;
