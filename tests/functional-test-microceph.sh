@@ -43,7 +43,7 @@ cleanup() {
 
     # The hung-op scenario freezes OSDs. Always restore them, including when a
     # later assertion fails.
-    kill -CONT $(pgrep -f "ceph-osd") 2>/dev/null || true
+    kill -CONT $(pgrep -x ceph-osd) 2>/dev/null || true
 
     if [[ -e $OSDTRACE_LOG ]]; then
         info "OSD trace output:"
@@ -297,7 +297,7 @@ sleep 1
 
 BENCH_RADOS_PID=""
 for i in $(seq 1 30); do
-    for pid in $(pgrep -f "rados" 2>/dev/null); do
+    for pid in $(pgrep -x rados 2>/dev/null); do
         if grep -q "librados" /proc/$pid/maps 2>/dev/null; then
             BENCH_RADOS_PID=$pid
             break 2
@@ -323,7 +323,9 @@ for i in $(seq 1 30); do
     sleep 0.5
 done
 
-OSD_PIDS=$(pgrep -f "ceph-osd" | tr '\n' ' ')
+# Match on the process name (-x), not the command line (-f): -f would also
+# freeze any shell or log tail whose arguments merely mention ceph-osd.
+OSD_PIDS=$(pgrep -x ceph-osd | tr '\n' ' ')
 kill -STOP $OSD_PIDS 2>/dev/null || true
 wait $RADOSTRACE_HUNG_PID 2>/dev/null || true
 kill -CONT $OSD_PIDS 2>/dev/null || true
