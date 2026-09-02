@@ -129,6 +129,9 @@ sudo ./radostrace -t 60
 ```bash
 sudo ./radostrace -p 12345 -o events.csv
 ```
+The CSV has the same columns as the terminal output, with `object[ops]` split
+into `object`, `ops`, `offset` and `length`:
+`pid,client,tid,pool,pg,acting,WR,size,latency,Complete,object,ops,offset,length`.
 
 #### Use DWARF JSON file
 ```bash
@@ -160,13 +163,13 @@ sudo ./radostrace -p 12345 -i dwarf.json --skip-version-check
 ### Example Output
 
 ```
-     pid  client     tid  pool  pg     acting            w/r    size  latency     object[ops][offset,length]
-   19015   34206  419357     2  1e     [1,11,121,77,0]     W        0     887     rbd_header.374de3730ad0[watch ]
-   19015   34206  419358     2  1e     [1,11,121,77,0]     W        0    8561     rbd_header.374de3730ad0[call ]
-   19015   34206  419359     2  39     [0,121,11,77,1]     R     4096    1240     rbd_data.374de3730ad0.0000000000000000[read ][0, 4096]
-   19015   34206  419360     2  39     [0,121,11,77,1]     R     4096    1705     rbd_data.374de3730ad0.0000000000000000[read ][4096, 4096]
-   19015   34206  419361     2  39     [0,121,11,77,1]     R     4096    1334     rbd_data.374de3730ad0.0000000000000000[read ][12288, 4096]
-   19015   34206  419362     2  2b     [77,11,1,0,121]     R     4096    2180     rbd_data.374de3730ad0.00000000000000ff[read ][4128768, 4096]
+     pid  client     tid  pool  pg     acting            w/r    size  latency   Complete     object[ops][offset,length]
+   19015   34206  419357     2  1e     [1,11,121,77,0]     W        0     887          1     rbd_header.374de3730ad0[watch ]
+   19015   34206  419358     2  1e     [1,11,121,77,0]     W        0    8561          1     rbd_header.374de3730ad0[call ]
+   19015   34206  419359     2  39     [0,121,11,77,1]     R     4096    1240          1     rbd_data.374de3730ad0.0000000000000000[read ][0, 4096]
+   19015   34206  419360     2  39     [0,121,11,77,1]     R     4096    1705          1     rbd_data.374de3730ad0.0000000000000000[read ][4096, 4096]
+   19015   34206  419361     2  39     [0,121,11,77,1]     R     4096    1334          1     rbd_data.374de3730ad0.0000000000000000[read ][12288, 4096]
+   19015   34206  419362     2  2b     [77,11,1,0,121]     R     4096    2180          1     rbd_data.374de3730ad0.00000000000000ff[read ][4128768, 4096]
 ```
 
 ### Column Descriptions
@@ -183,7 +186,8 @@ Each row represents one I/O operation sent from the client to the Ceph cluster:
 | **acting** | OSD acting set | [1,11,121,77,0] | OSDs handling this PG (primary first) |
 | **w/r** | Operation type | R or W | Read (R) or Write (W) |
 | **size** | Operation size in bytes | 4096 | Data size being read/written (0 for metadata ops) |
-| **latency** | Operation latency | 1240 | End-to-end latency in microseconds (μs) |
+| **latency** | Operation latency | 1240 | End-to-end latency in microseconds (μs). For an incomplete op (Complete=0) this is how long the op had been outstanding when tracing stopped |
+| **Complete** | Reply seen | 1 or 0 | 1: the reply arrived while tracing. 0: the op was still in flight when radostrace stopped (Ctrl-C or `-t` timeout); see [Incomplete Operations](#incomplete-operations) |
 | **object** | Object name and operations | rbd_data....[read][0, 4096] | Object name, operation type, offset, length. Up to 3 ops are listed; a request carrying more ends with a truncation count, e.g. `[create setxattr setxattr ...+9]` |
 
 ### Understanding the Output
@@ -198,6 +202,27 @@ Operations with size 0 are typically metadata operations:
 - `call` - Class method calls (e.g., RBD header operations)
 - `stat` - Object stat operations
 - `create` - Object creation
+
+#### Incomplete Operations
+Every row printed while tracing runs has `Complete=1`: the row is emitted when
+the reply arrives. When radostrace stops, on Ctrl-C or when the `-t` timeout
+expires, it prints one more row for every op that was sent but has not been
+answered yet, with `Complete=0` and `latency` set to how long the op has been
+outstanding so far.
+
+On a healthy cluster these are just the client's queue depth worth of
+in-flight ops, with latencies similar to the completed rows. An op that has
+been outstanding for seconds is stuck somewhere; its `acting` set tells you
+which OSDs to look at:
+
+```
+     pid  client     tid  pool  pg     acting     w/r    size  latency   Complete     object[ops][offset,length]
+   19015   34206  421811     2  12     [0,1,2]      W     4096  3028342          0     rbd_data.374de3730ad0.0000000000000041[write ][0, 4096]
+   19015   34206  421813     2  1c     [0,1,2]      W     4096  3025218          0     rbd_data.374de3730ad0.0000000000000043[write ][0, 4096]
+```
+
+Nothing but rows is written to stdout, so `grep ' 0     '`-style filtering
+or the CSV `Complete` column can be used to pick these out.
 
 #### Acting Set
 The first OSD in the acting set is the **primary OSD**. The client sends all operations to the primary, which then coordinates with replicas.

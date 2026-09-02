@@ -330,7 +330,11 @@ kill -CONT $OSD_PIDS 2>/dev/null || true
 kill $BENCH_PID 2>/dev/null || true
 wait $BENCH_PID 2>/dev/null || true
 
-if ! awk '$1 ~ /^[0-9]+$/ && NF >= 11 && $10 == "0" { found=1 } END { exit !found }' $HUNG_OP_LOG; then
+# Rows come from _radostrace_rows so the column layout lives in one place;
+# field 10 is the Complete flag.  verify_radostrace_output is not usable
+# here: it expects rbd_* object names and bounds latency, and these rows
+# are rados bench objects stuck for up to the 12 s trace window.
+if ! _radostrace_rows "$HUNG_OP_LOG" | awk -F'|' '$10 == 0 { found=1 } END { exit !found }'; then
     err "Expected at least one incomplete op (Complete=0) not found in radostrace output"
     exit 1
 fi
@@ -340,6 +344,7 @@ rm -f $HUNG_OP_LOG
 info "=== Test Summary ==="
 info "✓ MicroCeph cluster deployed successfully"
 info "✓ osdtrace (-p and --id) and radostrace output validated"
+info "✓ radostrace reports in-flight ops (Complete=0) on timeout"
 info "✓ All functional tests passed!"
 
 exit 0

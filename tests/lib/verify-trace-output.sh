@@ -133,18 +133,22 @@ _osdtrace_rows() {
 # _radostrace_rows <log>
 #
 # Stream pipe-separated radostrace data rows to stdout, one per line:
-#   pid|client|tid|pool|pg|acting|wr|size|latency|object
+#   pid|client|tid|pool|pg|acting|wr|size|latency|complete|object
 # Data rows start with a numeric PID (the traced process's PID).  Predicate
 # `$1 ~ /^[0-9]+$/ && NF >= 11` rejects the header line ("pid client … "),
 # status messages, tool log noise, and — importantly — any truncated tail
 # record left behind when SIGKILL hits radostrace mid-printf (after the
-# latency field but before object_name).  Numeric coercion on $8/$9
+# Complete field but before object_name).  Numeric coercion on $8/$9/$10
 # guards against the same kind of partial-write artifact appearing in
-# the size/latency fields.
+# the size/latency/complete fields.
+#
+# `complete` is 1 for an op whose reply was seen and 0 for an op still in
+# flight when radostrace stopped (SIGINT or -t timeout); for those rows
+# `latency` is the time the op had been outstanding at that moment.
 _radostrace_rows() {
     # Drop the last data row.  SIGKILL/SIGTERM of the writer can leave
     # the file's tail mid-printf (e.g. an `rbd_data.<hex>.<seq>` object
-    # name truncated to just `rbd`), and the NF >= 10 predicate is
+    # name truncated to just `rbd`), and the NF >= 11 predicate is
     # loose enough to admit those byte-truncated rows.  Buffering the
     # latest match in `prev` and not flushing it at END drops exactly
     # the one potentially-malformed row; previously-completed write()
@@ -155,7 +159,7 @@ _radostrace_rows() {
         $1 ~ /^[0-9]+$/ && NF >= 11 {
             flush_pending()
             prev = $1 "|" $2 "|" $3 "|" $4 "|" $5 "|" $6 "|" $7 "|" \
-                   ($8 + 0) "|" ($9 + 0) "|" $11
+                   ($8 + 0) "|" ($9 + 0) "|" ($10 + 0) "|" $11
         }
         # END deliberately omitted: prev holds the last data row; not
         # flushing it here drops it.
@@ -378,10 +382,10 @@ _verify_radostrace_output_impl() {
     local total=0
     local saw_w=0 saw_r=0 saw_bench_size=0
     local -A row
-    local pid client tid pool pg acting wr size latency object
+    local pid client tid pool pg acting wr size latency complete object
     local acting_inner osd_id_str osd_id
 
-    while IFS='|' read -r pid client tid pool pg acting wr size latency object; do
+    while IFS='|' read -r pid client tid pool pg acting wr size latency complete object; do
         [ -z "$pid" ] && continue
 
         # Per-row dict.  All subsequent checks read fields by name.
@@ -395,9 +399,18 @@ _verify_radostrace_output_impl() {
             [wr]="$wr"
             [size]="$size"
             [latency]="$latency"
+            [complete]="$complete"
             [object]="$object"
         )
         total=$((total + 1))
+
+        # Complete is 1 (reply seen) or 0 (still in flight when the trace
+        # stopped).  Anything else means the columns are misaligned.
+        case "${row[complete]}" in
+            0|1) ;;
+            *) err "Invalid Complete flag '${row[complete]}' in radostrace output (expected 0 or 1, tid=${row[tid]})"
+               return 1 ;;
+        esac
 
         # 1. Pool id matches test_pool.
         if [ "${row[pool]}" != "$test_pool_id" ]; then
@@ -447,7 +460,7 @@ _verify_radostrace_output_impl() {
         #    Catches garbled object-name extraction in the BPF helper.
         #    Truncated tail records (where radostrace was killed before
         #    printing the object name) are filtered upstream by the NF >=
-        #    10 predicate in _radostrace_rows.
+        #    11 predicate in _radostrace_rows.
         if [[ ! "${row[object]}" =~ ^rbd_ ]]; then
             err "Unexpected object name '${row[object]}' in radostrace output (expected rbd_*, tid=${row[tid]} wr=${row[wr]})"
             return 1
@@ -584,10 +597,10 @@ _verify_radostrace_rgw_output_impl() {
     local total=0
     local saw_w=0 saw_r=0
     local -A row
-    local pid client tid pool pg acting wr size latency object
+    local pid client tid pool pg acting wr size latency complete object
     local acting_inner osd_id_str osd_id
 
-    while IFS='|' read -r pid client tid pool pg acting wr size latency object; do
+    while IFS='|' read -r pid client tid pool pg acting wr size latency complete object; do
         [ -z "$pid" ] && continue
 
         row=(
@@ -600,9 +613,18 @@ _verify_radostrace_rgw_output_impl() {
             [wr]="$wr"
             [size]="$size"
             [latency]="$latency"
+            [complete]="$complete"
             [object]="$object"
         )
         total=$((total + 1))
+
+        # Complete is 1 (reply seen) or 0 (still in flight when the trace
+        # stopped).  Anything else means the columns are misaligned.
+        case "${row[complete]}" in
+            0|1) ;;
+            *) err "Invalid Complete flag '${row[complete]}' in radostrace output (expected 0 or 1, tid=${row[tid]})"
+               return 1 ;;
+        esac
 
         case "${row[wr]}" in
             W) saw_w=1 ;;

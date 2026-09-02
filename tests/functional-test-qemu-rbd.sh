@@ -219,7 +219,7 @@ POOL_ID=$($CEPH_CMD osd pool ls detail | awk -v p="'$POOL'" '$1 == "pool" && $3 
 info "Pool $POOL has id ${POOL_ID:-unknown}"
 
 total=0; writes=0; reads=0; rbd_data_rows=0; bad_pool=0; malformed=0
-while IFS='|' read -r pid _client _tid pool _pg _acting wr _size _latency object; do
+while IFS='|' read -r pid _client _tid pool _pg _acting wr _size _latency _complete object; do
     [ -z "$pid" ] && continue
     # Reject fragments that slipped past the loose row filter (e.g. a row
     # split by an interleaved log line, or cut by an unclean kill): a real

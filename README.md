@@ -96,14 +96,16 @@ sudo ./radostrace -i 17.2.9-0ubuntu0.22.04.3_dwarf.json -p <qemu-pid>
 ### Sample Output:
 
 ```
-     pid  client     tid  pool  pg     acting       w/r    size  latency     object[ops][offset,length]
-   19015   34206  419357     2  1e     [1,11,121]     W        0     887     rbd_header.374de3730ad0[watch ]
-   19015   34206  419358     2  1e     [1,11,121]     W        0    8561     rbd_header.374de3730ad0[call ]
-   19015   34206  419359     2  39     [0,121,11]     R     4096    1240     rbd_data.374de3730ad0.0000000000000000[read ][0, 4096]
-   19015   34206  419360     2  39     [0,121,11]     R     4096    1705     rbd_data.374de3730ad0.0000000000000000[read ][4096, 4096]
-   19015   34206  419361     2  39     [0,121,11]     R     4096    1334     rbd_data.374de3730ad0.0000000000000000[read ][12288, 4096]
-   19015   34206  419362     2  2b     [77,11,1]      R     4096    2180     rbd_data.374de3730ad0.00000000000000ff[read ][4128768, 4096]
+     pid  client     tid  pool  pg     acting       w/r    size  latency   Complete     object[ops][offset,length]
+   19015   34206  419357     2  1e     [1,11,121]     W        0     887          1     rbd_header.374de3730ad0[watch ]
+   19015   34206  419358     2  1e     [1,11,121]     W        0    8561          1     rbd_header.374de3730ad0[call ]
+   19015   34206  419359     2  39     [0,121,11]     R     4096    1240          1     rbd_data.374de3730ad0.0000000000000000[read ][0, 4096]
+   19015   34206  419360     2  39     [0,121,11]     R     4096    1705          1     rbd_data.374de3730ad0.0000000000000000[read ][4096, 4096]
+   19015   34206  419361     2  39     [0,121,11]     R     4096    1334          1     rbd_data.374de3730ad0.0000000000000000[read ][12288, 4096]
+   19015   34206  419362     2  2b     [77,11,1]      R     4096    2180          1     rbd_data.374de3730ad0.00000000000000ff[read ][4128768, 4096]
 ```
+Ops still in flight when tracing stops (Ctrl-C or `-t`) are printed with
+`Complete` set to 0 and `latency` showing how long they have been outstanding.
 
 📖 **Detailed guide:** [Getting Started](doc/getting-started.md)
 
