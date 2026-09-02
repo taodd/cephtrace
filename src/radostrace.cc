@@ -307,7 +307,7 @@ static int print_event(const struct client_op_v *op_v, bool complete) {
         }
         // Print CSV Headers
         if (csv_fp && !csv_headers_printed) {
-          fprintf(csv_fp, "pid,client,tid,pool,pg,acting,WR,size,latency,Complete,object,ops,offset,length\n");
+            fprintf(csv_fp, "pid,client,tid,pool,pg,acting,WR,size,latency,Complete,object,ops,offset,length\n");
             csv_headers_printed = true;
         }
 
@@ -316,7 +316,7 @@ static int print_event(const struct client_op_v *op_v, bool complete) {
 
         if (csv_fp) {
             fprintf(csv_fp,
-             "%d,%lld,%lld,%lld,%s,%s,%s,%lld,%lld,%d,%s,%s,%s,%s\n",
+               "%d,%lld,%lld,%lld,%s,%s,%s,%lld,%lld,%d,%s,%s,%s,%s\n",
                 op_v->pid,
                 (long long)op_v->cid,
                 (long long)op_v->tid,
@@ -376,10 +376,10 @@ static int print_event(const struct client_op_v *op_v, bool complete) {
            widths.pg, pgid.c_str(),
            widths.acting, acting_str.c_str());
 
-        printf("%*s%*lld%*lld%11d",
+    printf("%*s%*lld%*lld%11d",
            widths.wr, wr_str.c_str(),
            widths.size, op_v->length,
-          widths.latency, latency_us, complete ? 1 : 0);
+           widths.latency, latency_us, complete ? 1 : 0);
 
     // Object name and operations (no fixed width needed)
     printf("     %s ", op_v->object_name);
@@ -394,17 +394,20 @@ static int print_event(const struct client_op_v *op_v, bool complete) {
     return 0;
 }
 
-  static int handle_event(void *ctx, void *data, size_t size) {
+static int handle_event(void *ctx, void *data, size_t size) {
     (void)ctx;
     (void)size;
     return print_event((const struct client_op_v *)data, true);
-  }
+}
 
-  static int report_hung_ops(struct radostrace_bpf *skel) {
+// Print every op still in the BPF ops map as an incomplete row (Complete=0),
+// with latency measured up to now.  Entries with sent_stamp == 0 are being
+// filled in by uprobe_send_op and are skipped.
+static int report_hung_ops(struct radostrace_bpf *skel) {
     struct timespec now;
     if (clock_gettime(CLOCK_BOOTTIME, &now) != 0) {
-      perror("clock_gettime(CLOCK_BOOTTIME)");
-      return -1;
+        perror("clock_gettime(CLOCK_BOOTTIME)");
+        return -1;
     }
 
     __u64 now_ns = (__u64)now.tv_sec * 1000000000ULL + now.tv_nsec;
@@ -414,21 +417,20 @@ static int print_event(const struct client_op_v *op_v, bool complete) {
     int found = 0;
 
     while (bpf_map__get_next_key(skel->maps.ops, key_ptr, &next_key,
-                   sizeof(next_key)) == 0) {
-      if (bpf_map__lookup_elem(skel->maps.ops, &next_key, sizeof(next_key),
-                   &op, sizeof(op), 0) == 0 && op.sent_stamp != 0) {
-        op.finish_stamp = now_ns;
-        print_event(&op, false);
-        found++;
-      }
-      current_key = next_key;
-      key_ptr = &current_key;
+                                 sizeof(next_key)) == 0) {
+        if (bpf_map__lookup_elem(skel->maps.ops, &next_key, sizeof(next_key),
+                                 &op, sizeof(op), 0) == 0 &&
+            op.sent_stamp != 0) {
+            op.finish_stamp = now_ns;
+            print_event(&op, false);
+            found++;
+        }
+        current_key = next_key;
+        key_ptr = &current_key;
     }
 
-    if (found > 0)
-      fprintf(stderr, "Total reported ops: %d\n", found);
     return found;
-  }
+}
 
 // One row of `--list` output: a client process that has libceph-common loaded.
 struct CephClientInfo {
@@ -986,6 +988,7 @@ int main(int argc, char **argv) {
   rb = ring_buffer__new(bpf_map__fd(skel->maps.rb), handle_event, NULL, NULL);
   if (!rb) {
     cerr << "failed to setup ring_buffer" << endl;
+    ret = -1;
     goto cleanup;
   }
 
@@ -1019,12 +1022,9 @@ int main(int argc, char **argv) {
     goto cleanup;
   }
 
-  if (timeout_occurred) {
-      cerr << "Timeout occurred. Reporting pending ops before exit." << endl;
-  } else if (got_sigint) {
-      cerr << "SIGINT received. Reporting pending ops before exit." << endl;
-  }
-
+  // On timeout or SIGINT the ops still in the map are printed as rows with
+  // Complete=0; nothing else is written to stdout so the event stream stays
+  // clean for consumers.
   if (timeout_occurred || got_sigint) {
     // Detach first so no new finish events race with the map walk, then
     // drain what the probes already submitted (consume, not poll: with
@@ -1039,6 +1039,7 @@ int main(int argc, char **argv) {
   }
 
 cleanup:
+  fflush(stdout);  // rows before the stderr log line when both are redirected
   clog << "Clean up the eBPF program" << endl;
   ring_buffer__free(rb);
   radostrace_bpf__destroy(skel);
