@@ -5,7 +5,6 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
 #include <stdbool.h>
-#include <string.h>
 #include "bpf_ceph_types.h"
 #include "bpf_utils.h"
 char LICENSE[] SEC("license") = "Dual BSD/GPL";
@@ -85,7 +84,7 @@ int uprobe_send_op(struct pt_regs *ctx) {
     return 0;
 
   struct client_op_k key;
-  memset(&key, 0, sizeof(key));
+  __builtin_memset(&key, 0, sizeof(key));
   READ_OP(key.tid, OFF_TID);
   key.cid = read_cid(ctx, SEND_THIS_REG);
 
@@ -184,7 +183,7 @@ int uprobe_finish_op(struct pt_regs *ctx) {
     return 0;
 
   struct client_op_k key;
-  memset(&key, 0, sizeof(key));
+  __builtin_memset(&key, 0, sizeof(key));
   READ_OP(key.tid, OFF_TID);
   key.cid = read_cid(ctx, FIN_THIS_REG);
 

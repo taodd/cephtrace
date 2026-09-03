@@ -10,7 +10,6 @@ Build-Depends: clang,
                docutils | python3-docutils,
                g++,
                libelf-dev,
-               libc6-dev-i386,
                libdw-dev,
                libcap-dev,
                pkg-config

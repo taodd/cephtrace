@@ -77,7 +77,7 @@ jobs:
       - name: Install host build deps + podman
         run: |
             sudo apt-get update
-            sudo apt-get install -y g++ clang libelf-dev libc6-dev-i386 \
+            sudo apt-get install -y g++ clang libelf-dev \
                 libdw-dev python3 podman
 
       - name: Detect missing DWARF JSONs (centos-stream / el9)
@@ -195,7 +195,7 @@ jobs:
       - name: Install build dependencies
         run: |
             sudo apt-get update
-            sudo apt-get install -y g++ clang libelf-dev libc6-dev-i386 libdw-dev python3
+            sudo apt-get install -y g++ clang libelf-dev libdw-dev python3
 
       - name: Pull in the freshly generated JSONs
         uses: actions/download-artifact@v4

@@ -145,14 +145,14 @@ git submodule update --init --recursive
 #### Debian/Ubuntu
 
 ```bash
-sudo apt-get install g++ clang libelf-dev libc6-dev libc6-dev-i386 libdw-dev libssl-dev make
+sudo apt-get install g++ clang libelf-dev libc6-dev libdw-dev libssl-dev make
 ```
 
 #### RHEL/CentOS/Rocky Linux
 
 ```bash
 sudo dnf config-manager --enable crb
-sudo dnf install g++ clang elfutils-libelf-devel glibc-devel glibc-devel.i686 elfutils-devel
+sudo dnf install g++ clang elfutils-libelf-devel glibc-devel elfutils-devel
 ```
 
 #### Other Systems
@@ -161,7 +161,7 @@ For systems with different package managers, you'll need equivalent packages:
 - C++ compiler (g++)
 - Clang compiler (for eBPF)
 - libelf development files
-- libc development files (including 32-bit)
+- libc development files
 - libdw development files
 
 ### 3. Build the Tools
