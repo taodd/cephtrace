@@ -45,7 +45,7 @@ jobs:
       - name: Ensure submodules are updated
         run: |
             sudo apt-get update
-            sudo apt-get install g++ clang libelf-dev libc6-dev-i386 libdw-dev python3
+            sudo apt-get install g++ clang libelf-dev libdw-dev python3
 
       - name: Run Makefile build
         run: make -j all
@@ -97,7 +97,7 @@ jobs:
       - name: Install build dependencies
         run: |
             sudo apt-get update
-            sudo apt-get install -y g++ clang libelf-dev libc6-dev-i386 libdw-dev python3
+            sudo apt-get install -y g++ clang libelf-dev libdw-dev python3
 
       - name: Run Makefile build
         run: make -j all
@@ -165,7 +165,7 @@ jobs:
     steps:
       - name: Install dependencies
         run: |
-          dnf install -y git gcc gcc-c++ clang make elfutils-libelf-devel elfutils-devel glibc-devel glibc-devel.i686 python3 openssl-devel
+          dnf install -y git gcc gcc-c++ clang make elfutils-libelf-devel elfutils-devel glibc-devel python3 openssl-devel
 
       - name: Checkout code and submodules
         uses: actions/checkout@v4
@@ -192,7 +192,7 @@ jobs:
     steps:
       - name: Install dependencies
         run: |
-          dnf install -y git gcc gcc-c++ clang make elfutils-libelf-devel elfutils-devel glibc-devel glibc-devel.i686 python3 openssl-devel
+          dnf install -y git gcc gcc-c++ clang make elfutils-libelf-devel elfutils-devel glibc-devel python3 openssl-devel
 
       - name: Checkout code and submodules
         uses: actions/checkout@v4
@@ -221,7 +221,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y g++ clang clang-tidy libelf-dev libc6-dev-i386 libdw-dev
+          sudo apt-get install -y g++ clang clang-tidy libelf-dev libdw-dev
 
       - name: Run clang-tidy
         run: make -j clang-tidy

@@ -5,7 +5,6 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
 #include <stdbool.h>
-#include <string.h>
 
 #include "bpf_ceph_types.h"
 #include "bpf_utils.h"
@@ -155,7 +154,7 @@ SEC("uprobe")
 int uprobe_enqueue_op(struct pt_regs *ctx) {
   int varid = 0;
   struct op_k key;
-  memset(&key, 0, sizeof(key));
+  __builtin_memset(&key, 0, sizeof(key));
 
   __u16 op_type = 0;
   read_hprobe_varfield(ctx, varid++, &op_type, sizeof(op_type));
@@ -236,7 +235,7 @@ int uprobe_dequeue_op(struct pt_regs *ctx) {
   bpf_printk("Entered into uprobe_dequeue_op\n");
 
   struct op_k key;
-  memset(&key, 0, sizeof(key));
+  __builtin_memset(&key, 0, sizeof(key));
   int varid = 10;
 
   __u16 op_type = 0;
@@ -286,7 +285,7 @@ int uprobe_execute_ctx(struct pt_regs *ctx) {
 
   int varid = 20;
   struct op_k key;
-  memset(&key, 0, sizeof(key));
+  __builtin_memset(&key, 0, sizeof(key));
   read_hprobe_varfield(ctx, varid++, &key.owner, sizeof(key.owner));
   if (read_hprobe_varfield(ctx, varid++, &key.tid, sizeof(key.tid)) != 0)
     return 0;
@@ -346,7 +345,7 @@ int uprobe_submit_transaction(struct pt_regs *ctx) {
 
   int varid = 30;
   struct op_k key;
-  memset(&key, 0, sizeof(key));
+  __builtin_memset(&key, 0, sizeof(key));
   read_hprobe_varfield(ctx, varid++, &key.owner, sizeof(key.owner));
   if (read_hprobe_varfield(ctx, varid++, &key.tid, sizeof(key.tid)) != 0)
     return 0;
@@ -507,7 +506,7 @@ int uprobe_log_op_stats(struct pt_regs *ctx) {
   bpf_printk("Entered into uprobe_log_op_stats\n");
   int varid = 90;
   struct op_k key;
-  memset(&key, 0, sizeof(key));
+  __builtin_memset(&key, 0, sizeof(key));
   read_hprobe_varfield(ctx, varid++, &key.owner, sizeof(key.owner));
   if (read_hprobe_varfield(ctx, varid++, &key.tid, sizeof(key.tid)) != 0)
     return 0;
@@ -605,7 +604,7 @@ int uprobe_generate_subop(struct pt_regs *ctx)
   bpf_printk("Entered into uprobe_generate_subop\n");
   int varid = 100;
   struct op_k key;
-  memset(&key, 0, sizeof(key));
+  __builtin_memset(&key, 0, sizeof(key));
   read_hprobe_varfield(ctx, varid++, &key.owner, sizeof(key.owner));
   if (read_hprobe_varfield(ctx, varid++, &key.tid, sizeof(key.tid)) != 0)
     return 0;
@@ -639,7 +638,7 @@ int uprobe_do_repop_reply(struct pt_regs *ctx)
   bpf_printk("Entered into uprobe_do_repop_reply\n");
   int varid = 110;
   struct op_k key;
-  memset(&key, 0, sizeof(key));
+  __builtin_memset(&key, 0, sizeof(key));
   read_hprobe_varfield(ctx, varid++, &key.owner, sizeof(key.owner));
   if (read_hprobe_varfield(ctx, varid++, &key.tid, sizeof(key.tid)) != 0)
     return 0;
@@ -672,7 +671,7 @@ int uprobe_mark_flag_point_string(struct pt_regs *ctx)
   if(!(flag & flag_delayed))
     return 0;
   struct op_k key;
-  memset(&key, 0, sizeof(key));
+  __builtin_memset(&key, 0, sizeof(key));
   ++varid;
   read_hprobe_varfield(ctx, varid++, &key.owner, sizeof(key.owner));
   if (read_hprobe_varfield(ctx, varid++, &key.tid, sizeof(key.tid)) != 0)
@@ -707,7 +706,7 @@ int uprobe_log_latency(struct pt_regs *ctx)
   bpf_printk("Entered into log_latency\n");
   int varid = 130;
   struct bluestore_lat_v bsl;
-  memset(&bsl, 0, sizeof(bsl));
+  __builtin_memset(&bsl, 0, sizeof(bsl));
 
   bpf_probe_read_user_str(bsl.name, sizeof(bsl.name), (void *)PT_REGS_PARM2(ctx));
 
@@ -734,7 +733,7 @@ int uprobe_log_subop_stats(struct pt_regs *ctx)
   bpf_printk("Entered into log_subop_stats\n");
   int varid = 140;
   struct op_k key;
-  memset(&key, 0, sizeof(key));
+  __builtin_memset(&key, 0, sizeof(key));
   read_hprobe_varfield(ctx, varid++, &key.owner, sizeof(key.owner));
   if (read_hprobe_varfield(ctx, varid++, &key.tid, sizeof(key.tid)) != 0)
     return 0;
@@ -770,7 +769,7 @@ int uprobe_ec_submit_transaction(struct pt_regs *ctx) {
 
   int varid = 150;
   struct op_k key;
-  memset(&key, 0, sizeof(key));
+  __builtin_memset(&key, 0, sizeof(key));
   read_hprobe_varfield(ctx, varid++, &key.owner, sizeof(key.owner));
   if (read_hprobe_varfield(ctx, varid++, &key.tid, sizeof(key.tid)) != 0)
     return 0;
@@ -824,7 +823,7 @@ int uprobe_repop_commit(struct pt_regs *ctx)
   bpf_printk("Entered into repop_commit\n");
   int varid = 170;
   struct op_k key;
-  memset(&key, 0, sizeof(key));
+  __builtin_memset(&key, 0, sizeof(key));
   read_hprobe_varfield(ctx, varid++, &key.owner, sizeof(key.owner));
   if (read_hprobe_varfield(ctx, varid++, &key.tid, sizeof(key.tid)) != 0)
     return 0;
@@ -886,7 +885,7 @@ int uprobe_mark_flag_point(struct pt_regs *ctx)
     return 0;
 
   struct op_k key;
-  memset(&key, 0, sizeof(key));
+  __builtin_memset(&key, 0, sizeof(key));
   ++varid;
   read_hprobe_varfield(ctx, varid++, &key.owner, sizeof(key.owner));
   if (read_hprobe_varfield(ctx, varid++, &key.tid, sizeof(key.tid)) != 0)
@@ -915,7 +914,7 @@ int uprobe_log_latency_fn(struct pt_regs *ctx)
   bpf_printk("Entered into log_latency_fn\n");
   int varid = 190;
   struct bluestore_lat_v bsl;
-  memset(&bsl, 0, sizeof(bsl));
+  __builtin_memset(&bsl, 0, sizeof(bsl));
 
   bpf_probe_read_user_str(bsl.name, sizeof(bsl.name), (void *)PT_REGS_PARM2(ctx));
 

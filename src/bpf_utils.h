@@ -1,6 +1,8 @@
 #ifndef BPF_UTILS_H
 #define BPF_UTILS_H
 
+#include <stddef.h>
+
 struct utime_t {
   __u32 sec;
   __u32 nsec;

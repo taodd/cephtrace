@@ -104,7 +104,7 @@ jobs:
       - name: Install build tools and podman
         run: |
           sudo apt-get update
-          sudo apt-get install -y g++ clang libelf-dev libc6-dev-i386 \
+          sudo apt-get install -y g++ clang libelf-dev \
             libdw-dev debuginfod podman python3
 
       - name: Build cephtrace generators (Ubuntu/Debian)
@@ -403,7 +403,7 @@ jobs:
       - name: Install build tools and python
         run: |
           sudo apt-get update
-          sudo apt-get install -y g++ clang libelf-dev libc6-dev-i386 \
+          sudo apt-get install -y g++ clang libelf-dev \
             libdw-dev python3
 
       - name: Download all regenerated DWARF artifacts

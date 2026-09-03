@@ -86,13 +86,13 @@ fi
 
 echo "==> installing build deps + ceph ${VERSION} + debuginfo"
 
-# crb enables glibc-devel.i686 + clang.  The build needs gdb only for the
+# crb enables clang.  The build needs gdb only for the
 # starti trick below.  --allowerasing lets dnf swap the image's preinstalled
 # curl-minimal for the full curl we request (they conflict otherwise).
 podman exec -u root "$CTR" dnf install -y --enablerepo="$BUILD_REPO" --allowerasing \
     gcc gcc-c++ clang make \
     elfutils-libelf-devel elfutils-devel \
-    glibc-devel glibc-devel.i686 \
+    glibc-devel \
     python3 openssl-devel \
     gdb curl which >/dev/null
 
