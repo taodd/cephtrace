@@ -14,8 +14,30 @@
 
 char LICENSE[] SEC("license") = "Dual BSD/GPL";
 
+/* LRU rather than plain HASH on purpose.
+ *
+ * An entry is inserted by uprobe_enqueue_op and deleted by a completion
+ * probe (log_op_stats, log_subop_stats, repop_commit,
+ * ec_submit_transaction).  Ops that finish without reaching any of them
+ * leave their entry behind: failed reads (log_op_stats is only called for
+ * result >= 0, so every -ENOENT read leaks), failed writes, the
+ * reply_op_error paths, dup/resent ops answered from the pg log, and ops
+ * dropped by can_discard_request.  Client tids are monotonic, so the
+ * orphan handling in uprobe_enqueue_op never sees these keys again.
+ *
+ * With a plain HASH the leaked entries eventually fill the map, every later
+ * bpf_map_update_elem fails with -E2BIG, and osdtrace silently stops
+ * emitting events until it is restarted.
+ *
+ * An LRU hash evicts instead of rejecting.  Lookups set the reference bit,
+ * so ops still moving through the probes are kept over leaked entries that
+ * are never touched again.  An op that sits untouched long enough while the
+ * map is under pressure (e.g. waiting in the op queue) can still be evicted
+ * and go missing from the output, and eviction can start before max_entries
+ * is reached because of the per-CPU free lists.
+ */
 struct {
-  __uint(type, BPF_MAP_TYPE_HASH);
+  __uint(type, BPF_MAP_TYPE_LRU_HASH);
   __type(key, struct op_k);
   __type(value, struct op_v);
   __uint(max_entries, 8192);
