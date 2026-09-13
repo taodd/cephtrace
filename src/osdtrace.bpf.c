@@ -744,8 +744,10 @@ int uprobe_log_subop_stats(struct pt_regs *ctx)
   if (NULL == vp) return 0; 
 
   __u64 len = 0;
-  if (read_hprobe_varfield(ctx, varid++, &len, sizeof(len)) != 0)
+  if (read_hprobe_varfield(ctx, varid++, &len, sizeof(len)) != 0) {
+    bpf_map_delete_elem(&ops, &key);
     return 0;
+  }
 
   vp->wb = len;
   vp->reply_stamp = bpf_ktime_get_boot_ns();
@@ -837,8 +839,10 @@ int uprobe_repop_commit(struct pt_regs *ctx)
   }
 
   __u64 len = 0;
-  if (read_hprobe_varfield(ctx, varid++, &len, sizeof(len)) != 0)
+  if (read_hprobe_varfield(ctx, varid++, &len, sizeof(len)) != 0) {
+    bpf_map_delete_elem(&ops, &key);
     return 0;
+  }
 
   vp->wb = len;
   vp->reply_stamp = bpf_ktime_get_boot_ns();
