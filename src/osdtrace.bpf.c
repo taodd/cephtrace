@@ -403,7 +403,11 @@ int uprobe_queue_transactions(struct pt_regs *ctx) {
   if (NULL != key) {
     struct op_v *vp = bpf_map_lookup_elem(&ops, key);
     if (NULL != vp) {
-      vp->queue_transaction_stamp = bpf_ktime_get_boot_ns();
+      // One OSD request can queue multiple BlueStore transactions. Keep the
+      // first queue time so a later transaction cannot move the start past
+      // an earlier commit and underflow the aggregate BlueStore latency.
+      if (vp->queue_transaction_stamp == 0)
+        vp->queue_transaction_stamp = bpf_ktime_get_boot_ns();
     } else {
       bpf_printk(
           "uprobe_queue_transaction, no previous key matched owner %lld, tid "
