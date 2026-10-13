@@ -622,6 +622,19 @@ void print_subop_w(osd_op_t &op, int osd_id) {
   print_delayed_info(op);
 }
 
+// A replicated op only talks to (pool replica count - 1) peers, so the list can
+// hold 0, 1 or 2 entries -- never assume two of them exist.
+static std::string format_peers(const osd_op_t &op) {
+  std::string s;
+  for (size_t i = 0; i < op.peers.size(); ++i) {
+    if (i)
+      s += ", ";
+    s += "(" + std::to_string(op.peers[i].peer) + ", " +
+         std::to_string(op.peers[i].latency) + ")";
+  }
+  return s;
+}
+
 void print_op_w(osd_op_t &op, int osd_id) {
 
   std::stringstream ss;
@@ -629,12 +642,13 @@ void print_op_w(osd_op_t &op, int osd_id) {
   std::string pgid(ss.str());
   std::string object_name = format_object_name(op.object_name);
   std::string detail_ops = format_detail_ops(op, false);
+  std::string peers_str = format_peers(op);
 
   printf("osd %d pg %lld.%s op_w "
          "size %d client %lld tid %lld "
 	 "object %s osd_ops %s "
 	 "throttle_lat %lld recv_lat %lld dispatch_lat %lld "
-	 "queue_lat %lld osd_lat %lld peers [(%d, %lld), (%d, %lld)] "
+	 "queue_lat %lld osd_lat %lld peers [%s] "
 	 "bluestore_lat %lld "
 	 "op_lat %lld\n",
          osd_id, op.pg.m_pool, pgid.c_str(),
@@ -642,7 +656,7 @@ void print_op_w(osd_op_t &op, int osd_id) {
 	  object_name.c_str(),
 	  detail_ops.c_str(),
 	  op.throttle_lat, op.recv_lat, op.dispatch_lat,
-	  op.queue_lat, op.osd_lat,  op.peers[0].peer, op.peers[0].latency, op.peers[1].peer, op.peers[1].latency,
+	  op.queue_lat, op.osd_lat, peers_str.c_str(),
 	  op.bs_lat,
 	  op.op_lat);
   print_delayed_info(op);
@@ -740,8 +754,23 @@ osd_op_t generate_op(op_v *val) {
     op.delayed_strs.push_back(std::string(val->di.delays[i]));
   }
   if (op.type == MSG_OSD_OP) {
-    op.peers.push_back(peer_lat(val->pi.peer1, (val->pi.recv_stamp1 - val->pi.sent_stamp)/1000));
-    op.peers.push_back(peer_lat(val->pi.peer2, (val->pi.recv_stamp2 - val->pi.sent_stamp)/1000)); 
+    // uprobe_generate_subop assigns peers in order: the first subop sets peer1,
+    // the second sets peer2, and uprobe_do_repop_reply only fills the matching
+    // recv_stamp. A size=2 pool generates a single subop, so peer2 keeps its -1
+    // initialisation and recv_stamp2 is never written. Computing
+    // (recv_stamp2 - sent_stamp) from that 0 underflows the unsigned __u64 and
+    // reported a bogus ~1.8e16 us latency for peer -1. Emit an entry only for a
+    // peer that exists and whose reply has actually been observed.
+    if (val->pi.peer1 != -1 && val->pi.recv_stamp1 != 0)
+      op.peers.push_back(peer_lat(
+          val->pi.peer1, val->pi.recv_stamp1 > val->pi.sent_stamp
+                             ? (val->pi.recv_stamp1 - val->pi.sent_stamp) / 1000
+                             : 0));
+    if (val->pi.peer2 != -1 && val->pi.recv_stamp2 != 0)
+      op.peers.push_back(peer_lat(
+          val->pi.peer2, val->pi.recv_stamp2 > val->pi.sent_stamp
+                             ? (val->pi.recv_stamp2 - val->pi.sent_stamp) / 1000
+                             : 0));
   }
   //bluestore level
   op.aio_size = val->aio_size;
