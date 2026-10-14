@@ -159,11 +159,38 @@ $(BPFTOOL): | $(BPFTOOL_OUTPUT)
 
 
 # Generate Ceph BTF header
+#
+# Which kernel do we take ceph.ko's BTF from?
+#
+# Not simply "the highest-sorting directory under /lib/modules", because not
+# every directory there is named after a kernel release. Kylin Linux Advanced
+# Server V11 ships /lib/modules/ksaf, a kernel-release-independent directory
+# holding Kylin's own LSM modules (ksaf_main.ko, kysec_exectl.ko), deliberately
+# kept out of /lib/modules/<release>/ so that the dracut module 98ksaf_main can
+# copy one fixed path into the initramfs of every kernel. It has no ceph.ko.
+#
+# GNU `sort -V` ranks a run of letters above a run of digits, so such a name
+# sorts above every real version number:
+#
+#     6.6.0-32.12.v2505.ky11.x86_64
+#     ...
+#     6.6.0-32.26.v2505.ky11.x86_64   <- the running kernel
+#     ksaf                            <- ... so `tail -1` returns this one
+#
+# The recipe then dies in the "No ceph.ko* found under /lib/modules/ksaf" check
+# below. As ceph_btf_local.h is a prerequisite of the .bpf.o targets, that
+# aborts the build before a single object is compiled, which makes the failure
+# look unrelated to kernel discovery -- and it is only observable when the
+# header has to be regenerated, so it stays hidden until a `make clean`,
+# `git clean`, or a fresh checkout removes it.
+#
+# Keep only candidates whose directory name looks like a kernel release before
+# sorting, so a directory that is not named after a kernel release can never win.
 $(OSDTRACE_SRC)/ceph_btf_local.h: | $(OUTPUT) $(BPFTOOL)
 	@$(call msg,GEN-BTF,$@)
 	@set -eu; \
 	src=""; tmp=""; kver=""; kdir=""; base_btf=""; \
-	kver=$$(find /lib/modules -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null | sort -V | tail -1); \
+	kver=$$(find /lib/modules -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null | grep -E '^[0-9]+\.[0-9]+\.[0-9]+([.-][[:alnum:]_+.-]+)?$$' | sort -V | tail -1); \
 	[ -n "$$kver" ] || { echo "No installed kernels found under /lib/modules" >&2; exit 1; }; \
 	kdir="/lib/modules/$$kver"; \
 	CEPH_KO=$$(find "$$kdir" -type f -name 'ceph.ko*' 2>/dev/null | head -1); \
