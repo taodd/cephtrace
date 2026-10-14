@@ -187,8 +187,12 @@ jobs:
 
   build-rocky:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        rocky-version: ['9', '10']
     container:
-      image: rockylinux:9
+      image: rockylinux/rockylinux:${{ matrix.rocky-version }}
     steps:
       - name: Install dependencies
         run: |
