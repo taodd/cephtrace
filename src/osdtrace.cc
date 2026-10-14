@@ -778,10 +778,14 @@ osd_op_t generate_op(op_v *val) {
   op.bs_aio_wait_lat = (val->aio_done_stamp - val->aio_submit_stamp)/1000;
   op.bs_pg_seq_lat = (val->kv_submit_stamp - val->aio_done_stamp)/1000;
   op.bs_kv_commit_lat = (val->kv_committed_stamp - val->kv_submit_stamp)/1000;
-  if (op.is_write)
-    op.bs_lat = (val->kv_committed_stamp - val->queue_transaction_stamp)/1000;
-  else if (op.rb > 0)
+  if (op.is_write) {
+    if (val->queue_transaction_stamp != 0 &&
+        val->kv_committed_stamp >= val->queue_transaction_stamp)
+      op.bs_lat =
+          (val->kv_committed_stamp - val->queue_transaction_stamp) / 1000;
+  } else if (op.rb > 0) {
     op.bs_lat = (val->reply_stamp - val->execute_ctx_stamp)/1000;
+  }
 
   op.op_lat = (val->reply_stamp - (recv_stamp - bootstamp))/1000;
 

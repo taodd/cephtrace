@@ -32,6 +32,7 @@ RADOSTRACE_LOG="/tmp/radostrace.log"
 # the -p-based run attaches to (osd.1) so the two runs exercise distinct
 # ceph-osd PIDs; microceph creates osd.0/osd.1/osd.2 in this test's setup.
 TARGET_OSD_ID=2
+BENCH_RADOS_PID=""
 
 # Cleanup function
 cleanup() {
@@ -40,6 +41,10 @@ cleanup() {
     pkill -f osdtrace || true
     pkill -f radostrace || true
     pkill -f "rbd bench" || true
+    if [[ -n "$BENCH_RADOS_PID" ]]; then
+        kill -CONT "$BENCH_RADOS_PID" 2>/dev/null || true
+        kill "$BENCH_RADOS_PID" 2>/dev/null || true
+    fi
 
     # The hung-op scenario freezes OSDs. Always restore them, including when a
     # later assertion fails.
@@ -326,8 +331,35 @@ done
 # Match on the process name (-x), not the command line (-f): -f would also
 # freeze any shell or log tail whose arguments merely mention ceph-osd.
 OSD_PIDS=$(pgrep -x ceph-osd | tr '\n' ' ')
-kill -STOP $OSD_PIDS 2>/dev/null || true
+if [[ -z "$OSD_PIDS" ]]; then
+    err "No ceph-osd processes found to freeze for hung-op test"
+    exit 1
+fi
+kill -STOP $OSD_PIDS
+kill -STOP "$BENCH_RADOS_PID"
+
+# Wait until the stop signals have taken effect before waiting for radostrace's
+# timeout; otherwise a fast local cluster can complete the requests first.
+OSDS_STOPPED=0
+for i in $(seq 1 50); do
+    OSDS_STOPPED=1
+    for pid in $OSD_PIDS "$BENCH_RADOS_PID"; do
+        state=$(ps -o stat= -p "$pid" 2>/dev/null | tr -d '[:space:]')
+        if [[ "$state" != T* ]]; then
+            OSDS_STOPPED=0
+            break
+        fi
+    done
+    [[ "$OSDS_STOPPED" -eq 1 ]] && break
+    sleep 0.1
+done
+if [[ "$OSDS_STOPPED" -ne 1 ]]; then
+    err "Could not confirm rados client and ceph-osd processes were stopped"
+    exit 1
+fi
+
 wait $RADOSTRACE_HUNG_PID 2>/dev/null || true
+kill -CONT "$BENCH_RADOS_PID" 2>/dev/null || true
 kill -CONT $OSD_PIDS 2>/dev/null || true
 kill $BENCH_PID 2>/dev/null || true
 wait $BENCH_PID 2>/dev/null || true
