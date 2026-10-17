@@ -694,6 +694,10 @@ void timeout_handler(int signum) {
     }
 }
 
+static inline __u64 safe_lat_us(__u64 end, __u64 start) {
+  return (start != 0 && end > start) ? (end - start) / 1000 : 0;
+}
+
 osd_op_t generate_op(op_v *val) {
   osd_op_t op = osd_op_t();
 
@@ -745,9 +749,9 @@ osd_op_t generate_op(op_v *val) {
   op.queue_lat += (val->dequeue_stamp - val->enqueue_stamp)/1000;
 
   if (op.is_write)
-    op.osd_lat = (val->queue_transaction_stamp - val->dequeue_stamp)/1000;
+    op.osd_lat = safe_lat_us(val->queue_transaction_stamp, val->dequeue_stamp);
   else if (op.rb > 0)
-    op.osd_lat = (val->execute_ctx_stamp - val->dequeue_stamp) /1000;
+    op.osd_lat = safe_lat_us(val->execute_ctx_stamp, val->dequeue_stamp);
 
   op.delayed_cnt = val->di.cnt;
   for(int i = 0; i < val->di.cnt; ++i) {
@@ -774,14 +778,14 @@ osd_op_t generate_op(op_v *val) {
   }
   //bluestore level
   op.aio_size = val->aio_size;
-  op.bs_prepare_lat = (val->aio_submit_stamp - val->queue_transaction_stamp)/1000;
-  op.bs_aio_wait_lat = (val->aio_done_stamp - val->aio_submit_stamp)/1000;
-  op.bs_pg_seq_lat = (val->kv_submit_stamp - val->aio_done_stamp)/1000;
-  op.bs_kv_commit_lat = (val->kv_committed_stamp - val->kv_submit_stamp)/1000;
+  op.bs_prepare_lat = safe_lat_us(val->aio_submit_stamp, val->queue_transaction_stamp);
+  op.bs_aio_wait_lat = safe_lat_us(val->aio_done_stamp, val->aio_submit_stamp);
+  op.bs_pg_seq_lat = safe_lat_us(val->kv_submit_stamp, val->aio_done_stamp);
+  op.bs_kv_commit_lat = safe_lat_us(val->kv_committed_stamp, val->kv_submit_stamp);
   if (op.is_write)
-    op.bs_lat = (val->kv_committed_stamp - val->queue_transaction_stamp)/1000;
+    op.bs_lat = safe_lat_us(val->kv_committed_stamp, val->queue_transaction_stamp);
   else if (op.rb > 0)
-    op.bs_lat = (val->reply_stamp - val->execute_ctx_stamp)/1000;
+    op.bs_lat = safe_lat_us(val->reply_stamp, val->execute_ctx_stamp);
 
   op.op_lat = (val->reply_stamp - (recv_stamp - bootstamp))/1000;
 

@@ -256,6 +256,9 @@ SEC("uprobe")
 int uprobe_dequeue_op(struct pt_regs *ctx) {
   bpf_printk("Entered into uprobe_dequeue_op\n");
 
+  __u64 ptid = bpf_get_current_pid_tgid();
+  bpf_map_delete_elem(&ptid_opk, &ptid);
+
   struct op_k key;
   __builtin_memset(&key, 0, sizeof(key));
   int varid = 10;
@@ -295,8 +298,14 @@ int uprobe_dequeue_op(struct pt_regs *ctx) {
     return 0;
   vp->m_seed = m_seed;
 
-  __u64 ptid = bpf_get_current_pid_tgid();
-  bpf_map_update_elem(&ptid_opk, &ptid, &key, 0);
+  // Primary client writes (MSG_OSD_OP) always pass through
+  // ReplicatedBackend::submit_transaction right before queueing their
+  // BlueStore transaction, whereas reads, failed/noop ops, duplicate retries,
+  // and delayed ops (e.g. waiting for rw locks) return without calling
+  // BlueStore::queue_transactions. Bind ptid_opk here only for replica subops
+  // (MSG_OSD_REPOP), which go directly from do_repop to queue_transactions.
+  if (op_type == MSG_OSD_REPOP && vp->queue_transaction_stamp == 0)
+    bpf_map_update_elem(&ptid_opk, &ptid, &key, 0);
 
   return 0;
 }
@@ -365,12 +374,15 @@ SEC("uprobe")
 int uprobe_submit_transaction(struct pt_regs *ctx) {
   bpf_printk("Entered into uprobe_submit_transaction\n");
 
+  __u64 ptid = bpf_get_current_pid_tgid();
   int varid = 30;
   struct op_k key;
   __builtin_memset(&key, 0, sizeof(key));
   read_hprobe_varfield(ctx, varid++, &key.owner, sizeof(key.owner));
-  if (read_hprobe_varfield(ctx, varid++, &key.tid, sizeof(key.tid)) != 0)
+  if (read_hprobe_varfield(ctx, varid++, &key.tid, sizeof(key.tid)) != 0) {
+    bpf_map_delete_elem(&ptid_opk, &ptid);
     return 0;
+  }
 
   key.pid = get_pid();
 
@@ -382,9 +394,9 @@ int uprobe_submit_transaction(struct pt_regs *ctx) {
       key.owner, key.tid, vp);
   if (NULL != vp) {
     vp->submit_transaction_stamp = bpf_ktime_get_boot_ns();
-    __u64 ptid = bpf_get_current_pid_tgid();
     bpf_map_update_elem(&ptid_opk, &ptid, &key, 0);
   } else {
+    bpf_map_delete_elem(&ptid_opk, &ptid);
     bpf_printk(
         "uprobe_submit_transaction, no previous op info, owner %lld, tid "
         "%lld\n",
@@ -403,8 +415,14 @@ int uprobe_queue_transactions(struct pt_regs *ctx) {
   if (NULL != key) {
     struct op_v *vp = bpf_map_lookup_elem(&ops, key);
     if (NULL != vp) {
-      vp->queue_transaction_stamp = bpf_ktime_get_boot_ns();
+      if (vp->queue_transaction_stamp == 0 && vp->aio_submit_stamp == 0 &&
+          vp->kv_committed_stamp == 0) {
+        vp->queue_transaction_stamp = bpf_ktime_get_boot_ns();
+      } else {
+        bpf_map_delete_elem(&ptid_opk, &ptid);
+      }
     } else {
+      bpf_map_delete_elem(&ptid_opk, &ptid);
       bpf_printk(
           "uprobe_queue_transaction, no previous key matched owner %lld, tid "
           "%lld\n",
@@ -425,7 +443,8 @@ int uprobe_do_write(struct pt_regs *ctx) {
   if (NULL != key) {
     struct op_v *vp = bpf_map_lookup_elem(&ops, key);
     if (NULL != vp) {
-      vp->do_write_stamp = bpf_ktime_get_boot_ns();
+      if (vp->do_write_stamp == 0)
+        vp->do_write_stamp = bpf_ktime_get_boot_ns();
     } else {
       bpf_printk(
           "uprobe_do_write, no previous key matched owner %lld, tid %lld\n",
@@ -443,10 +462,13 @@ int uprobe_wctx_finish(struct pt_regs *ctx) {
   __u64 ptid = bpf_get_current_pid_tgid();
   struct op_k *key = bpf_map_lookup_elem(&ptid_opk, &ptid);
   if (NULL != key) {
-    struct op_v *vp = bpf_map_lookup_elem(&ops, key);
+    struct op_k op_key = *key;
+    bpf_map_delete_elem(&ptid_opk, &ptid);
+    struct op_v *vp = bpf_map_lookup_elem(&ops, &op_key);
     if (NULL != vp) {
+      if (vp->aio_submit_stamp != 0 || vp->kv_committed_stamp != 0)
+        return 0;
       vp->wctx_finish_stamp = bpf_ktime_get_boot_ns();
-      bpf_map_delete_elem(&ptid_opk, &ptid);
       int varid = 60;
       __u32 seqid = 0;
       if (read_hprobe_varfield(ctx, varid++, &seqid, sizeof(seqid)) != 0) return 0;
@@ -458,11 +480,11 @@ int uprobe_wctx_finish(struct pt_regs *ctx) {
       ck.start_stamp = start; 
       ck.pid = get_pid(); 
 
-      bpf_map_update_elem(&ctx_opk, &ck, key, 0);
+      bpf_map_update_elem(&ctx_opk, &ck, &op_key, 0);
     } else {
       bpf_printk(
           "uprobe_wctx_finish, no previous key matched owner %lld, tid %lld\n",
-          key->owner, key->tid);
+          op_key.owner, op_key.tid);
     }
   } else {
     bpf_printk("uprobe_wctx_finish, no previous tid matched %d\n", ptid);
@@ -814,9 +836,12 @@ int uprobe_txc_calc_cost(struct pt_regs *ctx)
   __u64 ptid = bpf_get_current_pid_tgid();
   struct op_k *key = bpf_map_lookup_elem(&ptid_opk, &ptid);
   if (NULL != key) {
-    struct op_v *vp = bpf_map_lookup_elem(&ops, key);
+    struct op_k op_key = *key;
+    bpf_map_delete_elem(&ptid_opk, &ptid);
+    struct op_v *vp = bpf_map_lookup_elem(&ops, &op_key);
     if (NULL != vp) {
-      bpf_map_delete_elem(&ptid_opk, &ptid);
+      if (vp->aio_submit_stamp != 0 || vp->kv_committed_stamp != 0)
+        return 0;
       int varid = 160;
       __u32 seqid = 0;
       if (read_hprobe_varfield(ctx, varid++, &seqid, sizeof(seqid)) != 0) return 0;
@@ -828,11 +853,11 @@ int uprobe_txc_calc_cost(struct pt_regs *ctx)
       ck.start_stamp = start; 
       ck.pid = get_pid(); 
 
-      bpf_map_update_elem(&ctx_opk, &ck, key, 0);
+      bpf_map_update_elem(&ctx_opk, &ck, &op_key, 0);
     } else {
       bpf_printk(
           "txc_calc_cost, no previous key matched owner %lld, tid %lld\n",
-          key->owner, key->tid);
+          op_key.owner, op_key.tid);
     }
   } else {
     bpf_printk("txc_calc_cost, no previous tid matched %d\n", ptid);
