@@ -1,5 +1,9 @@
 # Osdtrace Analysis Tool
 
+> For a quick visual overview (where latency is spent, distribution shape,
+> per-OSD outliers) before diving into the numbers, see
+> [Visualizing trace output](visualizing-output.md).
+
 The `analyze_osdtrace_output.py` script provides automated statistical analysis of osdtrace log files with fio-style latency distribution output.
 
 ## Overview
