@@ -118,7 +118,7 @@ class DwarfParser {
   bool find_prologue(Dwarf_Die *func, Dwarf_Addr &pc);
   void dwarf_die_type(Dwarf_Die *, Dwarf_Die *);
   bool find_class_member(Dwarf_Die *, Dwarf_Die *, std::string,
-                         Dwarf_Attribute *);
+                         Dwarf_Attribute *, Dwarf_Word *base_offset = NULL);
   bool translate_fields(Dwarf_Die *, Dwarf_Die *, Dwarf_Addr,
                         std::vector<std::string>, std::vector<Field> &);
   bool filter_func(std::string);

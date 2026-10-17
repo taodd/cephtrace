@@ -98,6 +98,8 @@ sudo ./osdtrace
                            / log_latency_fn call as "bluestore <name> lat <us>",
                            where <name> is the operation label the OSD passes
                            (e.g. _txc_committed_kv, kv_commit, _do_read, _remove)
+-A                         Allocator probe mode: trace every BlueStore/BlueFS
+                           allocator call (size, latency, returned extents)
 -l <milliseconds>          Only capture operations slower than this threshold
 -i <filename>              Import DWARF info from JSON file
 -j <filename>              Export DWARF info to JSON file and exit
@@ -115,6 +117,37 @@ By default osdtrace runs in **full tracing mode**, printing the complete latency
 breakdown (messenger, OSD, peers, BlueStore sub-latencies) for every operation.
 The former `-x` flag is gone - its output is now the default; the `-d` and `-m`
 aggregation options were removed at the same time.
+
+## Allocator Probe Mode (-A)
+
+`osdtrace -A` traces every call into the BlueStore free-space allocator —
+the `allocate()` overrides of whichever allocator implementation the OSD
+runs (`hybrid` by default; bitmap/avl/btree/btree2/stupid are covered too).
+This includes BlueFS's allocators, so RocksDB file growth is visible next
+to object-data allocations. One line per call:
+
+```
+osd 0 alloc block      want 0x10000 unit 0x1000 -> 0x10000 exts 1 [0x8e2000~0x10000] lat 13us comm tp_osd_tp
+osd 0 alloc bluefs-wal want 0x1200000 unit 0x100000 hint 0x16300000 -> 0x1200000 exts 1 [0x16300000~0x1200000] lat 9us comm bstore_kv_sync
+```
+
+| Field | Meaning |
+|-------|---------|
+| **alloc** | Allocator instance name: `block` (BlueStore data) or `bluefs-wal/db/slow` (BlueFS/RocksDB) |
+| **want / unit / hint** | Requested bytes, allocation-unit alignment, preferred offset (omitted when unset) |
+| **->** | Bytes actually allocated; `SHORT` when less than requested, `ENOSPC` on failure |
+| **exts N [off~len ...]** | The returned physical extents (first 6 shown). N > 1 means the request was split — a direct fragmentation signal |
+| **(nested dN)** | Call made from inside another allocator (e.g. hybrid falling back to its internal bitmap) |
+| **lat** | allocate() entry → return, µs: lock wait + free-space search time |
+
+Rising latency together with rising extent counts is fragmentation biting
+the write path — the per-call complement to
+`ceph daemon osd.N bluestore allocator score block`. `-l <ms>` filters on
+latency; `-A -b` combines with the BlueStore latency probes.
+
+Note: `-A` needs DWARF data that includes the allocator probes; direct
+binary parsing and freshly exported JSONs work, older DWARF JSONs and
+embedded data skip these probes with a warning.
 
 ### Examples
 

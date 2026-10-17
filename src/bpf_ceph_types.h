@@ -167,6 +167,63 @@ enum objectstore_txn_opcode {
 #undef GENERATE_TXN_ENUM
 };
 
+/* Allocator tracing (-A) */
+#define ALLOC_NAME_LEN 32
+#define ALLOC_MAX_EXTENTS 6
+// nested allocate() calls per thread we track (HybridAllocator falls
+// through to its internal BitmapAllocator, HybridBtree2Allocator calls
+// its base class allocate)
+#define ALLOC_MAX_DEPTH 4
+// hprobes slot holding the {"this","asok_hook","name","_M_dataplus","_M_p"}
+// varpath harvested from {AllocatorBase,Allocator}::get_name; every
+// allocate() entry probe reuses it ("this" sits in the same register)
+#define ALLOC_NAME_VARID 390
+
+// key of an in-flight allocate() call; depth disambiguates nesting.
+// Contains implicit padding, always memset before filling.
+struct alloc_k {
+  __u64 ptid;
+  __u32 depth;
+};
+
+// stashed at allocate() entry, consumed by the shared uretprobe
+struct alloc_inflight {
+  char name[ALLOC_NAME_LEN];
+  char comm[16];
+  __u32 tid;
+  __u32 start_off;   // offset of _M_start within PExtentVector
+  __u32 finish_off;  // offset of _M_finish within PExtentVector
+  __u64 want;
+  __u64 unit;
+  __u64 max_alloc;
+  __s64 hint;
+  __u64 extents;     // PExtentVector *
+  __u64 ts;
+};
+
+struct alloc_ext {
+  __u64 offset;
+  __u64 length;
+};
+
+// ringbuf event; sizeof() must stay distinct from op_v, bluestore_lat_v
+// (handle_event dispatches ringbuf events by size)
+struct alloc_v {
+  __u32 pid;
+  __u32 tid;
+  char comm[16];
+  char name[ALLOC_NAME_LEN];
+  __u32 depth;       // >0 = nested (e.g. hybrid fell back to its bitmap)
+  __u32 nextents;    // total extents returned (may exceed the array below)
+  __u64 want;
+  __u64 unit;
+  __u64 max_alloc;
+  __s64 hint;
+  __s64 rval;        // bytes allocated, or -errno
+  __u64 lat;         // ns
+  struct alloc_ext ext[ALLOC_MAX_EXTENTS];
+};
+
 struct op_v {
   __u32 pid;
   unsigned long long owner;
