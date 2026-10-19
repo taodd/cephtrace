@@ -89,6 +89,9 @@ volatile sig_atomic_t got_sigint = 0;
 
 // CSV Output
 bool export_csv = false;
+bool csv_stdout = false;
+static bool csv_headers_printed = false;
+static FILE* csv_fp = nullptr;
 std::string csv_output_file = "radostrace_events.csv";
 
 const char * ceph_osd_op_str(int opc) {
@@ -294,21 +297,26 @@ static int print_event(const struct client_op_v *op_v, bool complete) {
 
     // CSV output
     if (export_csv) {
-        static bool csv_headers_printed = false;
-        static FILE* csv_fp = nullptr;
+        // Open CSV file or use stdout
 
-        // Open CSV file
+        // Open CSV file or use stdout
         if (!csv_fp) {
-            csv_fp = fopen(csv_output_file.c_str(), "w");
-            if (!csv_fp) {
-                perror("fopen for CSV output failure");
-                export_csv = false; // disable CSV output on failure
+            if (csv_stdout) {
+                csv_fp = stdout;
+                setvbuf(stdout, NULL, _IOLBF, 0);
+            } else {
+                csv_fp = fopen(csv_output_file.c_str(), "w");
+                if (!csv_fp) {
+                    perror("fopen for CSV output failure");
+                    export_csv = false; // disable CSV output on failure
+                }
             }
         }
         // Print CSV Headers
         if (csv_fp && !csv_headers_printed) {
             fprintf(csv_fp, "pid,client,tid,pool,pg,acting,WR,size,latency,Complete,object,ops,offset,length\n");
             csv_headers_printed = true;
+            fflush(csv_fp);
         }
 
         std::string offset_field = print_offset_length ? std::to_string(op_v->offset) : "";
@@ -332,7 +340,11 @@ static int print_event(const struct client_op_v *op_v, bool complete) {
                 csv_escape(offset_field).c_str(),
                 csv_escape(length_field).c_str());
 
-            fflush(csv_fp); // Flush file to disk
+            fflush(csv_fp); // Flush file to disk / stdout
+        }
+
+        if (csv_stdout) {
+            return 0; // Pure CSV streaming on stdout: suppress human-readable table
         }
     }
 
@@ -539,6 +551,7 @@ int parse_args(int argc, char **argv) {
     {"export-json",        optional_argument, 0, 'j'},
     {"import-json",        required_argument, 0, 'i'},
     {"output",             optional_argument, 0, 'o'},
+    {"csv",                no_argument,       0, 'c'},
     {"pid",                required_argument, 0, 'p'},
     {"skip-version-check", no_argument,       0, 0},
     {"list",               no_argument,       0, 0},
@@ -550,7 +563,7 @@ int parse_args(int argc, char **argv) {
 
   int option_index = 0;
   int opt;
-  while ((opt = getopt_long(argc, argv, ":t:j::i:o::p:Vh", long_options, &option_index)) != -1) {
+  while ((opt = getopt_long(argc, argv, ":t:j::i:o::p:Vhc", long_options, &option_index)) != -1) {
     switch (opt) {
       case 0:
         if (strcmp(long_options[option_index].name, "skip-version-check") == 0) {
@@ -560,6 +573,10 @@ int parse_args(int argc, char **argv) {
         } else if (strcmp(long_options[option_index].name, "list-embedded") == 0) {
           list_embedded_mode = true;
         }
+        break;
+      case 'c':
+        export_csv = true;
+        csv_stdout = true;
         break;
       case 't':
         try {
@@ -589,6 +606,9 @@ int parse_args(int argc, char **argv) {
         } else if (optind < argc && argv[optind][0] != '-') {
           csv_output_file = argv[optind++];
         }
+        if (csv_output_file == "-") {
+          csv_stdout = true;
+        }
         break;
       case 'p':
         try {
@@ -603,11 +623,12 @@ int parse_args(int argc, char **argv) {
         print_tool_version("radostrace");
         exit(0);
       case 'h':
-        std::cout << "Usage: " << argv[0] << " [-t <timeout seconds>] [-j [filename]] [-i <filename>] [-o [filename]] [-p <pid>] [--skip-version-check] [--list] [--list-embedded]\n";
+        std::cout << "Usage: " << argv[0] << " [-t <timeout seconds>] [-j [filename]] [-i <filename>] [-o [filename]] [-p <pid>] [--csv] [--skip-version-check] [--list] [--list-embedded]\n";
         std::cout << "  -t, --timeout <seconds>    Set execution timeout in seconds\n";
         std::cout << "  -j, --export-json <file>   Export DWARF info to JSON (default: radostrace_dwarf.json)\n";
         std::cout << "  -i, --import-json <file>   Import DWARF info from JSON file\n";
         std::cout << "  -o, --output <file>        Export events data info to CSV (default: radostrace_events.csv)\n";
+        std::cout << "  --csv                      Output trace events as CSV directly to stdout\n";
         std::cout << "  -p, --pid <pid>            Attach uprobes only to the specified process ID (Mandatory for container based process tracing)\n";
         std::cout << "  --skip-version-check       Skip version check when importing DWARF JSON (currently needed for containers)\n";
         std::cout << "  --list                     List client processes using libceph-common (PID, container, traceability, version), and exit\n";
@@ -996,9 +1017,23 @@ int main(int argc, char **argv) {
   if (timeout > 0) {
       signal(SIGALRM, timeout_handler);
       alarm(timeout);
-      std::cout << "Execution timeout set to " << timeout << " seconds.\n";
+      if (csv_stdout)
+        std::cerr << "Execution timeout set to " << timeout << " seconds.\n";
+      else
+        std::cout << "Execution timeout set to " << timeout << " seconds.\n";
   } else {
-      std::cout << "No execution timeout set (unlimited).\n";
+      if (csv_stdout)
+        std::cerr << "No execution timeout set (unlimited).\n";
+      else
+        std::cout << "No execution timeout set (unlimited).\n";
+  }
+
+  if (export_csv && csv_stdout && !csv_headers_printed) {
+    csv_fp = stdout;
+    setvbuf(stdout, NULL, _IOLBF, 0);
+    fprintf(csv_fp, "pid,client,tid,pool,pg,acting,WR,size,latency,Complete,object,ops,offset,length\n");
+    csv_headers_printed = true;
+    fflush(csv_fp);
   }
 
   clog << "Started to poll from ring buffer" << endl;
