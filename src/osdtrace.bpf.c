@@ -43,18 +43,35 @@ struct {
   __uint(max_entries, 8192);
 } ops SEC(".maps");
 
+/* ptid_opk and ctx_opk also use LRU hashes sized to match ops:
+ *
+ * - ctx_opk holds every BlueStore TransContext between _txc_calc_cost (on the
+ *   OSD worker threads) and _txc_state_proc(STATE_KV_SUBMITTED) (on the single
+ *   bstore_kv_sync thread after RocksDB batch commit).  Under concurrent write
+ *   load (or when tracing multiple OSDs with -a), easily more than 128
+ *   TransContexts are in flight simultaneously.  With a 128-entry plain hash,
+ *   bpf_map_update_elem(&ctx_opk, ...) fails with -E2BIG while
+ *   uprobe_queue_transactions has already recorded queue_transaction_stamp > 0,
+ *   leaving kv_committed_stamp == 0 and underflowing bluestore_lat and prepare
+ *   to ~2^64 / 1000 us.
+ *
+ * - ptid_opk is keyed by worker thread ID (bpf_get_current_pid_tgid()).  Reads,
+ *   failed ops, and delayed ops insert into ptid_opk in uprobe_dequeue_op
+ *   without reaching _txc_calc_cost, and tracing multiple OSDs on one host can
+ *   span more than 128 OSD worker threads across process restarts.
+ */
 struct {
-  __uint(type, BPF_MAP_TYPE_HASH);
+  __uint(type, BPF_MAP_TYPE_LRU_HASH);
   __type(key, __u64);
   __type(value, struct op_k);
-  __uint(max_entries, 128);
+  __uint(max_entries, 8192);
 } ptid_opk SEC(".maps");
 
 struct {
-  __uint(type, BPF_MAP_TYPE_HASH);
+  __uint(type, BPF_MAP_TYPE_LRU_HASH);
   __type(key, struct ctx_k);
   __type(value, struct op_k);
-  __uint(max_entries, 128);
+  __uint(max_entries, 8192);
 } ctx_opk SEC(".maps");
 
 struct {
