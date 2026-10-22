@@ -233,6 +233,8 @@ __u64 threshold = 0; //in millisecond
 int timeout = -1; //in seconds
 
 volatile sig_atomic_t timeout_occurred = 0;
+bool csv_mode = false;
+static bool csv_header_printed = false;
 
 
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format,
@@ -572,7 +574,74 @@ std::string format_detail_ops(const osd_op_t& op, bool transaction_ops) {
   return out.str();
 }
 
+static std::string csv_escape(const std::string& field) {
+  bool need_quotes = false;
+  for (char c : field) {
+    if (c == ',' || c == '"' || c == '\n' || c == '\r') {
+      need_quotes = true;
+      break;
+    }
+  }
+  if (!need_quotes) return field;
+  std::string res = "\"";
+  for (char c : field) {
+    if (c == '"') res += "\"\"";
+    else res += c;
+  }
+  res += "\"";
+  return res;
+}
+
+void print_osd_csv_header(FILE* fp) {
+  fprintf(fp, "osd,pg,op_type,size,client,tid,object,ops,throttle_lat,recv_lat,dispatch_lat,queue_lat,osd_lat,peer1_id,peer1_lat,peer2_id,peer2_lat,bluestore_lat,op_lat,delayed\n");
+  fflush(fp);
+}
+
+void print_op_csv(const osd_op_t &op, int osd_id, const char* op_type, int size,
+                  int peer1_id, long long peer1_lat, int peer2_id, long long peer2_lat) {
+  if (!csv_header_printed) {
+    print_osd_csv_header(stdout);
+    csv_header_printed = true;
+  }
+  std::stringstream ss;
+  ss << std::hex << op.pg.m_seed;
+  std::string pgid(ss.str());
+  std::string object_name = format_object_name(op.object_name);
+  std::string detail_ops = format_detail_ops(op, strcmp(op_type, "subop_w") == 0);
+
+  std::string delayed_str;
+  for (std::size_t i = 0; i < op.delayed_strs.size(); ++i) {
+    if (i > 0) delayed_str += "; ";
+    delayed_str += op.delayed_strs[i];
+  }
+
+  fprintf(stdout,
+          "%d,%lld.%s,%s,%d,%lld,%lld,%s,%s,%lld,%lld,%lld,%lld,%lld,%d,%lld,%d,%lld,%lld,%lld,%s\n",
+          osd_id, (long long)op.pg.m_pool, pgid.c_str(),
+          op_type,
+          size,
+          (long long)op.client_id,
+          (long long)op.req_id,
+          csv_escape(object_name).c_str(),
+          csv_escape(detail_ops).c_str(),
+          (long long)op.throttle_lat,
+          (long long)op.recv_lat,
+          (long long)op.dispatch_lat,
+          (long long)op.queue_lat,
+          (long long)op.osd_lat,
+          peer1_id, peer1_lat,
+          peer2_id, peer2_lat,
+          (long long)op.bs_lat,
+          (long long)op.op_lat,
+          csv_escape(delayed_str).c_str());
+  fflush(stdout);
+}
+
 void print_op_r(osd_op_t &op, int osd_id) {
+  if (csv_mode) {
+    print_op_csv(op, osd_id, "op_r", op.rb, -1, 0, -1, 0);
+    return;
+  }
   std::stringstream ss;
   ss << std::hex << op.pg.m_seed;
   std::string pgid(ss.str());
@@ -598,6 +667,10 @@ void print_op_r(osd_op_t &op, int osd_id) {
 }
 
 void print_subop_w(osd_op_t &op, int osd_id) {
+  if (csv_mode) {
+    print_op_csv(op, osd_id, "subop_w", op.wb, -1, 0, -1, 0);
+    return;
+  }
   std::stringstream ss;
   ss << std::hex << op.pg.m_seed;
   std::string pgid(ss.str());
@@ -636,6 +709,14 @@ static std::string format_peers(const osd_op_t &op) {
 }
 
 void print_op_w(osd_op_t &op, int osd_id) {
+  if (csv_mode) {
+    int p1_id = op.peers.size() > 0 ? op.peers[0].peer : -1;
+    long long p1_lat = op.peers.size() > 0 ? (long long)op.peers[0].latency : 0LL;
+    int p2_id = op.peers.size() > 1 ? op.peers[1].peer : -1;
+    long long p2_lat = op.peers.size() > 1 ? (long long)op.peers[1].latency : 0LL;
+    print_op_csv(op, osd_id, "op_w", op.wb, p1_id, p1_lat, p2_id, p2_lat);
+    return;
+  }
 
   std::stringstream ss;
   ss << std::hex << op.pg.m_seed;
@@ -682,7 +763,8 @@ void report_ringbuf_drops() {
 void signal_handler(int signum){
   clog << "Caught signal " << signum << endl;
   if (signum == SIGINT) {
-      print_all_srl();
+      if (!csv_mode)
+        print_all_srl();
       report_ringbuf_drops();
   }
   exit(signum);
@@ -806,7 +888,7 @@ void handle_full(struct op_v *val, int osd_id) {
       else
         print_op_r(op, osd_id);
     } else {
-      printf("unsupported op type %d\n", op.type);
+      fprintf(stderr, "unsupported op type %d\n", op.type);
     }
 }
 
@@ -1029,6 +1111,7 @@ int parse_args(int argc, char **argv) {
     {"list-embedded", no_argument, 0, 0},
     {"id", required_argument, 0, 0},
     {"all", no_argument, 0, 'a'},
+    {"csv", no_argument, 0, 'c'},
     {0, 0, 0, 0}
   };
 
@@ -1037,7 +1120,7 @@ int parse_args(int argc, char **argv) {
   // it in a plain char is unsafe on platforms where char is unsigned by
   // default (the `!= -1` test can then loop forever).  Match kfstrace.
   int opt;
-  while ((opt = getopt_long(argc, argv, ":st:bj:i:l:p:Va", long_options, &option_index)) != -1) {
+  while ((opt = getopt_long(argc, argv, ":st:bj:i:l:p:Vac", long_options, &option_index)) != -1) {
     switch (opt) {
       case 0:
         // Handle long options
@@ -1071,6 +1154,9 @@ int parse_args(int argc, char **argv) {
 
       case 'a':
         trace_all = true;
+        break;
+      case 'c':
+        csv_mode = true;
         break;
       case 's':
         probe_mode &= ~OP_FULL_PROBE;
@@ -1117,7 +1203,7 @@ int parse_args(int argc, char **argv) {
         break;
       case '?':
       case 'h':
-        std::cout << "Usage: " << argv[0] << " [-s] [-l <milliseconds>] [-b] [-j] [-i <filename>] [-t <seconds>] [-a] [-p <pid1,pid2,...>] [--id <osd-id1,osd-id2,...>] [--skip-version-check] [--list] [--list-embedded]\n";
+        std::cout << "Usage: " << argv[0] << " [-s] [-l <milliseconds>] [-b] [-j] [-i <filename>] [-t <seconds>] [-a] [-p <pid1,pid2,...>] [--id <osd-id1,osd-id2,...>] [--csv] [--skip-version-check] [--list] [--list-embedded]\n";
         std::cout << "  -s                        Set probe mode to Single OP (logs PrimaryLogPG::log_op_stats only)\n";
         std::cout << "  -l <milliseconds>         Set operation latency threshold to capture\n";
         std::cout << "  -b                        Set probe mode to Bluestore\n";
@@ -1127,6 +1213,7 @@ int parse_args(int argc, char **argv) {
         std::cout << "  -a, --all                 Trace ALL traceable ceph-osd processes on the host (native and containerized)\n";
         std::cout << "  -p <pid1,pid2,...>        Probe using Process IDs (comma-separated, mandatory for tracing containerized processes)\n";
         std::cout << "  --id <osd-id1,osd-id2,...> Probe by OSD ID (comma-separated; resolves to PIDs via discovery)\n";
+        std::cout << "  -c, --csv                 Output trace events as CSV directly to stdout\n";
         std::cout << "  --skip-version-check      Skip version check when importing DWARF JSON (currently needed for containers)\n";
         std::cout << "  --list                    List active ceph-osd processes on the host, their PIDs and OSD IDs, and exit\n";
         std::cout << "  --list-embedded           List the Ceph versions with DWARF data compiled into this binary, and exit\n";
@@ -1346,15 +1433,17 @@ static int select_all_traceable_osds() {
 
   for (const auto& p : traceable) process_ids.insert(p.pid);
 
-  std::cout << "Tracing " << process_ids.size()
-            << " ceph-osd process(es) selected by -a:" << std::endl;
-  print_discovered_osds(traceable, /*show_traceable=*/true);
-  if (!not_traceable.empty()) {
-    std::cout << std::endl << "Skipping " << not_traceable.size()
-              << " non-traceable ceph-osd process(es):" << std::endl;
-    print_discovered_osds(not_traceable, /*show_traceable=*/true);
+  if (!csv_mode) {
+    std::cout << "Tracing " << process_ids.size()
+              << " ceph-osd process(es) selected by -a:" << std::endl;
+    print_discovered_osds(traceable, /*show_traceable=*/true);
+    if (!not_traceable.empty()) {
+      std::cout << std::endl << "Skipping " << not_traceable.size()
+                << " non-traceable ceph-osd process(es):" << std::endl;
+      print_discovered_osds(not_traceable, /*show_traceable=*/true);
+    }
+    std::cout << std::endl;
   }
-  std::cout << std::endl;
   return 0;
 }
 
@@ -1475,21 +1564,24 @@ static int resolve_trace_targets(TraceTarget &target) {
     for (const auto& p : processes) {
       if (!p.is_container) host_processes.push_back(p);
     }
-    if (host_processes.empty()) {
-      std::cout << "Warning: No active ceph-osd processes detected on the host." << std::endl;
-      std::cout << "osdtrace will start tracing globally, but no events will be captured until a ceph-osd process runs." << std::endl;
-    } else {
-      if (geteuid() != 0) {
-        std::cout << "Warning: Running without root privileges. Containerized status of OSDs owned by other users may not be accurately detected." << std::endl << std::endl;
+    if (!csv_mode) {
+      if (host_processes.empty()) {
+        std::cout << "Warning: No active ceph-osd processes detected on the host." << std::endl;
+        std::cout << "osdtrace will start tracing globally, but no events will be captured until a ceph-osd process runs." << std::endl;
+      } else {
+        if (geteuid() != 0) {
+          std::cout << "Warning: Running without root privileges. Containerized status of OSDs owned by other users may not be accurately detected." << std::endl << std::endl;
+        }
+        std::cout << "Detected active ceph-osd process(es) on the host:" << std::endl;
+        print_discovered_osds(host_processes);
+        std::cout << std::endl;
       }
-      std::cout << "Detected active ceph-osd process(es) on the host:" << std::endl;
-      print_discovered_osds(host_processes);
-      std::cout << std::endl;
     }
   }
 
   target.pids = process_ids;
-  std::cout << "Tracing ceph-osd at: " << target.osd_path << std::endl;
+  if (!csv_mode)
+    std::cout << "Tracing ceph-osd at: " << target.osd_path << std::endl;
   return 0;
 }
 
@@ -1701,9 +1793,20 @@ static int run_tracer(DwarfParser &dwarfparser, const TraceTarget &target) {
   if (timeout > 0) {
     signal(SIGALRM, timeout_handler);
     alarm(timeout);
-    std::cout << "Execution timeout set to " << timeout << " seconds.\n";
+    if (csv_mode)
+      std::cerr << "Execution timeout set to " << timeout << " seconds.\n";
+    else
+      std::cout << "Execution timeout set to " << timeout << " seconds.\n";
   } else {
-    std::cout << "No execution timeout set (unlimited).\n";
+    if (csv_mode)
+      std::cerr << "No execution timeout set (unlimited).\n";
+    else
+      std::cout << "No execution timeout set (unlimited).\n";
+  }
+
+  if (csv_mode && !csv_header_printed) {
+    print_osd_csv_header(stdout);
+    csv_header_printed = true;
   }
 
   clog << "Started to poll from ring buffer" << endl;
@@ -1740,6 +1843,10 @@ int main(int argc, char **argv) {
   signal(SIGINT, signal_handler);
 
   if (parse_args(argc, argv) < 0) return 0;
+
+  if (csv_mode) {
+    setvbuf(stdout, NULL, _IOLBF, 0);
+  }
 
   if (list_embedded) return run_list_embedded();
   if (list_only) return run_list();
