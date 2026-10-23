@@ -298,11 +298,16 @@ typedef struct osd_op {
   cls_op_t cls_ops[MAX_DETAIL_OPS] = {};
   __u32 detail_ops_total;
   bool detail_ops_unavailable;
+  // Request never fully observed; such an op must not be printed.
+  bool incomplete = false;
 } osd_op_t;
 
 int num_osd = 0;
 int osds[MAX_OSD] = {0};
 int pids[MAX_OSD] = {0};
+
+// Ops dropped by the incomplete-op guard below.
+static __u64 incomplete_ops = 0;
 
 //@write
 //(0, 4k) num {min=, max=, avg=, 10%=, 50%=, 90%=, 95%=, 99%=, 99.9%=}
@@ -406,8 +411,11 @@ void handle_single(struct op_v *val, int osd_id) {
   if(rvecs.empty()) {
     rvecs.resize(11);
   }
-  if (val->recv_stamp == 0) {//TODO weird bug, occationaly, 1/10000 of the ops could have recv_stamp==0
-    return ;
+  if (val->recv_stamp == 0 || val->recv_stamp <= bootstamp ||
+      val->reply_stamp == 0) {
+    // op_lat is anchored on recv_stamp, so the sample is unusable.
+    ++incomplete_ops;
+    return;
   }
   __u64 op_lat = (val->reply_stamp - (val->recv_stamp - bootstamp)); 
   __u64 wb = val->wb;
@@ -679,11 +687,20 @@ void report_ringbuf_drops() {
          << " events were dropped because the ring buffer was full" << endl;
 }
 
+// Make the dropped ops visible instead of silently shrinking the sample.
+static void report_incomplete_ops() {
+  if (incomplete_ops == 0) return;
+  cerr << "Warning: " << incomplete_ops
+       << " ops skipped: enqueue/dequeue timestamps were never recorded"
+       << endl;
+}
+
 void signal_handler(int signum){
   clog << "Caught signal " << signum << endl;
   if (signum == SIGINT) {
       print_all_srl();
       report_ringbuf_drops();
+      report_incomplete_ops();
   }
   exit(signum);
 }
@@ -741,12 +758,23 @@ osd_op_t generate_op(op_v *val) {
       recv_stamp = val->throttle_stamp;
 
   }
-  op.throttle_lat = (val->throttle_stamp - recv_stamp)/1000; 
-  op.recv_lat = (val->recv_complete_stamp - recv_stamp)/1000; 
-  op.dispatch_lat +=
-      (val->enqueue_stamp - (val->recv_complete_stamp - bootstamp))/1000;
 
-  op.queue_lat += (val->dequeue_stamp - val->enqueue_stamp)/1000;
+  // A record whose request was never seen by OSD::enqueue_op/dequeue_op keeps
+  // these boot-ns stamps at 0, and subtracting them as unsigned wraps to
+  // ~1.8e16 us (issue #107).  Drop it -- emitting 0 would be worse, since 0
+  // sorts as the fastest op ever and silently biases p1/p50 downwards.
+  if (recv_stamp == 0 || recv_stamp <= bootstamp || val->enqueue_stamp == 0 ||
+      val->dequeue_stamp == 0 || val->reply_stamp == 0) {
+    op.incomplete = true;
+    return op;
+  }
+
+  op.throttle_lat = safe_lat_us(val->throttle_stamp, recv_stamp);
+  op.recv_lat = safe_lat_us(val->recv_complete_stamp, recv_stamp);
+  op.dispatch_lat +=
+      safe_lat_us(val->enqueue_stamp, val->recv_complete_stamp - bootstamp);
+
+  op.queue_lat += safe_lat_us(val->dequeue_stamp, val->enqueue_stamp);
 
   if (op.is_write)
     op.osd_lat = safe_lat_us(val->queue_transaction_stamp, val->dequeue_stamp);
@@ -787,7 +815,7 @@ osd_op_t generate_op(op_v *val) {
   else if (op.rb > 0)
     op.bs_lat = safe_lat_us(val->reply_stamp, val->execute_ctx_stamp);
 
-  op.op_lat = (val->reply_stamp - (recv_stamp - bootstamp))/1000;
+  op.op_lat = safe_lat_us(val->reply_stamp, recv_stamp - bootstamp);
 
   return op;
 }
@@ -796,6 +824,10 @@ void handle_full(struct op_v *val, int osd_id) {
     //if (val->wb == 0)
       //return;
     osd_op_t op = generate_op(val);
+    if (op.incomplete) {
+      ++incomplete_ops;
+      return;
+    }
     if (op.op_lat/(1000) < threshold)
       return;
     if (op.type == MSG_OSD_REPOP) {
@@ -1731,6 +1763,7 @@ static int run_tracer(DwarfParser &dwarfparser, const TraceTarget &target) {
     cerr << "Ring buffer consume failed: " << ret << endl;
 
   report_ringbuf_drops();
+  report_incomplete_ops();
 
   clog << "Clean up the eBPF program" << endl;
   return timeout_occurred ? -1 : -errno;
