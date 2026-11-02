@@ -40,6 +40,32 @@ cephadm_image_for_release() {
 # reject a broken distro package before we commit to it.
 _cephadm_runs() { "$1" --help >/dev/null 2>&1; }
 
+# _podman_pull_with_retry <image>
+#
+# Pull an image, retrying on failure.  quay.io's CDN occasionally drops a
+# connection mid-blob ("unexpected EOF"), which would otherwise fail the whole
+# job before the test starts.
+_podman_pull_with_retry() {
+    local image="$1"
+    local max_attempts="${PODMAN_PULL_ATTEMPTS:-3}"
+    local retry_delay="${PODMAN_PULL_RETRY_DELAY:-15}"
+    local attempt rc
+    for (( attempt=1; attempt<=max_attempts; attempt++ )); do
+        rc=0
+        podman pull "$image" >/dev/null || rc=$?
+        [[ $rc -eq 0 ]] && return 0
+
+        err "podman pull of $image attempt ${attempt}/${max_attempts} failed (rc=$rc)"
+        if (( attempt < max_attempts )); then
+            info "retrying pull in ${retry_delay}s ..."
+            sleep "$retry_delay"
+        fi
+    done
+
+    err "podman pull of $image failed after ${max_attempts} attempts"
+    return 1
+}
+
 # install_cephadm <release> <dest_path> <fallback_image>
 #
 # Make a working `cephadm` available at $dest.  Strategy:
@@ -87,7 +113,7 @@ install_cephadm() {
     # whose bootstrap flag-set matches the image version exactly.
     [ -n "$image" ] || { err "no working distro cephadm and no fallback image supplied to install_cephadm"; return 1; }
     info "extracting cephadm from $image (cold start ~1 min for image pull)"
-    podman pull "$image" >/dev/null
+    _podman_pull_with_retry "$image" || return 1
     local cid; cid=$(podman create --rm "$image" /bin/true)
     podman cp "${cid}:/usr/sbin/cephadm" "$dest"
     podman rm -f "$cid" >/dev/null 2>&1 || true
