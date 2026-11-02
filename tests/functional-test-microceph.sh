@@ -27,6 +27,7 @@ echo "Project root: $PROJECT_ROOT"
 OSDTRACE_LOG="/tmp/osdtrace.log"
 OSDTRACE_ID_LOG="/tmp/osdtrace-id.log"
 RADOSTRACE_LOG="/tmp/radostrace.log"
+HUNG_OP_LOG="/tmp/radostrace_hung.log"
 
 # OSD id targeted by the --id-based osdtrace run.  Must differ from the OSD
 # the -p-based run attaches to (osd.1) so the two runs exercise distinct
@@ -68,8 +69,14 @@ cleanup() {
         info " === END of RADOS trace === "
     fi
 
+    if [[ -e $HUNG_OP_LOG ]]; then
+        info "Hung op RADOS trace output:"
+        cat $HUNG_OP_LOG
+        info " === END of hung op RADOS trace === "
+    fi
+
     # Remove test files
-    rm -f $OSDTRACE_LOG $OSDTRACE_ID_LOG $RADOSTRACE_LOG
+    rm -f $OSDTRACE_LOG $OSDTRACE_ID_LOG $RADOSTRACE_LOG $HUNG_OP_LOG
 
     # Remove test RBD resources
     microceph.rbd rm test_pool/testimage 2>/dev/null || true
@@ -294,7 +301,6 @@ info "=== Step 12: Verify radostrace output ==="
 verify_radostrace_output "$RADOSTRACE_LOG" "$TEST_POOL_ID" "$MAX_OSD_ID" 50
 
 info "=== Step 13: Test hung op detection ==="
-HUNG_OP_LOG="/tmp/radostrace_hung.log"
 
 microceph.rados -p test_pool bench 120 write -O 4M --no-cleanup > /dev/null 2>&1 &
 BENCH_PID=$!
@@ -327,6 +333,12 @@ for i in $(seq 1 30); do
     fi
     sleep 0.5
 done
+
+# radostrace only tracks ops sent after it attaches, so freezing right away can
+# leave nothing in its ops map: the bench may still be starting up, or its
+# in-flight ops may all predate the attach.  Let the bench cycle through its
+# in-flight ops first.
+sleep 3
 
 # Match on the process name (-x), not the command line (-f): -f would also
 # freeze any shell or log tail whose arguments merely mention ceph-osd.
@@ -364,11 +376,13 @@ kill -CONT $OSD_PIDS 2>/dev/null || true
 kill $BENCH_PID 2>/dev/null || true
 wait $BENCH_PID 2>/dev/null || true
 
-# Rows come from _radostrace_rows so the column layout lives in one place;
-# field 10 is the Complete flag.  verify_radostrace_output is not usable
-# here: it expects rbd_* object names and bounds latency, and these rows
-# are rados bench objects stuck for up to the 12 s trace window.
-if ! _radostrace_rows "$HUNG_OP_LOG" | awk -F'|' '$10 == 0 { found=1 } END { exit !found }'; then
+# Field 10 is the Complete flag.  _radostrace_rows is not usable here: it always
+# drops the last row to guard against a writer killed mid-printf, but hung ops
+# are printed last and this radostrace exited on its own timeout, so its output
+# is intact and that last row may be the only hung op.  verify_radostrace_output
+# is not usable either: it expects rbd_* object names and bounds latency, and
+# these rows are rados bench objects stuck for up to the 12 s trace window.
+if ! awk '$1 ~ /^[0-9]+$/ && NF >= 11 && $10 == 0 { found=1 } END { exit !found }' "$HUNG_OP_LOG"; then
     err "Expected at least one incomplete op (Complete=0) not found in radostrace output"
     exit 1
 fi
