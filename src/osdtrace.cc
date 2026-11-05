@@ -1733,7 +1733,7 @@ static int run_tracer(DwarfParser &dwarfparser, const TraceTarget &target) {
   report_ringbuf_drops();
 
   clog << "Clean up the eBPF program" << endl;
-  return timeout_occurred ? -1 : -errno;
+  return ret < 0 ? 1 : 0;
 }
 
 int main(int argc, char **argv) {
