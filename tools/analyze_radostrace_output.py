@@ -164,6 +164,7 @@ def parse_osd_tree(osd_tree_file):
 
     with open(osd_tree_file, 'r', encoding='utf-8') as file_handle:
         for line in file_handle:
+            line = line.lstrip()
             # Skip empty lines and summary lines
             if not line.strip() or line.startswith("ID") or \
                line.startswith("MIN/MAX") or line.startswith("TOTAL"):
