@@ -101,13 +101,12 @@ int uprobe_send_op(struct pt_regs *ctx) {
   READ_OP(val->m_pool, OFF_POOL);
   READ_OP(val->m_seed, OFF_SEED);
 
-  int name_len = 0;
+  __u32 name_len = 0;
   __u64 name_base = 0;
   READ_OP(name_len, OFF_NAME_LEN);
   READ_OP(name_base, OFF_NAME_PTR);
   if (name_len > 127)
     name_len = 127;
-  name_len &= 127;
   bpf_probe_read_user(val->object_name, name_len, (void *)name_base);
 
   // acting vector bounds; zeros just fill the slots with -1 below
