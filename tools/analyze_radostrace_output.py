@@ -55,8 +55,8 @@ def detect_file_format(file_path):
             if not line:
                 return 'space'
 
-        # Check if it's a CSV format by looking for commas
-        return 'csv' if ',' in line else 'space'
+        # Commas inside a text log's acting set are not CSV separators.
+        return 'csv' if re.match(r'\s*(?:pid|\d+),', line) else 'space'
 
 
 def parse_csv_log(log_file, threshold, osd_counts, osd_entries):
