@@ -105,6 +105,8 @@ int uprobe_send_op(struct pt_regs *ctx) {
   __u64 name_base = 0;
   READ_OP(name_len, OFF_NAME_LEN);
   READ_OP(name_base, OFF_NAME_PTR);
+  if (name_len > 127)
+    name_len = 127;
   name_len &= 127;
   bpf_probe_read_user(val->object_name, name_len, (void *)name_base);
 
