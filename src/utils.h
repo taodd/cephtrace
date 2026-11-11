@@ -1,7 +1,9 @@
 #ifndef UTILS_H
 #define UTILS_H
 
+#include <algorithm>
 #include <cctype>
+#include <cstdint>
 #include <string>
 #include <unistd.h>
 #include <vector>
@@ -59,6 +61,24 @@ inline int parse_osd_id_from_tokens(const std::vector<std::string> &args) {
         }
     }
     return -1;
+}
+
+// Size BPF_MAP_TYPE_LRU_HASH maps (ops, ptid_opk, ctx_opk) for the host CPU
+// count.  Linux's bpf_lru_list maintains per-CPU free lists targeting
+// LOCAL_FREE_TARGET (128) entries per CPU, so an 8192-entry map can spend its
+// entire pool on per-CPU caches at 64 CPUs and evict live in-flight ops before
+// stealing idle free nodes from other CPUs.  256 entries per possible CPU keeps
+// at least half the pool available to the global LRU lists while capping memory
+// on systems with large hotplug possible-CPU masks.
+inline uint32_t calc_osd_lru_map_entries(int ncpus) {
+    constexpr uint64_t MIN_LRU_ENTRIES = 8192;
+    constexpr uint64_t ENTRIES_PER_CPU = 256;
+    constexpr uint64_t MAX_LRU_ENTRIES = 262144;
+    if (ncpus <= 0)
+        return static_cast<uint32_t>(MIN_LRU_ENTRIES);
+    uint64_t scaled = static_cast<uint64_t>(ncpus) * ENTRIES_PER_CPU;
+    return static_cast<uint32_t>(
+        std::min(MAX_LRU_ENTRIES, std::max(MIN_LRU_ENTRIES, scaled)));
 }
 
 #endif // UTILS_H
