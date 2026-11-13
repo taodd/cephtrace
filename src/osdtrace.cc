@@ -1661,6 +1661,21 @@ static int run_tracer(DwarfParser &dwarfparser, const TraceTarget &target) {
          << skel->rodata->LATENCY_THRESHOLD_NS << " ns)" << endl;
   }
 
+  if (probe_mode & OP_FULL_PROBE) {
+    int ncpus = libbpf_num_possible_cpus();
+    uint32_t lru_entries = calc_osd_lru_map_entries(ncpus);
+    if (lru_entries > bpf_map__max_entries(skel->maps.ops)) {
+      if (bpf_map__set_max_entries(skel->maps.ops, lru_entries) < 0 ||
+          bpf_map__set_max_entries(skel->maps.ptid_opk, lru_entries) < 0 ||
+          bpf_map__set_max_entries(skel->maps.ctx_opk, lru_entries) < 0) {
+        cerr << "Failed to resize BPF LRU hash maps" << endl;
+        return 1;
+      }
+      clog << "Scaled LRU hash maps to " << lru_entries << " entries for "
+           << ncpus << " possible CPUs" << endl;
+    }
+  }
+
   int load_ret = osdtrace_bpf__load(skel.get());
   if (load_ret) {
     cerr << "Failed to load BPF skeleton: " << load_ret << endl;

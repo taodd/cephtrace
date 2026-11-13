@@ -40,7 +40,7 @@ struct {
   __uint(type, BPF_MAP_TYPE_LRU_HASH);
   __type(key, struct op_k);
   __type(value, struct op_v);
-  __uint(max_entries, 8192);
+  __uint(max_entries, 8192); // minimum; scaled with CPU count before load
 } ops SEC(".maps");
 
 /* ptid_opk and ctx_opk also use LRU hashes sized to match ops:

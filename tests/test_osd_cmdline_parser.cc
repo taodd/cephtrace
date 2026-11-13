@@ -93,6 +93,19 @@ int main() {
         std::cout << "  [PASS] Test 10: Non-numeric ID -> -1" << std::endl;
     }
 
-    std::cout << "ALL 10 UNIT TESTS PASSED SUCCESSFULLY!" << std::endl;
+    std::cout << "Running unit tests for calc_osd_lru_map_entries..." << std::endl;
+    {
+        assert(calc_osd_lru_map_entries(-1) == 8192);
+        assert(calc_osd_lru_map_entries(0) == 8192);
+        assert(calc_osd_lru_map_entries(16) == 8192);
+        assert(calc_osd_lru_map_entries(32) == 8192);
+        assert(calc_osd_lru_map_entries(64) == 16384);
+        assert(calc_osd_lru_map_entries(128) == 32768);
+        assert(calc_osd_lru_map_entries(256) == 65536);
+        assert(calc_osd_lru_map_entries(2048) == 262144);
+        std::cout << "  [PASS] Test 11: LRU map entry scaling across CPU counts" << std::endl;
+    }
+
+    std::cout << "ALL 11 UNIT TESTS PASSED SUCCESSFULLY!" << std::endl;
     return 0;
 }
