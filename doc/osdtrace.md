@@ -17,7 +17,7 @@ Run osdtrace on **Ceph OSD nodes** to:
 - Identify which stage of processing is causing latency
 - Diagnose slow operations (slow ops in Ceph logs)
 - Understand replication latency to peer OSDs
-- Monitor per-io BlueStore performance metrics(kv_commit, aio_wait, read_onode_meta_lat, bluestore_clist_lat...)
+- Monitor BlueStore operation latencies via `-b` (`_txc_committed_kv`, `kv_commit`, `_do_read`, `_remove`, ...)
 - Analyze queue depth and scheduling issues
 - Troubleshoot network vs storage bottlenecks
 
@@ -99,6 +99,7 @@ sudo ./osdtrace
                            where <name> is the operation label the OSD passes
                            (e.g. _txc_committed_kv, kv_commit, _do_read, _remove)
 -l <milliseconds>          Only capture operations slower than this threshold
+                           (filtered in-kernel when combined with -s)
 -i <filename>              Import DWARF info from JSON file
 -j <filename>              Export DWARF info to JSON file and exit
 --skip-version-check       Skip version check when importing DWARF JSON
@@ -112,7 +113,7 @@ sudo ./osdtrace
 ```
 
 By default osdtrace runs in **full tracing mode**, printing the complete latency
-breakdown (messenger, OSD, peers, BlueStore sub-latencies) for every operation.
+breakdown (messenger, OSD, peers, overall BlueStore latency) for every operation.
 The former `-x` flag is gone - its output is now the default; the `-d` and `-m`
 aggregation options were removed at the same time.
 
@@ -216,7 +217,7 @@ it, not when it carried a payload. Class methods that only touch omap — RGW's
 | **client** | Client global ID | - | All ops |
 | **tid** | Client request Transaction ID | - | All ops |
 | **object** | Target object name (`-` when unavailable; truncated to 63 bytes, unsafe bytes percent-encoded) | - | All ops |
-| **osd_ops** | Decoded client `CEPH_OSD_OP_*` names (up to 8, with truncation count) | - | op_r, op_w |
+| **osd_ops** | Decoded client `CEPH_OSD_OP_*` names, including `call(class.method)` for class calls (up to 8, with truncation count) | - | op_r, op_w |
 | **txn_ops** | Replica `ObjectStore::Transaction::OP_*` names (up to 8, with truncation count) | - | subop_w |
 | **throttle_lat** | Message throttling delay | μs | All ops |
 | **recv_lat** | Message receive time | μs | All ops |

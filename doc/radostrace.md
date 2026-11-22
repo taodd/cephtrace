@@ -259,9 +259,9 @@ Typical latencies:
 
 #### Example 1: Sequential Read Workload
 ```
-   19015   34206  100001     2  39     [0,121,11]     R     4096    1200     rbd_data.abc.0000000000000000[read][0, 4096]
-   19015   34206  100002     2  39     [0,121,11]     R     4096    1150     rbd_data.abc.0000000000000000[read][4096, 4096]
-   19015   34206  100003     2  39     [0,121,11]     R     4096    1180     rbd_data.abc.0000000000000000[read][8192, 4096]
+   19015   34206  100001     2  39     [0,121,11]     R     4096    1200          1     rbd_data.abc.0000000000000000[read][0, 4096]
+   19015   34206  100002     2  39     [0,121,11]     R     4096    1150          1     rbd_data.abc.0000000000000000[read][4096, 4096]
+   19015   34206  100003     2  39     [0,121,11]     R     4096    1180          1     rbd_data.abc.0000000000000000[read][8192, 4096]
 ```
 - Same object, sequential offsets (0, 4096, 8192)
 - Consistent low latencies (~1.2ms)
@@ -269,9 +269,9 @@ Typical latencies:
 
 #### Example 2: Random Read with Hot Spot
 ```
-   19015   34206  100001     2  39     [0,121,11]     R     4096     500     rbd_data.abc.000000000000001f[read][16384, 4096]
-   19015   34206  100002     2  2a     [5,99,33]      R     4096   120000     rbd_data.abc.0000000000000042[read][0, 4096]
-   19015   34206  100003     2  39     [0,121,11]     R     4096     520     rbd_data.abc.000000000000001f[read][20480, 4096]
+   19015   34206  100001     2  39     [0,121,11]     R     4096     500          1     rbd_data.abc.000000000000001f[read][16384, 4096]
+   19015   34206  100002     2  2a     [5,99,33]      R     4096   120000          1     rbd_data.abc.0000000000000042[read][0, 4096]
+   19015   34206  100003     2  39     [0,121,11]     R     4096     520          1     rbd_data.abc.000000000000001f[read][20480, 4096]
 ```
 - Object `1f` has low latency (~500μs) - likely cached
 - Object `42` has high latency (120ms) - possible slow disk or PG issue
@@ -279,7 +279,7 @@ Typical latencies:
 
 #### Example 3: Write Operations
 ```
-   19015   34206  200001     2  1a     [10,22,33]     W    65536    8500     rbd_data.xyz.0000000000000010[write][0, 65536]
+   19015   34206  200001     2  1a     [10,22,33]     W    65536    8500          1     rbd_data.xyz.0000000000000010[write][0, 65536]
 ```
 - 64KB write (65536 bytes)
 - 8.5ms latency

@@ -58,9 +58,10 @@ sudo ./kfstrace -m all
 
 ```
 -m, --mode <mode>        Tracing mode: mds (default), osd, or all
--t, --time <seconds>     Run for specified duration then exit
+-t, --timeout <seconds>  Run for specified duration then exit
 -l, --latency <us>       Only show operations with latency >= threshold
--h, --help              Show help message
+-V, --version            Print version information and exit
+-h, --help               Show help message
 ```
 
 ### Modes
