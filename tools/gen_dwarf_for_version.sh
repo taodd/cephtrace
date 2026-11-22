@@ -95,7 +95,7 @@ podman exec -u root "$CTR" dnf install -y --enablerepo="$BUILD_REPO" --alloweras
     elfutils-libelf-devel elfutils-devel \
     glibc-devel \
     python3 openssl-devel \
-    gdb curl which >/dev/null
+    gdb curl which procps-ng >/dev/null
 
 # Install ceph-osd + the three core libraries plus every matching debuginfo
 # subpackage, WITH full dependency resolution.  A plain `rpm -ivh` can't pull
