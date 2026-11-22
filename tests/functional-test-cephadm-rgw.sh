@@ -9,14 +9,14 @@
 #
 # Usage:
 #   sudo ./tests/functional-test-cephadm-rgw.sh <release>
-#       release ∈ { quincy | reef | squid | tentacle }
+#       release ∈ { quincy | reef | squid | tentacle | umbrella }
 #
 # Expects $PROJECT_ROOT/osdtrace and $PROJECT_ROOT/radostrace to be built.
 
 set -e
 set -x
 
-CEPH_RELEASE="${1:?usage: $0 <quincy|reef|squid|tentacle>}"
+CEPH_RELEASE="${1:?usage: $0 <quincy|reef|squid|tentacle|umbrella>}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -34,6 +34,7 @@ OSDTRACE_LOG="/tmp/osdtrace-cephadm-${CEPH_RELEASE}.log"
 RADOSTRACE_LOG="/tmp/radostrace-cephadm-${CEPH_RELEASE}.log"
 WORKLOAD_LOG="/tmp/s3-workload-${CEPH_RELEASE}.log"
 S3CFG="/root/.s3cfg-cephadm-test"
+LIST_KEYRING="/tmp/list-test-${CEPH_RELEASE}.keyring"
 
 # Trace sustained read+write window.  Long enough to overlap radostrace's
 # uprobe attach + the workload's steady-state phase.
@@ -76,8 +77,9 @@ cleanup() {
     # remaining cost is a few MB of log on the runner's tmpfs.  Also keep
     # them when KEEP_CLUSTER=1 (developer is iterating locally).
     if [[ $rc -eq 0 && "${KEEP_CLUSTER:-0}" -ne 1 ]]; then
-        rm -f "$S3CFG" "$OSDTRACE_LOG" "$RADOSTRACE_LOG" "$WORKLOAD_LOG" 2>/dev/null || true
+        rm -f "$S3CFG" "$LIST_KEYRING" "$OSDTRACE_LOG" "$RADOSTRACE_LOG" "$WORKLOAD_LOG" 2>/dev/null || true
     else
+        rm -f "$LIST_KEYRING" 2>/dev/null || true
         info "Preserving trace logs at $OSDTRACE_LOG / $RADOSTRACE_LOG (exit=$rc)"
     fi
     info "cleanup done"
@@ -322,6 +324,7 @@ case "$CEPH_RELEASE" in
     reef)     EXPECTED_MAJOR=18 ;;
     squid)    EXPECTED_MAJOR=19 ;;
     tentacle) EXPECTED_MAJOR=20 ;;
+    umbrella) EXPECTED_MAJOR=21 ;;
     [0-9]*)   EXPECTED_MAJOR=$(_version_major "$CEPH_RELEASE") ;;  # 20.2.2 -> 20
     *) err "unknown release '$CEPH_RELEASE'"; exit 1 ;;
 esac
@@ -329,11 +332,26 @@ esac
 cephadm shell --fsid "$FSID" -- ceph osd pool create list-test 8 >>"$WORKLOAD_LOG" 2>&1
 cephadm shell --fsid "$FSID" -- ceph osd pool application enable list-test rados >>"$WORKLOAD_LOG" 2>&1
 
+# Ceph 19.2.6+ / 20.2.4+ / 21.2.0+ bootstrap client.admin with aes256k keys
+# (CVE-2025-30156), which older host librados2 packages (e.g. Ubuntu 24.04's
+# 19.2.3) cannot decode.  Provision a dedicated legacy-aes client for the
+# native host rados bench, falling back to a default key on older clusters
+# that do not recognise --key-type.
+cephadm shell --fsid "$FSID" -- ceph mon set auth_allowed_ciphers aes,aes256k >>"$WORKLOAD_LOG" 2>&1 || true
+cephadm shell --fsid "$FSID" -- ceph config set mon mon_auth_allow_insecure_key true >>"$WORKLOAD_LOG" 2>&1 || true
+if ! cephadm shell --fsid "$FSID" -- ceph auth get-or-create client.listtest \
+        mon 'allow r' osd 'allow rwx pool=list-test' --key-type=aes \
+        >"$LIST_KEYRING" 2>>"$WORKLOAD_LOG"; then
+    cephadm shell --fsid "$FSID" -- ceph auth get-or-create client.listtest \
+        mon 'allow r' osd 'allow rwx pool=list-test' \
+        >"$LIST_KEYRING" 2>>"$WORKLOAD_LOG"
+fi
+
 # Long-running native client; killed + cleaned up right after the checks.
 # The host rados CLI may be a different (newer/older) major than the
 # cluster - fine for bench I/O, and exactly the mixed-version situation
 # --list's per-process version resolution must get right.
-rados bench -p list-test 120 write -b 4096 --no-cleanup >>"$WORKLOAD_LOG" 2>&1 &
+rados --id listtest -k "$LIST_KEYRING" bench -p list-test 120 write -b 4096 --no-cleanup >>"$WORKLOAD_LOG" 2>&1 &
 BENCH_PID=$!
 sleep 3   # let it connect so libceph-common is mapped
 kill -0 "$BENCH_PID" 2>/dev/null || { err "native rados bench died at startup"; tail -5 "$WORKLOAD_LOG"; exit 1; }
@@ -348,7 +366,9 @@ verify_osdtrace_list_multiosd "$PROJECT_ROOT/osdtrace" "$EXPECTED_MAJOR" 3
 kill "$BENCH_PID" 2>/dev/null || true
 wait "$BENCH_PID" 2>/dev/null || true
 # No benchmark objects left behind; drop the throwaway pool entirely.
-rados -p list-test cleanup >>"$WORKLOAD_LOG" 2>&1 || true
+rados --id listtest -k "$LIST_KEYRING" -p list-test cleanup >>"$WORKLOAD_LOG" 2>&1 || true
+cephadm shell --fsid "$FSID" -- ceph auth del client.listtest >>"$WORKLOAD_LOG" 2>&1 || true
+rm -f "$LIST_KEYRING"
 cephadm shell --fsid "$FSID" -- ceph config set mon mon_allow_pool_delete true >>"$WORKLOAD_LOG" 2>&1 || true
 cephadm shell --fsid "$FSID" -- ceph osd pool rm list-test list-test \
     --yes-i-really-really-mean-it >>"$WORKLOAD_LOG" 2>&1 || true
