@@ -184,6 +184,7 @@ This will build all three tools: `radostrace`, `osdtrace`, and `kfstrace`.
 ### Supported Architectures
 
 - x86_64 (AMD64)
+- ARM64 (AArch64)
 
 ### Ceph Versions
 

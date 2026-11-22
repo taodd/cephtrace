@@ -14,27 +14,34 @@ Traces Ceph kernel client requests using kprobes
 SYNOPSIS
 ========
 
-| **kfstrace** [-t <seconds>] [-m <osd|mds|all>] -h
+| **kfstrace** [-t <seconds>] [-m <osd|mds|all>] [-l <microseconds>] [-V] [-h]
 
 
 DESCRIPTION
 ===========
 
-**kfstrace** Traces Ceph kernel client requests using kprobes, for ceph-fs
-and kernel mounted rbd volumes.
-installed ``cephtrace``.
+**kfstrace** traces Ceph kernel client requests using kprobes, for CephFS
+and kernel-mounted RBD volumes.
 
 
 OPTIONS
 =======
 
--t, --timeout
+-t, --timeout <seconds>
 
    Set execution timeout in seconds
 
 -m, --mode <osd|mds|all>
 
-   Operation mode osd, mds or all
+   Operation mode: osd, mds, or all (default: mds)
+
+-l, --latency <microseconds>
+
+   Only show operations with latency greater than or equal to threshold
+
+-V, --version
+
+   Print version information and exit
 
 -h, --help
 

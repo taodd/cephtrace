@@ -7,7 +7,7 @@ The `analyze_osdtrace_output.py` script provides automated statistical analysis 
 This Python tool parses osdtrace output and provides:
 - Statistical analysis (min, max, avg, fio-like percentiles) for latencies
 - Per-OSD filtering
-- Per-latency-field filtering (analyze specific stages like recv_lat, kv_commit)
+- Per-latency-field filtering (analyze specific stages like `recv_lat`, `bluestore_lat`)
 - Sorted output for detailed inspection
 - Latency threshold filtering
 - High level overview of latency distribution
@@ -39,13 +39,10 @@ When using `-f` option, you can analyze these latency components:
 - `recv_lat` - Message receive time
 - `dispatch_lat` - Message dispatch time
 - `queue_lat` - Queue wait time
+- `osd_lat` - OSD processing time
 - `bluestore_lat` - Total BlueStore time
 
-**BlueStore sub-latencies** :
-- `prepare` - Transaction preparation
-- `aio_wait` - Async I/O wait
-- `seq_wait` - Sequencer wait
-- `kv_commit` - RocksDB commit time
+> Legacy BlueStore sub-latency fields (`prepare`, `aio_wait`, `seq_wait`, `kv_commit`) are still accepted when analyzing logs captured with older `osdtrace` releases (v1.6 and earlier). Current `osdtrace` reports overall `bluestore_lat` per op; use `osdtrace -b` for internal BlueStore operation latencies.
 
 ## Examples
 
@@ -109,22 +106,22 @@ osd.11:
 - **Acceptable:** 50-1000μs depending on message size and network
 - **Problem:** > 100ms indicates network issue(usually packet loss, NIC problems)
 
-### Example 3: Analyze kv_commit Latency
+### Example 3: Analyze bluestore_lat Latency
 
 ```bash
-# Focus on RocksDB commit times
-./tools/analyze_osdtrace_output.py osdtrace.log -f kv_commit
+# Focus on BlueStore backend latencies
+./tools/analyze_osdtrace_output.py osdtrace.log -f bluestore_lat
 ```
 
 **Why this is useful:**
-- kv_commit is often the dominant latency component for writes
-- High kv_commit indicates storage backend issues
+- `bluestore_lat` is often the dominant latency component for writes
+- High `bluestore_lat` indicates storage backend issues
 
 ### Example 4: Combine OSD and Field Filters
 
 ```bash
-# Combine filters: OSD 22, kv_commit only
-./tools/analyze_osdtrace_output.py osdtrace.log -o 22 -f kv_commit
+# Combine filters: OSD 22, bluestore_lat only
+./tools/analyze_osdtrace_output.py osdtrace.log -o 22 -f bluestore_lat
 ```
 
 Perfect for deep-diving into a specific OSD's storage performance.
@@ -132,19 +129,19 @@ Perfect for deep-diving into a specific OSD's storage performance.
 ### Example 5: Sorted Output for Manual Inspection
 
 ```bash
-# Get sorted list of kv_commit latencies
-./tools/analyze_osdtrace_output.py osdtrace.log -s -f kv_commit
+# Get sorted list of bluestore_lat latencies
+./tools/analyze_osdtrace_output.py osdtrace.log -s -f bluestore_lat
 
 # Filter to find very slow operations slower than
 # or equal to 50ms (units are in microseconds)
-./tools/analyze_osdtrace_output.py osdtrace.log -s -f kv_commit -t 50000 | tail -20
+./tools/analyze_osdtrace_output.py osdtrace.log -s -f bluestore_lat -t 50000 | tail -20
 ```
 
 **Sample sorted output:**
 ```
-osd 5 pg 2.3a op_w size 4096 client 12345 tid 67890 ... kv_commit 2340
-osd 5 pg 2.3a op_w size 8192 client 12345 tid 67891 ... kv_commit 3120
-osd 5 pg 2.3a op_w size 4096 client 12345 tid 67892 ... kv_commit 45670
+osd 5 pg 2.3a op_w size 4096 client 12345 tid 67890 ... bluestore_lat 2340 op_lat 2810
+osd 5 pg 2.3a op_w size 8192 client 12345 tid 67891 ... bluestore_lat 3120 op_lat 3690
+osd 5 pg 2.3a op_w size 4096 client 12345 tid 67892 ... bluestore_lat 45670 op_lat 46210
 ```
 
 ### Example 6: Latency Contribution Distribution
@@ -180,7 +177,7 @@ as described in example 1 or 2 (but with `-f bluestore_lat`)
 ### Step 1: Capture Detailed Trace
 
 ```bash
-# Full tracing mode (default) includes the BlueStore breakdown
+# Full tracing mode (default) captures the per-stage latency breakdown
 sudo ./osdtrace -a -t 300 > osdtrace-$(date +%Y%m%d-%H%M%S).log
 ```
 
@@ -203,7 +200,7 @@ sudo ./osdtrace -a -t 300 > osdtrace-$(date +%Y%m%d-%H%M%S).log
 
 ```bash
 # Analyze each latency component
-for field in queue_lat osd_lat bluestore_lat kv_commit; do
+for field in recv_lat queue_lat osd_lat bluestore_lat; do
     echo "=== $field ==="
     ./tools/analyze_osdtrace_output.py osdtrace-*.log -f $field
     echo
@@ -237,14 +234,14 @@ done
 ```bash
 # Before tuning
 sudo ./osdtrace -a -t 300 > before.log
-./tools/analyze_osdtrace_output.py before.log -f kv_commit > before-analysis.txt
+./tools/analyze_osdtrace_output.py before.log -f bluestore_lat > before-analysis.txt
 
 # Apply tuning (e.g., RocksDB settings)
 ceph config set osd bluestore_rocksdb_options "..."
 
 # After tuning
 sudo ./osdtrace -a -t 300 > after.log
-./tools/analyze_osdtrace_output.py after.log -f kv_commit > after-analysis.txt
+./tools/analyze_osdtrace_output.py after.log -f bluestore_lat > after-analysis.txt
 
 # Compare
 diff -u before-analysis.txt after-analysis.txt
