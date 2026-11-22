@@ -1,0 +1,873 @@
+{
+  "version": "2:19.2.6-0.el9",
+  "arch": "amd64",
+  "libceph-common.so.2": {
+    "build_id": "04ef06c1998ea41d29cbaa200d171a2836ed94e0",
+    "func2pc": {
+      "Objecter::_finish_op": 6286576,
+      "Objecter::_send_op": 6306560
+    },
+    "type_sizes": {
+      "OSDOp": 112
+    },
+    "member_offsets": {
+      "OSDOp::indata._carriage": 56,
+      "OSDOp::op.cls.class_len": 6,
+      "OSDOp::op.cls.method_len": 7,
+      "OSDOp::op.extent.length": 14,
+      "OSDOp::op.extent.offset": 6
+    },
+    "func2vf": {
+      "Objecter::_finish_op": {
+        "var_fields": [
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 1064,
+                "pointer": true
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 5,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 32,
+                "pointer": true
+              },
+              {
+                "offset": 1408,
+                "pointer": true
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 400,
+                "pointer": false
+              }
+            ]
+          }
+        ]
+      },
+      "Objecter::_send_op": {
+        "var_fields": [
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 1064,
+                "pointer": true
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 5,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 32,
+                "pointer": true
+              },
+              {
+                "offset": 1408,
+                "pointer": true
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 400,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 8,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 8,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 8,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 272,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 272,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 8,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 336,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 336,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 8,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 464,
+                "pointer": true
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 464,
+                "pointer": true
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 8,
+                "pointer": false
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "librados.so.2": {
+    "build_id": "7dff8cdb48f3995e2c9bad3f3871f75d81b310fd",
+    "func2pc": {
+      "Objecter::_finish_op": 966032,
+      "Objecter::_send_op": 975840
+    },
+    "type_sizes": {
+      "OSDOp": 112
+    },
+    "member_offsets": {
+      "OSDOp::indata._carriage": 56,
+      "OSDOp::op.cls.class_len": 6,
+      "OSDOp::op.cls.method_len": 7,
+      "OSDOp::op.extent.length": 14,
+      "OSDOp::op.extent.offset": 6
+    },
+    "func2vf": {
+      "Objecter::_finish_op": {
+        "var_fields": [
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 1064,
+                "pointer": true
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 5,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 32,
+                "pointer": true
+              },
+              {
+                "offset": 1408,
+                "pointer": true
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 400,
+                "pointer": false
+              }
+            ]
+          }
+        ]
+      },
+      "Objecter::_send_op": {
+        "var_fields": [
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 1064,
+                "pointer": true
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 5,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 32,
+                "pointer": true
+              },
+              {
+                "offset": 1408,
+                "pointer": true
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 400,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 8,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 8,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 8,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 272,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 272,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 8,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 336,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 336,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 8,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 464,
+                "pointer": true
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 464,
+                "pointer": true
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 8,
+                "pointer": false
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "librbd.so.1": {
+    "build_id": "cc756c31bb13e56d8ddade5af586a159e48cbbd1",
+    "func2pc": {
+      "Objecter::_finish_op": 5205136
+    },
+    "type_sizes": {
+      "OSDOp": 112
+    },
+    "member_offsets": {
+      "OSDOp::indata._carriage": 56,
+      "OSDOp::op.cls.class_len": 6,
+      "OSDOp::op.cls.method_len": 7,
+      "OSDOp::op.extent.length": 14,
+      "OSDOp::op.extent.offset": 6
+    },
+    "func2vf": {
+      "Objecter::_finish_op": {
+        "var_fields": [
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 1064,
+                "pointer": true
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 5,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 32,
+                "pointer": true
+              },
+              {
+                "offset": 1408,
+                "pointer": true
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 4,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 40,
+                "pointer": true
+              },
+              {
+                "offset": 400,
+                "pointer": false
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}
