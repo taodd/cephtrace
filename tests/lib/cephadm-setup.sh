@@ -29,6 +29,7 @@ cephadm_image_for_release() {
         reef)     echo "quay.io/ceph/ceph:v18.2.8"  ;;
         squid)    echo "quay.io/ceph/ceph:v19.2.4"  ;;
         tentacle) echo "quay.io/ceph/ceph:v20.2.2"  ;;
+        umbrella) echo "quay.io/ceph/ceph:v21.2.0"  ;;
         *) err "unknown release: $1"; return 1 ;;
     esac
 }

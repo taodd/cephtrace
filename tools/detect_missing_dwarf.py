@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Detect Ceph point releases for which we don't yet ship embedded DWARF JSONs.
 
-Phase 1: centos-stream el9 only.  Probes download.ceph.com for the ceph-osd
-RPMs of each (major.2.patch) candidate version and diffs against the JSONs
-already present under files/centos-stream/{osdtrace,radostrace}/.
+Phase 1: centos-stream (el9 for quincy..tentacle, el10 for umbrella).  Probes
+download.ceph.com for the ceph-osd RPMs of each (major.2.patch) candidate
+version and diffs against the JSONs already present under
+files/centos-stream/{osdtrace,radostrace}/.
 
 Output (one row per (version, missing-tool-list)) is TSV on stdout so the
 companion shell driver can read it line-by-line:
@@ -27,12 +28,18 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 CENTOS_DIR = REPO_ROOT / "files" / "centos-stream"
 DOWNLOAD_BASE = "https://download.ceph.com"
 
-# We only care about the modern lines (quincy, reef, squid, tentacle).
-# Each major has a single (X.2) minor line.
-MAJOR_VERSIONS = [17, 18, 19, 20]
+# Map each modern Ceph major (quincy, reef, squid, tentacle, umbrella) to the
+# EL release shipped by its upstream quay.io/ceph/ceph container image.
+MAJOR_EL: dict[int, str] = {
+    17: "el9",
+    18: "el9",
+    19: "el9",
+    20: "el9",
+    21: "el10",
+}
 
-# Centos-stream el9 ceph-osd RPM URL template.
-RPM_URL_TMPL = "{base}/rpm-{ver}/el9/x86_64/ceph-osd-{ver}-0.el9.x86_64.rpm"
+# Centos-stream ceph-osd RPM URL template.
+RPM_URL_TMPL = "{base}/rpm-{ver}/{el}/x86_64/ceph-osd-{ver}-0.{el}.x86_64.rpm"
 
 # Probe up to this many patch releases per major.  20 is generous; quincy
 # topped out at 17.2.9 and the longest historical Ceph line (octopus) ran
@@ -56,35 +63,41 @@ def head(url: str, *, timeout: float = 15.0) -> int:
         return 0
 
 
-def upstream_el9_versions() -> list[str]:
-    """Versions that have an el9 ceph-osd RPM published upstream.
+def upstream_rpm_versions() -> list[tuple[str, str]]:
+    """Versions that have a matching ceph-osd RPM published upstream.
 
-    Probes every (major.2.0 .. major.2.19) combination; cheap (~80 HEAD
-    requests, ~10 s total) and avoids fragile HTML scraping of the directory
-    index.  Returns a sorted (version-tuple-ascending) list.
+    Probes every (major.2.0 .. major.2.19) combination against each major's
+    target EL release; cheap (~100 HEAD requests, ~10 s total) and avoids
+    fragile HTML scraping of the directory index.  Returns a sorted
+    (version-tuple-ascending) list of (version, el) pairs.
     """
-    out: list[str] = []
-    for maj in MAJOR_VERSIONS:
+    out: list[tuple[str, str]] = []
+    for maj, el in MAJOR_EL.items():
         for patch in CANDIDATE_PATCHES:
             ver = f"{maj}.2.{patch}"
-            url = RPM_URL_TMPL.format(base=DOWNLOAD_BASE, ver=ver)
+            url = RPM_URL_TMPL.format(base=DOWNLOAD_BASE, ver=ver, el=el)
             if head(url) == 200:
-                out.append(ver)
+                out.append((ver, el))
     return out
 
 
-def existing_versions(tool: str) -> set[str]:
-    """Versions already covered by JSONs under files/centos-stream/<tool>/."""
+def existing_versions(tool: str) -> set[tuple[str, str]]:
+    """Return (version, el) pairs covered under files/centos-stream/<tool>/."""
     d = CENTOS_DIR / tool
     if not d.is_dir():
         return set()
     prefix = {"osdtrace": "osd-2:", "radostrace": "rados-2:"}[tool]
-    suffix = "-0.el9_dwarf.json"
-    return {
-        name[len(prefix):-len(suffix)]
-        for name in (p.name for p in d.iterdir())
-        if name.startswith(prefix) and name.endswith(suffix)
-    }
+    found: set[tuple[str, str]] = set()
+    for path in d.iterdir():
+        name = path.name
+        if not name.startswith(prefix) or not name.endswith("_dwarf.json"):
+            continue
+        stem = name[len(prefix):-len("_dwarf.json")]
+        if "-0." not in stem:
+            continue
+        ver, el = stem.rsplit("-0.", 1)
+        found.add((ver, el))
+    return found
 
 
 def version_key(v: str) -> tuple[int, ...]:
@@ -93,34 +106,39 @@ def version_key(v: str) -> tuple[int, ...]:
 
 
 def covered_ceiling(
-    osd_have: set[str], rados_have: set[str]
+    osd_have: set[tuple[str, str]], rados_have: set[tuple[str, str]]
 ) -> dict[int, int]:
     """Highest *fully covered* patch (both tools present) per major.
 
     "Fully covered" = a version we ship JSONs for in BOTH osdtrace and
-    radostrace.  A major absent from the result has no fully-covered version
-    at all (a brand-new line, or one we've never backfilled).
+    radostrace for its major's target EL release.  A major absent from the
+    result has no fully-covered version at all (a brand-new line, or one
+    we've never backfilled).
     """
     ceiling: dict[int, int] = {}
-    for ver in osd_have & rados_have:
+    for ver, el in osd_have & rados_have:
         try:
             major, _minor, patch = (int(x) for x in ver.split("."))
         except ValueError:
+            continue
+        if MAJOR_EL.get(major) != el:
             continue
         ceiling[major] = max(ceiling.get(major, -1), patch)
     return ceiling
 
 
 def is_new_release(ver: str, ceiling: dict[int, int]) -> bool:
-    """True when ver is a point release *newer* than our ceiling for its major.
+    """True when ver is a point release *newer* than our ceiling for its major,
+    or belongs to a brand-new major line above our highest covered major.
 
-    Used by --new-only to pick up only freshly-published point releases on
-    lines we already maintain.  A major with no fully-covered version (not in
-    ``ceiling``) is treated as historical/backlog and left to the backfill
-    workflow, so this never auto-grabs an entire uncovered line.
+    Used by --new-only to pick up freshly-published point releases and newly
+    shipped major lines while leaving historical gaps on older majors to the
+    backfill workflow.
     """
     major, _minor, patch = (int(x) for x in ver.split("."))
-    return major in ceiling and patch > ceiling[major]
+    if major in ceiling:
+        return patch > ceiling[major]
+    return bool(ceiling) and major > max(ceiling)
 
 
 def main() -> None:
@@ -130,11 +148,11 @@ def main() -> None:
         "--new-only",
         action="store_true",
         help="emit only point releases newer than the highest fully-covered "
-             "patch of each major (skip historical gaps and uncovered lines)",
+             "patch of each major (skip historical gaps on older lines)",
     )
     args = parser.parse_args()
 
-    upstream = upstream_el9_versions()
+    upstream = upstream_rpm_versions()
     if not upstream:
         # Treat a fully-empty probe set as a hard error: it almost always
         # means download.ceph.com is unreachable from the runner, and
@@ -147,34 +165,34 @@ def main() -> None:
     rados_have = existing_versions("radostrace")
 
     # --new-only: restrict to point releases above each major's fully-covered
-    # ceiling, so the scheduled bot picks up only freshly-published releases
-    # and leaves the historical backlog to the backfill workflow.
+    # ceiling (or brand-new majors above it), so the scheduled bot picks up
+    # freshly-published releases and leaves historical gaps to backfill.
     ceiling = covered_ceiling(osd_have, rados_have) if args.new_only else {}
 
-    # Group missing-tool sets by version so one container session can
+    # Group missing-tool sets by (version, el) so one container session can
     # generate both JSONs for the same version.
-    missing: dict[str, list[str]] = {}
-    for ver in upstream:
+    missing: dict[tuple[str, str], list[str]] = {}
+    for ver, el in upstream:
         if args.new_only and not is_new_release(ver, ceiling):
             continue
         tools: list[str] = []
-        if ver not in osd_have:
+        if (ver, el) not in osd_have:
             tools.append("osdtrace")
-        if ver not in rados_have:
+        if (ver, el) not in rados_have:
             tools.append("radostrace")
         if tools:
-            missing[ver] = tools
+            missing[(ver, el)] = tools
 
-    for ver in sorted(missing, key=version_key):
-        tools = missing[ver]
-        url = RPM_URL_TMPL.format(base=DOWNLOAD_BASE, ver=ver)
+    for ver, el in sorted(missing, key=lambda item: version_key(item[0])):
+        tools = missing[(ver, el)]
+        url = RPM_URL_TMPL.format(base=DOWNLOAD_BASE, ver=ver, el=el)
         print(
             "\t".join(
                 [
                     "centos-stream",
                     ",".join(sorted(tools)),
                     ver,
-                    f"2:{ver}-0.el9",
+                    f"2:{ver}-0.{el}",
                     url,
                 ]
             )

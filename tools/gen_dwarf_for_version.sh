@@ -35,8 +35,9 @@ VERSION=$3
 PKGVER=$4
 
 case "$PKGVER" in
-    *.el8) EL=8; BUILD_REPO=PowerTools ;;
-    *.el9) EL=9; BUILD_REPO=crb ;;
+    *.el8)  EL=8;  BUILD_REPO=PowerTools ;;
+    *.el9)  EL=9;  BUILD_REPO=crb ;;
+    *.el10) EL=10; BUILD_REPO=crb ;;
     *) echo "ERROR: unsupported package release in $PKGVER" >&2; exit 2 ;;
 esac
 
