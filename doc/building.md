@@ -16,10 +16,10 @@ sudo apt-get install \
     make
 ```
 
-### RHEL/CentOS/Rocky Linux/Fedora
+### CentOS Stream/Rocky Linux/Fedora
 
 ```bash
-sudo dnf config-manager --enable crb  # Only for RHEL 9/CentOS Stream 9
+sudo dnf config-manager --enable crb  # Required on Rocky Linux/CentOS Stream 9 and 10
 sudo dnf install \
     g++ \
     clang \

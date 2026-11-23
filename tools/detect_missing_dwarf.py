@@ -28,14 +28,15 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 CENTOS_DIR = REPO_ROOT / "files" / "centos-stream"
 DOWNLOAD_BASE = "https://download.ceph.com"
 
-# Map each modern Ceph major (quincy, reef, squid, tentacle, umbrella) to the
-# EL release shipped by its upstream quay.io/ceph/ceph container image.
+# Map each modern Ceph major (quincy, reef, squid, tentacle) to the EL
+# release shipped by its upstream quay.io/ceph/ceph container image.
+# Umbrella (21.x, el10) is intentionally omitted until osdtrace supports the
+# split ceph-osd-classic binary and ceph-osd-classic-debuginfo package.
 MAJOR_EL: dict[int, str] = {
     17: "el9",
     18: "el9",
     19: "el9",
     20: "el9",
-    21: "el10",
 }
 
 # Centos-stream ceph-osd RPM URL template.
