@@ -27,8 +27,8 @@ cephadm_image_for_release() {
     case "$1" in
         quincy)   echo "quay.io/ceph/ceph:v17.2.8"  ;;  # v17.2.9 has no image
         reef)     echo "quay.io/ceph/ceph:v18.2.8"  ;;
-        squid)    echo "quay.io/ceph/ceph:v19.2.4"  ;;
-        tentacle) echo "quay.io/ceph/ceph:v20.2.2"  ;;
+        squid)    echo "quay.io/ceph/ceph:v19.2.7"  ;;
+        tentacle) echo "quay.io/ceph/ceph:v20.2.5"  ;;
         umbrella) echo "quay.io/ceph/ceph:v21.2.0"  ;;
         *) err "unknown release: $1"; return 1 ;;
     esac

@@ -33,7 +33,7 @@ Cephtrace is a suite of **eBPF-based dynamic tracing tools** that provide **micr
 Trace OSD operations with detailed latency breakdown across:
 - **Messenger layer:** Network throttling, receive, dispatch
 - **OSD processing:** Queue wait, request handling, replication coordination
-- **BlueStore backend:** Transaction prep, I/O wait, commit latencies
+- **BlueStore backend:** Per-op BlueStore latency and internal BlueStore operation latencies (`-b`)
 
 **Perfect for:**
 - Diagnosing "slow ops" warnings
