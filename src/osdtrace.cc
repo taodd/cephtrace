@@ -682,7 +682,8 @@ void report_ringbuf_drops() {
 void signal_handler(int signum){
   clog << "Caught signal " << signum << endl;
   if (signum == SIGINT) {
-      print_all_srl();
+      if (probe_mode == OP_SINGLE_PROBE)
+          print_all_srl();
       report_ringbuf_drops();
   }
   exit(signum);
@@ -1745,6 +1746,8 @@ static int run_tracer(DwarfParser &dwarfparser, const TraceTarget &target) {
   else
     cerr << "Ring buffer consume failed: " << ret << endl;
 
+  if (probe_mode == OP_SINGLE_PROBE)
+    print_all_srl();
   report_ringbuf_drops();
 
   clog << "Clean up the eBPF program" << endl;
