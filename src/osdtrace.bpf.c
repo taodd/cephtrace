@@ -108,7 +108,9 @@ static __always_inline int read_hprobe_varfield(struct pt_regs *ctx, int varid, 
   if (NULL != vf) {
     __u64 v = fetch_register(ctx, vf->varloc.reg);
     __u64 addr = fetch_var_member_addr(v, vf);
-    bpf_probe_read_user(dst, size, (void *)addr);
+    /* Don't swallow read failures: *dst is left untouched on error. */
+    if (bpf_probe_read_user(dst, size, (void *)addr) != 0)
+      return -1;
     return 0;
   }
   bpf_printk("got NULL vf at varid %d\n", varid);
@@ -120,9 +122,14 @@ static __always_inline int read_hprobe_utime(struct pt_regs *ctx, int varid, __u
   if (NULL != vf) {
     __u64 v = fetch_register(ctx, vf->varloc.reg);
     __u64 addr = fetch_var_member_addr(v, vf);
-    struct utime_t stamp;
-    bpf_probe_read_user(&stamp.sec, sizeof(stamp.sec), (void *)addr);
-    bpf_probe_read_user(&stamp.nsec, sizeof(stamp.nsec), (void *)(addr + 4));
+    struct utime_t stamp = {};
+    /* utime_t sits inside OpRequest, which is unreadable on the repop paths.
+     * Reporting it is what lets uprobe_enqueue_op drop the entry.
+     */
+    if (bpf_probe_read_user(&stamp.sec, sizeof(stamp.sec), (void *)addr) != 0 ||
+        bpf_probe_read_user(&stamp.nsec, sizeof(stamp.nsec),
+                            (void *)(addr + 4)) != 0)
+      return -1;
     *nsec_dst = to_nsec(&stamp);
     return 0;
   }
