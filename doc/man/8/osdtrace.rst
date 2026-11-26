@@ -14,7 +14,7 @@ probe and trace OSD(s) on given nodes
 SYNOPSIS
 ========
 
-| **osdtrace** [-s] [-b] [-l <milliseconds>] [-t <seconds>] [-j <filename>] [-i <filename>] [-a] [-p <pid1,pid2,...>] [--id <osd-id1,osd-id2,...>] [--skip-version-check] [--list] [--list-embedded] [-V] [-h]
+| **osdtrace** [-s] [-b] [-A] [-l <milliseconds>] [-t <seconds>] [-j <filename>] [-i <filename>] [-a] [-p <pid1,pid2,...>] [--id <osd-id1,osd-id2,...>] [--skip-version-check] [--list] [--list-embedded] [-V] [-h]
 
 
 DESCRIPTION
@@ -43,6 +43,15 @@ OPTIONS
    operation label the OSD itself passes to the function (e.g.
    _txc_committed_kv, kv_commit, _do_read, _remove), so the labels stay
    correct across Ceph versions.
+
+-A
+
+   Allocator probe mode: trace every call into the BlueStore/BlueFS
+   free-space allocator. Each line reports the allocator instance
+   (block, bluefs-wal/db/slow), the requested size, alignment unit and
+   hint, the bytes actually allocated, the returned physical extents
+   (a split request is a direct fragmentation signal), the call
+   latency, and the calling thread. Can be combined with -b.
 
 -l <milliseconds>
 

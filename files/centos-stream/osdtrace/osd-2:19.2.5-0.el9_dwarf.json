@@ -4,6 +4,9 @@
   "ceph-osd": {
     "build_id": "6465fa22329962eaa80e8c3dcdae947fac9c8845",
     "func2pc": {
+      "Allocator::get_name": 10756416,
+      "AvlAllocator::allocate": 11113632,
+      "BitmapAllocator::allocate": 10978928,
       "BlueStore::_do_write": 10489296,
       "BlueStore::_txc_add_transaction": 10410000,
       "BlueStore::_txc_apply_kv": 10369872,
@@ -13,7 +16,12 @@
       "BlueStore::log_latency": 18871168,
       "BlueStore::log_latency_fn": 10482272,
       "BlueStore::queue_transactions": 10417888,
+      "Btree2Allocator::allocate": 11140192,
+      "BtreeAllocator::allocate": 11116144,
       "ECBackend::submit_transaction": 9515424,
+      "HybridAllocatorBase<AvlAllocator>::allocate": 11143472,
+      "HybridAllocatorBase<Btree2Allocator>::allocate": 11140992,
+      "HybridBtree2Allocator::allocate": 11142288,
       "OSD::dequeue_op": 5903280,
       "OSD::enqueue_op": 5781904,
       "OpRequest::mark_flag_point": 13807776,
@@ -23,7 +31,8 @@
       "ReplicatedBackend::do_repop_reply": 9281664,
       "ReplicatedBackend::generate_subop": 9325264,
       "ReplicatedBackend::repop_commit": 9288480,
-      "ReplicatedBackend::submit_transaction": 9331792
+      "ReplicatedBackend::submit_transaction": 9331792,
+      "StupidAllocator::allocate": 11046304
     },
     "type_sizes": {
       "OSDOp": 112
@@ -34,6 +43,131 @@
       "OSDOp::op.cls.method_len": 7
     },
     "func2vf": {
+      "Allocator::get_name": {
+        "var_fields": [
+          {
+            "location": {
+              "reg": 5,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 8,
+                "pointer": true
+              },
+              {
+                "offset": 16,
+                "pointer": true
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": false
+              }
+            ]
+          }
+        ]
+      },
+      "AvlAllocator::allocate": {
+        "var_fields": [
+          {
+            "location": {
+              "reg": 9,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": true
+              },
+              {
+                "offset": 16,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 9,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": true
+              },
+              {
+                "offset": 24,
+                "pointer": false
+              }
+            ]
+          }
+        ]
+      },
+      "BitmapAllocator::allocate": {
+        "var_fields": [
+          {
+            "location": {
+              "reg": 9,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": true
+              },
+              {
+                "offset": 16,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 9,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": true
+              },
+              {
+                "offset": 24,
+                "pointer": false
+              }
+            ]
+          }
+        ]
+      },
       "BlueStore::_do_write": {
         "var_fields": []
       },
@@ -396,6 +530,98 @@
       "BlueStore::queue_transactions": {
         "var_fields": []
       },
+      "Btree2Allocator::allocate": {
+        "var_fields": [
+          {
+            "location": {
+              "reg": 9,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": true
+              },
+              {
+                "offset": 16,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 9,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": true
+              },
+              {
+                "offset": 24,
+                "pointer": false
+              }
+            ]
+          }
+        ]
+      },
+      "BtreeAllocator::allocate": {
+        "var_fields": [
+          {
+            "location": {
+              "reg": 9,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": true
+              },
+              {
+                "offset": 16,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 9,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": true
+              },
+              {
+                "offset": 24,
+                "pointer": false
+              }
+            ]
+          }
+        ]
+      },
       "ECBackend::submit_transaction": {
         "var_fields": [
           {
@@ -432,6 +658,144 @@
               },
               {
                 "offset": 16,
+                "pointer": false
+              }
+            ]
+          }
+        ]
+      },
+      "HybridAllocatorBase<AvlAllocator>::allocate": {
+        "var_fields": [
+          {
+            "location": {
+              "reg": 9,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": true
+              },
+              {
+                "offset": 16,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 9,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": true
+              },
+              {
+                "offset": 24,
+                "pointer": false
+              }
+            ]
+          }
+        ]
+      },
+      "HybridAllocatorBase<Btree2Allocator>::allocate": {
+        "var_fields": [
+          {
+            "location": {
+              "reg": 9,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": true
+              },
+              {
+                "offset": 16,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 9,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": true
+              },
+              {
+                "offset": 24,
+                "pointer": false
+              }
+            ]
+          }
+        ]
+      },
+      "HybridBtree2Allocator::allocate": {
+        "var_fields": [
+          {
+            "location": {
+              "reg": 9,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": true
+              },
+              {
+                "offset": 16,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 9,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": true
+              },
+              {
+                "offset": 24,
                 "pointer": false
               }
             ]
@@ -1625,6 +1989,52 @@
               },
               {
                 "offset": 16,
+                "pointer": false
+              }
+            ]
+          }
+        ]
+      },
+      "StupidAllocator::allocate": {
+        "var_fields": [
+          {
+            "location": {
+              "reg": 9,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": true
+              },
+              {
+                "offset": 16,
+                "pointer": false
+              }
+            ]
+          },
+          {
+            "location": {
+              "reg": 9,
+              "offset": 0,
+              "stack": false
+            },
+            "fields": [
+              {
+                "offset": 0,
+                "pointer": false
+              },
+              {
+                "offset": 0,
+                "pointer": true
+              },
+              {
+                "offset": 24,
                 "pointer": false
               }
             ]
