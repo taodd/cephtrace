@@ -152,7 +152,7 @@ jobs:
         if: steps.generate.outputs.succeeded != '0'
         run: |
             # The JSON filenames embed the package epoch (e.g.
-            # osd-2:19.2.2-0.el9_dwarf.json) and actions/upload-artifact@v4
+            # osd-2:19.2.2-0.el9_dwarf.json) and actions/upload-artifact@v7
             # rejects the ':' character outright, so ship a colon-free tarball
             # (plus the colon-free manifest TSVs) rather than the raw files.
             mkdir -p /tmp/artifacts
@@ -169,7 +169,7 @@ jobs:
 
       - name: Upload generated JSONs + manifest
         if: steps.generate.outputs.succeeded != '0'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: generated-jsons
           path: /tmp/artifacts/
@@ -232,7 +232,7 @@ jobs:
 
       - name: Upload verification result
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: verify-result-${{ matrix.version }}
           path: /tmp/vr/
@@ -251,7 +251,7 @@ jobs:
 
       - name: Upload trace logs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: trace-logs-${{ matrix.version }}
           path: trace-logs/
